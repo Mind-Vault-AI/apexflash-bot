@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.0.0 (MEGA BOT + TRADING)
+Version: 3.1.0 (MEGA BOT + FEE COLLECTION + REFERRALS)
 """
 import logging
 import re
@@ -39,9 +39,13 @@ from config import (
     MIZAR_REFERRAL_URL, PLATFORM_FEE_PCT,
     ETH_WHALE_WALLETS, SOL_WHALE_WALLETS,
     WALLET_ENCRYPTION_KEY, SOL_MINT,
+    FEE_COLLECT_WALLET, REFERRAL_FEE_SHARE_PCT,
 )
 from chains import fetch_eth_whale_transfers, fetch_sol_whale_transfers, get_crypto_prices
-from wallet import create_wallet, load_keypair, get_sol_balance, get_token_balances
+from wallet import (
+    create_wallet, load_keypair, get_sol_balance,
+    get_token_balances, collect_fee, transfer_sol,
+)
 from jupiter import (
     get_quote, execute_swap, calculate_fee,
     get_token_info, search_token, COMMON_TOKENS,
@@ -82,8 +86,9 @@ def get_user(user_id: int) -> dict:
             # Referral
             "referred_by": 0,
             "referral_earnings": 0.0,
+            "referral_count": 0,
         }
-    # Migrate old users missing wallet fields
+    # Migrate old users missing wallet/referral fields
     u = users[user_id]
     if "wallet_pubkey" not in u:
         u["wallet_pubkey"] = ""
@@ -92,6 +97,9 @@ def get_user(user_id: int) -> dict:
         u["total_volume_usd"] = 0.0
         u["referred_by"] = 0
         u["referral_earnings"] = 0.0
+        u["referral_count"] = 0
+    if "referral_count" not in u:
+        u["referral_count"] = 0
     return u
 
 
@@ -125,10 +133,13 @@ def main_menu_kb(user_id: int = 0) -> InlineKeyboardMarkup:
         ],
         [InlineKeyboardButton("\U0001f4b1 Exchanges", callback_data="exchanges")],
         [
+            InlineKeyboardButton("\U0001f91d Referral", callback_data="referral"),
             InlineKeyboardButton("\U0001f48e Premium", callback_data="premium"),
-            InlineKeyboardButton("\u2699\ufe0f Settings", callback_data="settings"),
         ],
-        [InlineKeyboardButton("\U0001f4d6 Help & FAQ", callback_data="help")],
+        [
+            InlineKeyboardButton("\u2699\ufe0f Settings", callback_data="settings"),
+            InlineKeyboardButton("\U0001f4d6 Help", callback_data="help"),
+        ],
     ]
 
     if is_admin(user_id):
@@ -147,9 +158,26 @@ def _back_main() -> list:
 # ══════════════════════════════════════════════
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Welcome message with main menu."""
-    user = get_user(update.effective_user.id)
+    """Welcome message with main menu. Also handles referral deep links."""
+    uid = update.effective_user.id
+    user = get_user(uid)
     user["username"] = update.effective_user.username or ""
+
+    # ── Handle referral deep link: /start ref_123456 ──
+    if context.args and context.args[0].startswith("ref_"):
+        try:
+            referrer_id = int(context.args[0][4:])
+            # Don't self-refer, don't overwrite existing referrer
+            if referrer_id != uid and not user.get("referred_by"):
+                user["referred_by"] = referrer_id
+                # Make sure referrer exists in store
+                referrer = get_user(referrer_id)
+                if "referral_count" not in referrer:
+                    referrer["referral_count"] = 0
+                referrer["referral_count"] = referrer.get("referral_count", 0) + 1
+                logger.info(f"Referral: user {uid} referred by {referrer_id}")
+        except (ValueError, IndexError):
+            pass
 
     text = (
         "\u26a1 *ApexFlash MEGA BOT*\n"
@@ -163,6 +191,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "\U0001f4c8 *Copy Trade* \u2014 Follow top traders\n"
         "\U0001f916 *DCA Bot* \u2014 Automate your strategy\n"
         "\U0001f4b1 *Exchange Deals* \u2014 Up to 70% fee rebates\n"
+        "\U0001f91d *Referral* \u2014 Earn 25% of friends' fees\n"
         "\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
@@ -278,6 +307,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "copy_trade":    _cb_copy_trade,
         "dca_bot":       _cb_dca_bot,
         "exchanges":     _cb_exchanges,
+        # Referral
+        "referral":      _cb_referral,
+        "referral_link": _cb_referral_link,
+        "referral_stats": _cb_referral_stats,
         "premium":       _cb_premium,
         "settings":      _cb_settings,
         "help":          _cb_help,
@@ -996,6 +1029,31 @@ async def _cb_execute_buy(query, user, context, data):
             [_back_main()[0]],
         ]
         logger.info(f"TRADE OK: user={query.from_user.id} buy={sol_amount}SOL token={target_mint[:12]} tx={tx_sig}")
+
+        # ── Fee collection (best-effort, async) ──
+        try:
+            # Collect platform fee → ApexFlash hot wallet
+            if FEE_COLLECT_WALLET and fee_lamports > 5000:
+                # Check if user was referred → split fee
+                referrer_id = user.get("referred_by", 0)
+                if referrer_id and referrer_id in users:
+                    referrer = users[referrer_id]
+                    referral_share = int(fee_lamports * REFERRAL_FEE_SHARE_PCT / 100)
+                    platform_share = fee_lamports - referral_share
+
+                    # Platform fee
+                    await collect_fee(keypair, platform_share, FEE_COLLECT_WALLET)
+                    # Referrer share → referrer's bot wallet
+                    if referrer.get("wallet_pubkey") and referral_share > 5000:
+                        ref_kp = keypair  # fee comes from trader's wallet
+                        await transfer_sol(ref_kp, referrer["wallet_pubkey"], referral_share)
+                        referrer["referral_earnings"] = referrer.get("referral_earnings", 0) + referral_share / 1e9
+                        logger.info(f"Referral fee: {referral_share} lamports -> user {referrer_id}")
+                else:
+                    # No referrer — full fee to platform
+                    await collect_fee(keypair, fee_lamports, FEE_COLLECT_WALLET)
+        except Exception as fee_err:
+            logger.warning(f"Fee collection failed (non-fatal): {fee_err}")
     else:
         text = (
             "\u274c *Swap Failed*\n\n"
@@ -1122,6 +1180,32 @@ async def _cb_execute_sell(query, user, context, data):
             [_back_main()[0]],
         ]
         logger.info(f"SELL OK: user={query.from_user.id} pct={pct_label} tx={tx_sig}")
+
+        # ── Fee collection (best-effort) ──
+        try:
+            if FEE_COLLECT_WALLET and fee_amount > 5000:
+                referrer_id = user.get("referred_by", 0)
+                if referrer_id and referrer_id in users:
+                    referrer = users[referrer_id]
+                    referral_share = int(fee_amount * REFERRAL_FEE_SHARE_PCT / 100)
+                    platform_share = fee_amount - referral_share
+                    # Note: sell fee is in token units, not SOL — for now we collect
+                    # the SOL received as fee after it arrives. Simplified v1:
+                    # we collect from the SOL received after swap
+                    sol_fee_lamports = int(out_lamports * PLATFORM_FEE_PCT / 100)
+                    if sol_fee_lamports > 5000:
+                        ref_share_sol = int(sol_fee_lamports * REFERRAL_FEE_SHARE_PCT / 100)
+                        platform_sol = sol_fee_lamports - ref_share_sol
+                        await collect_fee(keypair, platform_sol, FEE_COLLECT_WALLET)
+                        if referrer.get("wallet_pubkey") and ref_share_sol > 5000:
+                            await transfer_sol(keypair, referrer["wallet_pubkey"], ref_share_sol)
+                            referrer["referral_earnings"] = referrer.get("referral_earnings", 0) + ref_share_sol / 1e9
+                else:
+                    sol_fee_lamports = int(out_lamports * PLATFORM_FEE_PCT / 100)
+                    if sol_fee_lamports > 5000:
+                        await collect_fee(keypair, sol_fee_lamports, FEE_COLLECT_WALLET)
+        except Exception as fee_err:
+            logger.warning(f"Sell fee collection failed (non-fatal): {fee_err}")
     else:
         text = (
             "\u274c *Sell Failed*\n\n"
@@ -1470,6 +1554,162 @@ async def _cb_premium(query, user, context):
 
 
 # ══════════════════════════════════════════════
+# REFERRAL SECTION
+# ══════════════════════════════════════════════
+
+async def _cb_referral(query, user, context):
+    """Referral program main menu."""
+    uid = query.from_user.id
+    bot_username = (await context.bot.get_me()).username
+    ref_link = f"https://t.me/{bot_username}?start=ref_{uid}"
+
+    # Count referrals
+    ref_count = user.get("referral_count", 0)
+    if ref_count == 0:
+        # Recount from users store
+        ref_count = sum(1 for u in users.values() if u.get("referred_by") == uid)
+        user["referral_count"] = ref_count
+
+    earnings_sol = user.get("referral_earnings", 0.0)
+    prices = await get_crypto_prices()
+    sol_price = prices.get("SOL", 0)
+    earnings_usd = earnings_sol * sol_price
+
+    text = (
+        "\U0001f91d *Referral Program*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "Earn *25% of every trade fee* from\n"
+        "friends you invite! Passive income\n"
+        "for life \u2014 every trade they make,\n"
+        "you earn.\n"
+        "\n"
+        "\U0001f4b0 *How it works:*\n"
+        "1\ufe0f\u20e3 Share your unique referral link\n"
+        "2\ufe0f\u20e3 Friend signs up and trades\n"
+        "3\ufe0f\u20e3 You earn 25% of their 1% trade fee\n"
+        "4\ufe0f\u20e3 Earnings sent to your bot wallet\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"\U0001f465 Referrals: *{ref_count}*\n"
+        f"\U0001f4b5 Earned: *{earnings_sol:.6f} SOL*"
+    )
+    if earnings_usd > 0.01:
+        text += f" (${earnings_usd:,.2f})"
+    text += (
+        "\n\n\U0001f517 *Your link:*\n"
+        f"`{ref_link}`\n"
+        "\n"
+        "_Tap the link to copy it!_\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    kb = [
+        [InlineKeyboardButton("\U0001f4cb Copy Link", callback_data="referral_link")],
+        [InlineKeyboardButton("\U0001f4ca Referral Stats", callback_data="referral_stats")],
+        [_back_main()[0]],
+    ]
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown", disable_web_page_preview=True,
+    )
+
+
+async def _cb_referral_link(query, user, context):
+    """Show referral link in easy-copy format."""
+    uid = query.from_user.id
+    bot_username = (await context.bot.get_me()).username
+    ref_link = f"https://t.me/{bot_username}?start=ref_{uid}"
+
+    text = (
+        "\U0001f517 *Your Referral Link*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        f"`{ref_link}`\n"
+        "\n"
+        "_Tap the link above to copy it!_\n"
+        "\n"
+        "\U0001f4ac *Share template:*\n"
+        f"_Hey! Trade crypto on Solana with the_\n"
+        f"_best prices. Use my link to get started:_\n"
+        f"_{ref_link}_\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    kb = [
+        [InlineKeyboardButton("\U0001f519 Back to Referral", callback_data="referral")],
+        [_back_main()[0]],
+    ]
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown", disable_web_page_preview=True,
+    )
+
+
+async def _cb_referral_stats(query, user, context):
+    """Detailed referral statistics."""
+    uid = query.from_user.id
+    ref_count = sum(1 for u in users.values() if u.get("referred_by") == uid)
+    user["referral_count"] = ref_count
+
+    # Count active referrals (those who traded)
+    active_refs = sum(
+        1 for u in users.values()
+        if u.get("referred_by") == uid and u.get("total_trades", 0) > 0
+    )
+    ref_volume = sum(
+        u.get("total_volume_usd", 0) for u in users.values()
+        if u.get("referred_by") == uid
+    )
+
+    earnings_sol = user.get("referral_earnings", 0.0)
+    prices = await get_crypto_prices()
+    sol_price = prices.get("SOL", 0)
+    earnings_usd = earnings_sol * sol_price
+
+    text = (
+        "\U0001f4ca *Referral Stats*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        f"\U0001f465 Total referrals: *{ref_count}*\n"
+        f"\U0001f7e2 Active traders: *{active_refs}*\n"
+        f"\U0001f4b0 Their volume: *${ref_volume:,.2f}*\n"
+        "\n"
+        f"\U0001f4b5 *Your earnings:*\n"
+        f"\u2022 SOL: *{earnings_sol:.6f}*"
+    )
+    if earnings_usd > 0.01:
+        text += f" (${earnings_usd:,.2f})"
+    text += (
+        f"\n\u2022 Fee share: *{REFERRAL_FEE_SHARE_PCT}%* of 1% trade fee\n"
+        "\n"
+        "\U0001f4a1 _Earnings are automatically sent_\n"
+        "_to your bot wallet after each trade!_\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    kb = [
+        [InlineKeyboardButton("\U0001f519 Back to Referral", callback_data="referral")],
+        [_back_main()[0]],
+    ]
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+
+
+# ══════════════════════════════════════════════
 # SETTINGS SECTION
 # ══════════════════════════════════════════════
 
@@ -1477,6 +1717,10 @@ async def _cb_settings(query, user, context):
     """User settings panel."""
     tier = TIERS.get(user["tier"], TIERS["free"])
     alert_txt = "\U0001f7e2 ON" if user["alerts_on"] else "\U0001f534 OFF"
+
+    ref_count = user.get("referral_count", 0)
+    has_wallet = "\u2705" if user.get("wallet_pubkey") else "\u274c"
+    trades = user.get("total_trades", 0)
 
     text = (
         "\u2699\ufe0f *Settings*\n"
@@ -1486,6 +1730,9 @@ async def _cb_settings(query, user, context):
         f"\U0001f4cb Plan: *{tier['emoji']} {tier['name']}*\n"
         f"\U0001f514 Alerts: *{alert_txt}*\n"
         f"\u26d3 Chains: *{', '.join(tier['chains'])}*\n"
+        f"\U0001f4bc Wallet: *{has_wallet}*\n"
+        f"\U0001f4ca Trades: *{trades}*\n"
+        f"\U0001f91d Referrals: *{ref_count}*\n"
         f"\U0001f4c5 Joined: {user.get('joined', 'N/A')[:10]}\n"
         f"\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
@@ -1500,6 +1747,7 @@ async def _cb_settings(query, user, context):
 
     kb = [
         [toggle_btn],
+        [InlineKeyboardButton("\U0001f91d My Referral Link", callback_data="referral")],
         [InlineKeyboardButton("\U0001f48e Upgrade Plan", callback_data="premium")],
         [_back_main()[0]],
     ]
@@ -1726,6 +1974,8 @@ async def _cb_admin_stats(query, user, context):
     total_vol = sum(u.get("total_volume_usd", 0) for u in users.values())
     wallets_created = sum(1 for u in users.values() if u.get("wallet_pubkey"))
     trade_fees_est = total_vol * PLATFORM_FEE_PCT / 100
+    total_referrals = sum(1 for u in users.values() if u.get("referred_by"))
+    total_ref_earnings = sum(u.get("referral_earnings", 0) for u in users.values())
 
     text = (
         "\U0001f4ca *Revenue & Growth*\n"
@@ -1743,6 +1993,10 @@ async def _cb_admin_stats(query, user, context):
         f"\u2022 Total trades: *{total_trades}*\n"
         f"\u2022 Volume: *${total_vol:,.2f}*\n"
         f"\u2022 Wallets: *{wallets_created}*\n"
+        f"\n"
+        f"\U0001f91d *Referrals*\n"
+        f"\u2022 Referred users: *{total_referrals}*\n"
+        f"\u2022 Ref earnings paid: *{total_ref_earnings:.6f} SOL*\n"
         f"\n"
         f"\U0001f465 *Growth*\n"
         f"\u2022 Total signups: {total}\n"
@@ -2004,7 +2258,7 @@ def main() -> None:
         name="whale_scanner",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.0 starting (Jupiter Trading)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.1 starting (Trading + Fees + Referrals)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")

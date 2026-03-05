@@ -1,10 +1,17 @@
 """
 ApexFlash MEGA BOT - Solana Wallet Management
 Secure wallet creation, encryption, balance checking via Helius RPC.
+Fee collection transfers to platform wallet.
 """
+import base64
 import logging
 import aiohttp
 from solders.keypair import Keypair
+from solders.pubkey import Pubkey
+from solders.system_program import transfer, TransferParams
+from solders.transaction import Transaction
+from solders.message import Message
+from solders.hash import Hash
 from cryptography.fernet import Fernet
 
 from config import HELIUS_RPC_URL, WALLET_ENCRYPTION_KEY
@@ -122,3 +129,81 @@ async def send_raw_transaction(signed_tx_b64: str) -> str | None:
     except Exception as e:
         logger.error(f"Send tx error: {e}")
         return None
+
+
+# ══════════════════════════════════════════════
+# FEE COLLECTION (SOL transfer)
+# ══════════════════════════════════════════════
+
+async def _get_recent_blockhash() -> str | None:
+    """Get a recent blockhash for transaction building."""
+    try:
+        data = await _rpc("getLatestBlockhash", [{"commitment": "finalized"}])
+        return data.get("result", {}).get("value", {}).get("blockhash")
+    except Exception as e:
+        logger.error(f"Blockhash error: {e}")
+        return None
+
+
+async def transfer_sol(
+    from_keypair: Keypair,
+    to_pubkey_str: str,
+    lamports: int,
+) -> str | None:
+    """Transfer SOL from one wallet to another.
+
+    Used to collect platform fees after each swap.
+    Returns transaction signature or None.
+    """
+    if lamports <= 0:
+        return None
+
+    try:
+        to_pubkey = Pubkey.from_string(to_pubkey_str)
+        blockhash_str = await _get_recent_blockhash()
+        if not blockhash_str:
+            logger.error("Fee transfer: no blockhash")
+            return None
+
+        # Build transfer instruction
+        ix = transfer(TransferParams(
+            from_pubkey=from_keypair.pubkey(),
+            to_pubkey=to_pubkey,
+            lamports=lamports,
+        ))
+
+        # Build and sign transaction
+        blockhash = Hash.from_string(blockhash_str)
+        msg = Message.new_with_blockhash(
+            [ix], from_keypair.pubkey(), blockhash,
+        )
+        tx = Transaction.new_unsigned(msg)
+        tx.sign([from_keypair], blockhash)
+
+        # Send
+        encoded = base64.b64encode(bytes(tx)).decode()
+        sig = await send_raw_transaction(encoded)
+        if sig:
+            logger.info(f"Fee transfer OK: {lamports} lamports -> {to_pubkey_str[:12]}... tx={sig}")
+        return sig
+
+    except Exception as e:
+        logger.error(f"Fee transfer error: {e}")
+        return None
+
+
+async def collect_fee(
+    user_keypair: Keypair,
+    fee_lamports: int,
+    fee_wallet: str,
+) -> str | None:
+    """Collect platform fee from user wallet to fee collection wallet.
+
+    Called after a successful swap. Best-effort — if this fails,
+    the fee stays in the user wallet (no money lost, just uncollected).
+    """
+    if fee_lamports < 5000:  # Skip dust (< 0.000005 SOL, less than tx fee)
+        logger.debug(f"Fee too small to collect: {fee_lamports} lamports")
+        return None
+
+    return await transfer_sol(user_keypair, fee_wallet, fee_lamports)

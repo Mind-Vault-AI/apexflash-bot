@@ -35,6 +35,13 @@ HELIUS_RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
 PLATFORM_FEE_PCT = float(os.getenv("PLATFORM_FEE_PCT", "1.0"))  # 1% per trade
 WALLET_ENCRYPTION_KEY = os.getenv("WALLET_ENCRYPTION_KEY", "")
 SOL_MINT = "So11111111111111111111111111111111111111112"
+# Fee collection wallet — all 1% fees are transferred here after each swap
+FEE_COLLECT_WALLET = os.getenv(
+    "FEE_COLLECT_WALLET",
+    "4LKQGKyjhCpVm7TAnDRtR5dPNExEhSADNCumvZjiuYWi",  # ApexFlash Hot wallet
+)
+# Referral config — referrers earn a share of fees from referred users
+REFERRAL_FEE_SHARE_PCT = float(os.getenv("REFERRAL_FEE_SHARE_PCT", "25.0"))  # 25%
 
 # === OpenAI (for AI signals - Elite tier) ===
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
