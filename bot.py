@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.3.0 (MEGA BOT + EXPANDED AFFILIATES + SOL PAYMENTS)
+Version: 3.4.0 (MEGA BOT + GUMROAD LICENSE VERIFICATION)
 """
 import logging
 import re
@@ -35,6 +35,7 @@ from telegram.ext import (
 from config import (
     BOT_TOKEN, AFFILIATE_LINKS, TOOL_AFFILIATE_LINKS, ADMIN_IDS,
     GUMROAD_PRO_URL, GUMROAD_ELITE_URL, TIERS,
+    GUMROAD_ACCESS_TOKEN,
     PRO_PRICE_SOL, ELITE_PRICE_SOL,
     SCAN_INTERVAL, WEBSITE_URL, SUPPORT_URL,
     MIZAR_REFERRAL_URL, PLATFORM_FEE_PCT,
@@ -55,6 +56,7 @@ from notifications import (
     notify_discord_whale, notify_discord_trade,
     notify_telegram_channel, notify_channel_trade,
 )
+from gumroad import verify_license, get_subscriber_count
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -88,10 +90,15 @@ def get_user(user_id: int) -> dict:
             # Trading stats
             "total_trades": 0,
             "total_volume_usd": 0.0,
+            # Premium
+            "premium_expires": "",
+            "gumroad_license": "",
             # Referral
             "referred_by": 0,
             "referral_earnings": 0.0,
             "referral_count": 0,
+            # State tracking
+            "awaiting_input": "",
         }
     # Migrate old users missing wallet/referral fields
     u = users[user_id]
@@ -105,6 +112,12 @@ def get_user(user_id: int) -> dict:
         u["referral_count"] = 0
     if "referral_count" not in u:
         u["referral_count"] = 0
+    if "premium_expires" not in u:
+        u["premium_expires"] = ""
+    if "gumroad_license" not in u:
+        u["gumroad_license"] = ""
+    if "awaiting_input" not in u:
+        u["awaiting_input"] = ""
     return u
 
 
@@ -281,6 +294,134 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
+async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Activate premium with a Gumroad license key. Usage: /activate LICENSE_KEY"""
+    uid = update.effective_user.id
+    user = get_user(uid)
+
+    if context.args:
+        # Direct activation: /activate XXXX-XXXX-XXXX-XXXX
+        license_key = context.args[0].strip()
+        await _verify_and_activate(update.effective_chat.id, uid, user, license_key, context)
+    else:
+        # Ask for license key
+        user["awaiting_input"] = "license_key"
+        await update.message.reply_text(
+            "\U0001f511 *Activate Premium*\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+            "Enter your Gumroad license key below.\n\n"
+            "You received it by email after purchasing "
+            "Pro or Elite on Gumroad.\n\n"
+            "Format: `XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX`\n\n"
+            "Or use: `/activate YOUR_LICENSE_KEY`",
+            parse_mode="Markdown",
+        )
+
+
+async def _verify_and_activate(chat_id: int, uid: int, user: dict, license_key: str, context) -> None:
+    """Verify a Gumroad license key and activate premium."""
+    # Clear awaiting state
+    user["awaiting_input"] = ""
+
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="\u23f3 Verifying license key...",
+    )
+
+    result = await verify_license(license_key)
+
+    if result is None:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "\u26a0\ufe0f *Verification Error*\n\n"
+                "Could not reach Gumroad API. Please try again later.\n"
+                "Or contact support: /help"
+            ),
+            parse_mode="Markdown",
+        )
+        return
+
+    if not result.get("valid"):
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "\u274c *Invalid License Key*\n\n"
+                "This key was not recognized. Please check:\n"
+                "\u2022 Copy the full key from your Gumroad email\n"
+                "\u2022 Make sure there are no extra spaces\n"
+                "\u2022 Keys are case-sensitive\n\n"
+                "Try again: /activate YOUR_KEY\n"
+                "Or buy: /start \u2192 Premium"
+            ),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Check for refunded/chargebacked
+    if result.get("refunded") or result.get("chargebacked"):
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "\u274c *License Revoked*\n\n"
+                "This purchase was refunded or chargebacked.\n"
+                "Please purchase a new subscription."
+            ),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Activate premium
+    from datetime import timedelta
+    tier = result["tier"]
+    tier_info = TIERS[tier]
+
+    user["tier"] = tier
+    user["premium_expires"] = (
+        datetime.now(timezone.utc) + timedelta(days=30)
+    ).isoformat()
+    user["gumroad_license"] = license_key
+
+    text = (
+        f"\u2705 *License Activated!*\n"
+        f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        f"Plan: *{tier_info['emoji']} {tier_info['name']}*\n"
+        f"Product: *{result.get('product_name', tier_info['name'])}*\n"
+        f"Active for: *30 days*\n\n"
+        f"\U0001f389 Welcome to {tier_info['name']}! You now have:\n"
+    )
+    if tier == "pro":
+        text += (
+            "\u2022 ETH + SOL instant alerts\n"
+            "\u2022 20 tracked wallets\n"
+            "\u2022 Copy Trading & DCA Bot\n"
+        )
+    else:
+        text += (
+            "\u2022 All chains (ETH, SOL, BSC, ARB)\n"
+            "\u2022 100 tracked wallets\n"
+            "\u2022 AI-powered signals\n"
+            "\u2022 Copy Trading & DCA Bot\n"
+        )
+
+    text += "\n\U0001f3e0 Use /start to explore your new features!"
+
+    logger.info(f"Gumroad activation: user {uid} → {tier} (key: {license_key[:8]}...)")
+
+    await context.bot.send_message(
+        chat_id=chat_id, text=text, parse_mode="Markdown",
+    )
+
+    # Social proof notification
+    try:
+        uname = f"User {uid}"
+        await notify_discord_trade(uname, "ACTIVATE", "Gumroad License", f"{tier_info['name']} Plan", "", 0)
+    except Exception:
+        pass
+
+
 # ══════════════════════════════════════════════
 # CALLBACK ROUTER
 # ══════════════════════════════════════════════
@@ -323,6 +464,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "pay_sol_elite": _cb_pay_sol_elite,
         "confirm_pay_pro":   _cb_confirm_pay_pro,
         "confirm_pay_elite": _cb_confirm_pay_elite,
+        "activate_license": _cb_activate_license,
         "settings":      _cb_settings,
         "help":          _cb_help,
         "help_faq":      _cb_help_faq,
@@ -1250,15 +1392,30 @@ async def _cb_execute_sell(query, user, context, data):
 
 
 async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Detect Solana token addresses pasted in chat and show buy options."""
+    """Detect Solana token addresses or license keys pasted in chat."""
     text = update.message.text.strip()
+    user_id = update.effective_user.id
+    user = get_user(user_id)
+
+    # ── Handle license key input (when awaiting) ──
+    if user.get("awaiting_input") == "license_key":
+        # Gumroad keys look like: XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX
+        if re.match(r'^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{8}-[A-Fa-f0-9]{8}-[A-Fa-f0-9]{8}$', text):
+            await _verify_and_activate(update.effective_chat.id, user_id, user, text, context)
+            return
+        else:
+            user["awaiting_input"] = ""
+            await update.message.reply_text(
+                "\u26a0\ufe0f That doesn't look like a valid license key.\n\n"
+                "Format: `XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX`\n\n"
+                "Try again: /activate",
+                parse_mode="Markdown",
+            )
+            return
 
     # Check if it looks like a Solana address
     if not SOL_ADDR_RE.match(text):
         return
-
-    user_id = update.effective_user.id
-    user = get_user(user_id)
 
     if not user.get("wallet_pubkey"):
         await update.message.reply_text(
@@ -1665,18 +1822,51 @@ async def _cb_premium(query, user, context):
             InlineKeyboardButton(
                 f"\U0001f451 Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite"),
         ])
-        kb.append([InlineKeyboardButton("\U0001f4b3 Pro $19 (Card)", url=GUMROAD_PRO_URL)])
-        kb.append([InlineKeyboardButton("\U0001f4b3 Elite $49 (Card)", url=GUMROAD_ELITE_URL)])
+        kb.append([
+            InlineKeyboardButton("\U0001f4b3 Pro $19 (Card)", url=GUMROAD_PRO_URL),
+            InlineKeyboardButton("\U0001f4b3 Elite $49 (Card)", url=GUMROAD_ELITE_URL),
+        ])
+        kb.append([InlineKeyboardButton("\U0001f511 Activate License Key", callback_data="activate_license")])
     elif current == "pro":
         kb.append([InlineKeyboardButton(
             f"\U0001f451 Upgrade Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite")])
         kb.append([InlineKeyboardButton("\U0001f4b3 Elite $49 (Card)", url=GUMROAD_ELITE_URL)])
+        kb.append([InlineKeyboardButton("\U0001f511 Activate License Key", callback_data="activate_license")])
+
+    # Show expiry for premium users
+    if current != "free" and user.get("premium_expires"):
+        try:
+            expires = datetime.fromisoformat(user["premium_expires"])
+            days_left = (expires - datetime.now(timezone.utc)).days
+            text += f"\n\u23f0 *{days_left} days* remaining on your plan.\n"
+        except (ValueError, TypeError):
+            pass
+
     kb.append([_back_main()[0]])
 
     await query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(kb),
         parse_mode="Markdown", disable_web_page_preview=True,
     )
+
+
+async def _cb_activate_license(query, user, context):
+    """Prompt user to enter their Gumroad license key."""
+    user["awaiting_input"] = "license_key"
+    text = (
+        "\U0001f511 *Activate License Key*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        "Enter your Gumroad license key below.\n\n"
+        "You received it by email after purchasing "
+        "Pro or Elite on Gumroad.\n\n"
+        "Format: `XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX`\n\n"
+        "_Just paste it in the chat and I'll verify it instantly!_"
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("\u274c Cancel", callback_data="premium")],
+    ])
+    await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
 
 
 async def _cb_pay_sol_pro(query, user, context):
@@ -2063,6 +2253,12 @@ async def _cb_help(query, user, context):
         "\n"
         "\U0001f48e *Premium* \u2014 Unlock all features\n"
         "   starting at $19/mo\n"
+        "\n"
+        "*Commands:*\n"
+        "/start \u2014 Main menu\n"
+        "/activate \u2014 Activate Gumroad license\n"
+        "/myid \u2014 Show your Telegram ID\n"
+        "/help \u2014 This help page\n"
         "\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
@@ -2545,6 +2741,7 @@ def main() -> None:
     app.add_handler(CommandHandler("myid", cmd_myid))
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CommandHandler("broadcast", cmd_broadcast))
+    app.add_handler(CommandHandler("activate", cmd_activate))
 
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))
@@ -2562,7 +2759,7 @@ def main() -> None:
         name="whale_scanner",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.3 starting...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.4 starting...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
