@@ -11,7 +11,6 @@ Author: MindVault AI / Erik
 """
 import os
 import logging
-import asyncio
 import random
 from datetime import datetime
 
@@ -19,7 +18,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, ContextTypes
 )
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import (
     BOT_TOKEN, PORT, AFFILIATE_LINKS,
@@ -374,7 +372,7 @@ async def _show_premium_edit(query) -> None:
 
 # === Scheduled Whale Scanner ===
 
-async def scan_and_alert(app: Application) -> None:
+async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Periodic scanner: fetch whale transfers and alert subscribers."""
     global seen_tx_hashes
 
@@ -410,7 +408,7 @@ async def scan_and_alert(app: Application) -> None:
 
                 try:
                     text = format_whale_alert(alert)
-                    await app.bot.send_message(
+                    await context.bot.send_message(
                         chat_id=user_id,
                         text=text,
                         parse_mode="Markdown",
@@ -427,7 +425,7 @@ async def scan_and_alert(app: Application) -> None:
 
 # === Main ===
 
-async def main() -> None:
+def main() -> None:
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN not set! Set it in .env or environment variables.")
         return
@@ -442,34 +440,20 @@ async def main() -> None:
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CallbackQueryHandler(callback_handler))
 
-    # Start the scheduled scanner
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        scan_and_alert, "interval", seconds=SCAN_INTERVAL,
-        args=[app], id="whale_scanner",
-        max_instances=1,
+    # Schedule whale scanner using built-in job queue
+    app.job_queue.run_repeating(
+        scan_and_alert,
+        interval=SCAN_INTERVAL,
+        first=10,  # wait 10s before first scan
+        name="whale_scanner",
     )
 
-    logger.info(f"ApexFlash Bot starting on port {PORT}")
+    logger.info(f"ApexFlash Bot starting...")
     logger.info(f"Scan interval: {SCAN_INTERVAL}s")
 
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-
-    scheduler.start()
-    logger.info("Whale scanner started. Bot is live.")
-
-    # Keep running
-    try:
-        while True:
-            await asyncio.sleep(3600)
-    except (KeyboardInterrupt, SystemExit):
-        scheduler.shutdown()
-        await app.updater.stop()
-        await app.stop()
-        await app.shutdown()
+    # run_polling() handles event loop, signal handlers, graceful shutdown
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
