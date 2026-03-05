@@ -2176,8 +2176,8 @@ async def _cb_copy_trade(query, user, context):
             "Unlock with Pro or Elite:"
         )
         kb = [
-            [InlineKeyboardButton("\U0001f680 Pro \u2014 $19/mo", url=GUMROAD_PRO_URL)],
-            [InlineKeyboardButton("\U0001f451 Elite \u2014 $49/mo", url=GUMROAD_ELITE_URL)],
+            [InlineKeyboardButton(f"\U0001f680 Pro \u2014 {PRO_PRICE_SOL} SOL", callback_data="pay_sol_pro")],
+            [InlineKeyboardButton(f"\U0001f451 Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite")],
             [_back_main()[0]],
         ]
     else:
@@ -2234,8 +2234,8 @@ async def _cb_dca_bot(query, user, context):
             "Unlock with Pro or Elite:"
         )
         kb = [
-            [InlineKeyboardButton("\U0001f680 Pro \u2014 $19/mo", url=GUMROAD_PRO_URL)],
-            [InlineKeyboardButton("\U0001f451 Elite \u2014 $49/mo", url=GUMROAD_ELITE_URL)],
+            [InlineKeyboardButton(f"\U0001f680 Pro \u2014 {PRO_PRICE_SOL} SOL", callback_data="pay_sol_pro")],
+            [InlineKeyboardButton(f"\U0001f451 Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite")],
             [_back_main()[0]],
         ]
     else:
@@ -2454,9 +2454,16 @@ async def _cb_premium(query, user, context):
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
-        "\U0001f4b0 *Pay with SOL* \u2014 instant activation!\n"
-        "\U0001f4b3 *Pay with card* \u2014 via Gumroad\n"
+        "\U0001f4b0 *Pay with SOL* \u2014 0% fee, instant activation!\n"
     )
+
+    # Only show Gumroad card option if products are configured
+    _gumroad_ready = (
+        GUMROAD_PRO_URL and "gumroad.com/l/" in GUMROAD_PRO_URL
+        and not GUMROAD_PRO_URL.endswith("/l/")
+    )
+    if _gumroad_ready:
+        text += "\U0001f4b3 *Pay with card* \u2014 via Gumroad\n"
 
     kb = []
     if current == "free":
@@ -2466,15 +2473,17 @@ async def _cb_premium(query, user, context):
             InlineKeyboardButton(
                 f"\U0001f451 Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite"),
         ])
-        kb.append([
-            InlineKeyboardButton("\U0001f4b3 Pro $19 (Card)", url=GUMROAD_PRO_URL),
-            InlineKeyboardButton("\U0001f4b3 Elite $49 (Card)", url=GUMROAD_ELITE_URL),
-        ])
+        if _gumroad_ready:
+            kb.append([
+                InlineKeyboardButton("\U0001f4b3 Pro $19 (Card)", url=GUMROAD_PRO_URL),
+                InlineKeyboardButton("\U0001f4b3 Elite $49 (Card)", url=GUMROAD_ELITE_URL),
+            ])
         kb.append([InlineKeyboardButton("\U0001f511 Activate License Key", callback_data="activate_license")])
     elif current == "pro":
         kb.append([InlineKeyboardButton(
             f"\U0001f451 Upgrade Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite")])
-        kb.append([InlineKeyboardButton("\U0001f4b3 Elite $49 (Card)", url=GUMROAD_ELITE_URL)])
+        if _gumroad_ready:
+            kb.append([InlineKeyboardButton("\U0001f4b3 Elite $49 (Card)", url=GUMROAD_ELITE_URL)])
         kb.append([InlineKeyboardButton("\U0001f511 Activate License Key", callback_data="activate_license")])
 
     # Show expiry for premium users
@@ -2532,11 +2541,14 @@ async def _process_sol_payment(query, user, context, tier: str, price_sol: float
             "You need a bot wallet to pay with SOL.\n"
             "Create one first, then fund it.\n"
         )
-        kb = InlineKeyboardMarkup([
+        kb_rows = [
             [InlineKeyboardButton("\U0001f4b0 Create Wallet", callback_data="trade_create")],
-            [InlineKeyboardButton("\U0001f4b3 Pay with Card instead", url=GUMROAD_PRO_URL if tier == "pro" else GUMROAD_ELITE_URL)],
-            [_back_main()[0]],
-        ])
+        ]
+        _gum_url = GUMROAD_PRO_URL if tier == "pro" else GUMROAD_ELITE_URL
+        if _gum_url and "gumroad.com/l/" in _gum_url and not _gum_url.endswith("/l/"):
+            kb_rows.append([InlineKeyboardButton("\U0001f4b3 Pay with Card instead", url=_gum_url)])
+        kb_rows.append([_back_main()[0]])
+        kb = InlineKeyboardMarkup(kb_rows)
         await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
         return
 
@@ -2551,11 +2563,14 @@ async def _process_sol_payment(query, user, context, tier: str, price_sol: float
             f"`{user['wallet_pubkey']}`\n\n"
             f"Then come back and tap Pay again!"
         )
-        kb = InlineKeyboardMarkup([
+        kb_rows = [
             [InlineKeyboardButton("\U0001f504 Check Again", callback_data=f"pay_sol_{tier}")],
-            [InlineKeyboardButton("\U0001f4b3 Pay with Card", url=GUMROAD_PRO_URL if tier == "pro" else GUMROAD_ELITE_URL)],
-            [_back_main()[0]],
-        ])
+        ]
+        _gum_url = GUMROAD_PRO_URL if tier == "pro" else GUMROAD_ELITE_URL
+        if _gum_url and "gumroad.com/l/" in _gum_url and not _gum_url.endswith("/l/"):
+            kb_rows.append([InlineKeyboardButton("\U0001f4b3 Pay with Card", url=_gum_url)])
+        kb_rows.append([_back_main()[0]])
+        kb = InlineKeyboardMarkup(kb_rows)
         await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
         return
 
@@ -2661,11 +2676,14 @@ async def _execute_sol_payment(query, user, context, tier: str, price_sol: float
             f"Your SOL has not been deducted.\n"
             f"Try again or pay with card."
         )
-        kb = InlineKeyboardMarkup([
+        kb_rows = [
             [InlineKeyboardButton(f"\U0001f504 Try Again", callback_data=f"pay_sol_{tier}")],
-            [InlineKeyboardButton("\U0001f4b3 Pay with Card", url=GUMROAD_PRO_URL if tier == "pro" else GUMROAD_ELITE_URL)],
-            [_back_main()[0]],
-        ])
+        ]
+        _gum_url = GUMROAD_PRO_URL if tier == "pro" else GUMROAD_ELITE_URL
+        if _gum_url and "gumroad.com/l/" in _gum_url and not _gum_url.endswith("/l/"):
+            kb_rows.append([InlineKeyboardButton("\U0001f4b3 Pay with Card", url=_gum_url)])
+        kb_rows.append([_back_main()[0]])
+        kb = InlineKeyboardMarkup(kb_rows)
         await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
 
 
