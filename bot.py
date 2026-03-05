@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.1.0 (MEGA BOT + FEE COLLECTION + REFERRALS)
+Version: 3.2.0 (MEGA BOT + FEES + REFERRALS + DISCORD/CHANNEL)
 """
 import logging
 import re
@@ -49,6 +49,10 @@ from wallet import (
 from jupiter import (
     get_quote, execute_swap, calculate_fee,
     get_token_info, search_token, COMMON_TOKENS,
+)
+from notifications import (
+    notify_discord_whale, notify_discord_trade,
+    notify_telegram_channel, notify_channel_trade,
 )
 
 # ══════════════════════════════════════════════
@@ -1054,6 +1058,14 @@ async def _cb_execute_buy(query, user, context, data):
                     await collect_fee(keypair, fee_lamports, FEE_COLLECT_WALLET)
         except Exception as fee_err:
             logger.warning(f"Fee collection failed (non-fatal): {fee_err}")
+
+        # ── Social proof notifications (Discord + Telegram channel) ──
+        try:
+            uname = query.from_user.username or "Anon"
+            await notify_discord_trade(uname, "BUY", f"{sol_amount} SOL", token_name, tx_sig, fee_sol)
+            await notify_channel_trade(context.bot, "BUY", sol_amount, token_name, tx_sig)
+        except Exception:
+            pass
     else:
         text = (
             "\u274c *Swap Failed*\n\n"
@@ -1206,6 +1218,14 @@ async def _cb_execute_sell(query, user, context, data):
                         await collect_fee(keypair, sol_fee_lamports, FEE_COLLECT_WALLET)
         except Exception as fee_err:
             logger.warning(f"Sell fee collection failed (non-fatal): {fee_err}")
+
+        # ── Social proof notifications (Discord + Telegram channel) ──
+        try:
+            uname = query.from_user.username or "Anon"
+            await notify_discord_trade(uname, "SELL", f"{pct_label}", "Token", tx_sig, sol_received * PLATFORM_FEE_PCT / 100)
+            await notify_channel_trade(context.bot, "SELL", sol_received, "Token", tx_sig)
+        except Exception:
+            pass
     else:
         text = (
             "\u274c *Sell Failed*\n\n"
@@ -2218,6 +2238,28 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                 except Exception as e:
                     logger.error(f"Alert send failed [{user_id}]: {e}")
 
+        # ── Cross-platform distribution (Discord + Telegram Channel) ──
+        for alert in new_alerts:
+            try:
+                # Discord webhook
+                await notify_discord_whale(alert, prices)
+            except Exception as e:
+                logger.debug(f"Discord notify error: {e}")
+
+            try:
+                # Telegram public channel
+                channel_text = format_whale_alert(alert, prices)
+                channel_kb = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(
+                        "\U0001f4b0 Trade Now", url="https://t.me/ApexFlashBot",
+                    )],
+                ])
+                await notify_telegram_channel(
+                    context.bot, channel_text, channel_kb,
+                )
+            except Exception as e:
+                logger.debug(f"Telegram channel notify error: {e}")
+
         logger.info(f"Scanner: {len(new_alerts)} new alerts distributed")
 
     except Exception as e:
@@ -2258,7 +2300,7 @@ def main() -> None:
         name="whale_scanner",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.1 starting (Trading + Fees + Referrals)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.2 starting (Trading + Fees + Referrals + Notifications)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")

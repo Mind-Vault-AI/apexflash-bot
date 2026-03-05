@@ -96,6 +96,14 @@ AFFILIATE_LINKS = {
 GUMROAD_PRO_URL = os.getenv("GUMROAD_PRO_URL", "https://apexflash.gumroad.com/l/pro")
 GUMROAD_ELITE_URL = os.getenv("GUMROAD_ELITE_URL", "https://apexflash.gumroad.com/l/elite")
 
+# === Discord Integration ===
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")  # Whale alerts → Discord
+DISCORD_TRADE_WEBHOOK_URL = os.getenv("DISCORD_TRADE_WEBHOOK_URL", "")  # Trade notifications
+
+# === Telegram Channel ===
+# Public channel for whale alerts — bot must be admin of this channel
+ALERT_CHANNEL_ID = os.getenv("ALERT_CHANNEL_ID", "")  # e.g. "@ApexFlashAlerts" or "-100xxxxx"
+
 # === Support & Links ===
 WEBSITE_URL = "https://apexflash.pro"
 SUPPORT_URL = os.getenv("SUPPORT_URL", "https://t.me/ApexFlashSupport")
