@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.7.3 (MEGA BOT + HARDENED BACKUP + 24/7 HEARTBEAT + AUTO-MARKETING)
+Version: 3.7.4 (MEGA BOT + HARDENED BACKUP + 24/7 HEARTBEAT + AUTO-MARKETING + TWITTER)
 """
 import logging
 import re
@@ -45,6 +45,9 @@ from config import (
     TRADING_ENABLED, MAX_TRADE_SOL, MIN_SOL_RESERVE,
     MAX_SLIPPAGE_BPS, DEFAULT_SLIPPAGE_BPS,
     PRICE_IMPACT_WARN_PCT, MAX_DAILY_TRADES,
+    TWITTER_API_KEY, TWITTER_API_SECRET,
+    TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET,
+    TWITTER_ENABLED,
 )
 from chains import fetch_eth_whale_transfers, fetch_sol_whale_transfers, get_crypto_prices
 from wallet import (
@@ -63,6 +66,7 @@ from notifications import (
 from gumroad import verify_license, get_subscriber_count
 from persistence import save_users, load_users, save_stats, load_stats, export_backup, import_backup
 from marketing import post_to_channel as marketing_post
+from twitter_poster import post_tweet as twitter_post
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -3524,7 +3528,7 @@ async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             f"Users: {len(users)} | Wallets: {wallets}\n"
             f"Trades today: {platform_stats.get('trades_today', 0)} | "
             f"Total: {platform_stats.get('trades_total', 0)}\n"
-            f"v3.7.3"
+            f"v3.7.4"
         )
         for admin_id in ADMIN_IDS:
             try:
@@ -3538,15 +3542,29 @@ async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def marketing_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Post marketing content to Telegram channel 3x daily (08:00, 14:00, 20:00 UTC)."""
+    """Post marketing content to Telegram + Twitter 3x daily (08:00, 14:00, 20:00 UTC)."""
+    # Telegram channel post
     try:
         if ALERT_CHANNEL_ID:
             success = await marketing_post(context.bot, ALERT_CHANNEL_ID)
             if success:
                 platform_stats["marketing_posts"] = platform_stats.get("marketing_posts", 0) + 1
-                logger.info(f"Marketing post #{platform_stats['marketing_posts']} sent")
+                logger.info(f"Marketing post #{platform_stats['marketing_posts']} sent (Telegram)")
     except Exception as e:
-        logger.error(f"Marketing job error: {e}")
+        logger.error(f"Marketing job (Telegram) error: {e}")
+
+    # Twitter/X post
+    try:
+        if TWITTER_ENABLED and TWITTER_API_KEY:
+            tw_ok = await twitter_post(
+                TWITTER_API_KEY, TWITTER_API_SECRET,
+                TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET,
+            )
+            if tw_ok:
+                platform_stats["twitter_posts"] = platform_stats.get("twitter_posts", 0) + 1
+                logger.info(f"Twitter post #{platform_stats['twitter_posts']} sent")
+    except Exception as e:
+        logger.error(f"Marketing job (Twitter) error: {e}")
 
 
 # ══════════════════════════════════════════════
@@ -3666,13 +3684,13 @@ def main() -> None:
         heartbeat_job, interval=3600, first=120, name="heartbeat",
     )
 
-    # Marketing auto-poster — 3x daily to Telegram channel (08:00, 14:00, 20:00 UTC)
+    # Marketing auto-poster — 3x daily to Telegram + Twitter (08:00, 14:00, 20:00 UTC)
     for post_time in [dt_time(8, 0), dt_time(14, 0), dt_time(20, 0)]:
         app.job_queue.run_daily(
             marketing_job, time=post_time, name=f"marketing_{post_time.hour:02d}",
         )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.7.3 starting...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.7.4 starting (Telegram + Twitter)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")

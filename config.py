@@ -212,6 +212,14 @@ GUMROAD_ELITE_PRODUCT_ID = os.getenv("GUMROAD_ELITE_PRODUCT_ID", "")
 PRO_PRICE_SOL = float(os.getenv("PRO_PRICE_SOL", "0.1"))    # ~$18 at SOL=$180
 ELITE_PRICE_SOL = float(os.getenv("ELITE_PRICE_SOL", "0.27"))  # ~$49 at SOL=$180
 
+# === Twitter/X Auto-Posting ===
+# Get keys from: https://developer.x.com → Your App → Keys and tokens
+TWITTER_API_KEY = os.getenv("TWITTER_API_KEY", "")
+TWITTER_API_SECRET = os.getenv("TWITTER_API_SECRET", "")
+TWITTER_ACCESS_TOKEN = os.getenv("TWITTER_ACCESS_TOKEN", "")
+TWITTER_ACCESS_SECRET = os.getenv("TWITTER_ACCESS_SECRET", "")
+TWITTER_ENABLED = os.getenv("TWITTER_ENABLED", "true").lower() == "true"
+
 # === Discord Integration ===
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")  # Whale alerts → Discord
 DISCORD_TRADE_WEBHOOK_URL = os.getenv("DISCORD_TRADE_WEBHOOK_URL", "")  # Trade notifications
