@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.7.0 (MEGA BOT + PERSISTENCE + AUTO-BACKUP)
+Version: 3.7.1 (MEGA BOT + FIX SELL DOUBLE-FEE BUG)
 """
 import logging
 import re
@@ -1932,14 +1932,14 @@ async def _cb_execute_sell(query, user, context, data):
         parse_mode="Markdown",
     )
 
-    # Apply fee
-    swap_amount, fee_amount = calculate_fee(sell_raw)
+    # Sell: swap ALL tokens → SOL, then collect fee from SOL output
+    # (No upfront token deduction — fee is taken from SOL received)
 
     # Get quote (token → SOL)
     quote = await get_quote(
         input_mint=sell_mint,
         output_mint=SOL_MINT,
-        amount_raw=swap_amount,
+        amount_raw=sell_raw,
         slippage_bps=DEFAULT_SLIPPAGE_BPS,
     )
 
@@ -2007,29 +2007,21 @@ async def _cb_execute_sell(query, user, context, data):
             sol_received, sell_usd_value, tx_sig,
         )
 
-        # ── Fee collection (best-effort) ──
+        # ── Fee collection from SOL received (best-effort) ──
         try:
-            if FEE_COLLECT_WALLET and fee_amount > 5000:
+            sol_fee_lamports = int(out_lamports * PLATFORM_FEE_PCT / 100)
+            if FEE_COLLECT_WALLET and sol_fee_lamports > 5000:
                 referrer_id = user.get("referred_by", 0)
                 if referrer_id and referrer_id in users:
                     referrer = users[referrer_id]
-                    referral_share = int(fee_amount * REFERRAL_FEE_SHARE_PCT / 100)
-                    platform_share = fee_amount - referral_share
-                    # Note: sell fee is in token units, not SOL — for now we collect
-                    # the SOL received as fee after it arrives. Simplified v1:
-                    # we collect from the SOL received after swap
-                    sol_fee_lamports = int(out_lamports * PLATFORM_FEE_PCT / 100)
-                    if sol_fee_lamports > 5000:
-                        ref_share_sol = int(sol_fee_lamports * REFERRAL_FEE_SHARE_PCT / 100)
-                        platform_sol = sol_fee_lamports - ref_share_sol
-                        await collect_fee(keypair, platform_sol, FEE_COLLECT_WALLET)
-                        if referrer.get("wallet_pubkey") and ref_share_sol > 5000:
-                            await transfer_sol(keypair, referrer["wallet_pubkey"], ref_share_sol)
-                            referrer["referral_earnings"] = referrer.get("referral_earnings", 0) + ref_share_sol / 1e9
+                    ref_share_sol = int(sol_fee_lamports * REFERRAL_FEE_SHARE_PCT / 100)
+                    platform_sol = sol_fee_lamports - ref_share_sol
+                    await collect_fee(keypair, platform_sol, FEE_COLLECT_WALLET)
+                    if referrer.get("wallet_pubkey") and ref_share_sol > 5000:
+                        await transfer_sol(keypair, referrer["wallet_pubkey"], ref_share_sol)
+                        referrer["referral_earnings"] = referrer.get("referral_earnings", 0) + ref_share_sol / 1e9
                 else:
-                    sol_fee_lamports = int(out_lamports * PLATFORM_FEE_PCT / 100)
-                    if sol_fee_lamports > 5000:
-                        await collect_fee(keypair, sol_fee_lamports, FEE_COLLECT_WALLET)
+                    await collect_fee(keypair, sol_fee_lamports, FEE_COLLECT_WALLET)
         except Exception as fee_err:
             logger.warning(f"Sell fee collection failed (non-fatal): {fee_err}")
 
