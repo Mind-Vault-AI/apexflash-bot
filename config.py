@@ -46,13 +46,14 @@ REFERRAL_FEE_SHARE_PCT = float(os.getenv("REFERRAL_FEE_SHARE_PCT", "25.0"))  # 2
 # === OpenAI (for AI signals - Elite tier) ===
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-# === Affiliate Links ===
+# === Affiliate Links — Exchanges ===
 AFFILIATE_LINKS = {
     "bitunix": {
         "name": "Bitunix",
         "url": f"https://www.bitunix.com/register?vipCode={os.getenv('BITUNIX_REF', 'xc6jzk')}",
         "commission": "50%",
         "featured": True,
+        "category": "exchange",
         "description": "Low fees, high leverage, fast execution",
     },
     "mexc": {
@@ -60,6 +61,7 @@ AFFILIATE_LINKS = {
         "url": f"https://www.mexc.com/register?inviteCode={os.getenv('MEXC_REF', 'BPM0e8Rm')}",
         "commission": "up to 70%",
         "featured": True,
+        "category": "exchange",
         "description": "70% fee rebate, 2000+ trading pairs",
     },
     "blofin": {
@@ -67,34 +69,135 @@ AFFILIATE_LINKS = {
         "url": f"https://www.blofin.com/register?referral_code={os.getenv('BLOFIN_REF', '')}",
         "commission": "50%",
         "featured": True,
+        "category": "exchange",
         "description": "Copy trading built-in, deep liquidity",
     },
     "binance": {
         "name": "Binance",
-        "url": "https://accounts.binance.com/register?ref=YOUR_REF",
+        "url": f"https://accounts.binance.com/register?ref={os.getenv('BINANCE_REF', 'YOUR_REF')}",
         "commission": "up to 50%",
         "featured": False,
+        "category": "exchange",
         "description": "World's largest exchange",
     },
     "bybit": {
         "name": "Bybit",
-        "url": "https://www.bybit.com/invite?ref=YOUR_REF",
+        "url": f"https://www.bybit.com/invite?ref={os.getenv('BYBIT_REF', 'YOUR_REF')}",
         "commission": "up to 50%",
         "featured": False,
+        "category": "exchange",
         "description": "Top derivatives platform",
     },
     "okx": {
         "name": "OKX",
-        "url": "https://www.okx.com/join/YOUR_REF",
+        "url": f"https://www.okx.com/join/{os.getenv('OKX_REF', 'YOUR_REF')}",
         "commission": "up to 50%",
         "featured": False,
+        "category": "exchange",
         "description": "Web3 wallet + exchange",
+    },
+    "bitget": {
+        "name": "Bitget",
+        "url": f"https://www.bitget.com/referral/register?clacCode={os.getenv('BITGET_REF', '')}",
+        "commission": "up to 50%",
+        "featured": False,
+        "category": "exchange",
+        "description": "Top copy trading exchange",
+    },
+    "gate": {
+        "name": "Gate.io",
+        "url": f"https://www.gate.io/signup/{os.getenv('GATE_REF', '')}",
+        "commission": "up to 40%",
+        "featured": False,
+        "category": "exchange",
+        "description": "1400+ trading pairs, margin trading",
+    },
+    "kucoin": {
+        "name": "KuCoin",
+        "url": f"https://www.kucoin.com/r/{os.getenv('KUCOIN_REF', '')}",
+        "commission": "up to 40%",
+        "featured": False,
+        "category": "exchange",
+        "description": "Gem hunter exchange, low-cap coins",
+    },
+    "bingx": {
+        "name": "BingX",
+        "url": f"https://bingx.com/invite/{os.getenv('BINGX_REF', '')}",
+        "commission": "up to 50%",
+        "featured": False,
+        "category": "exchange",
+        "description": "Copy trading + futures, beginner friendly",
+    },
+    "phemex": {
+        "name": "Phemex",
+        "url": f"https://phemex.com/register?referralCode={os.getenv('PHEMEX_REF', '')}",
+        "commission": "up to 45%",
+        "featured": False,
+        "category": "exchange",
+        "description": "Zero-fee spot trading, fast engine",
     },
 }
 
-# === Gumroad Premium Links ===
+# === Affiliate Links — Crypto Tools ===
+TOOL_AFFILIATE_LINKS = {
+    "tradingview": {
+        "name": "TradingView",
+        "url": f"https://www.tradingview.com/gopro/?share_your_love={os.getenv('TV_REF', 'apexflash')}",
+        "commission": "$15-30/signup",
+        "featured": True,
+        "description": "Charts, alerts & analysis",
+    },
+    "ledger": {
+        "name": "Ledger",
+        "url": f"https://shop.ledger.com/?r={os.getenv('LEDGER_REF', '')}",
+        "commission": "10%",
+        "featured": True,
+        "description": "Hardware wallet, keep crypto safe",
+    },
+    "trezor": {
+        "name": "Trezor",
+        "url": f"https://trezor.io/?offer_id=87&aff_id={os.getenv('TREZOR_REF', '')}",
+        "commission": "12-15%",
+        "featured": False,
+        "description": "Open-source hardware wallet",
+    },
+    "dextools": {
+        "name": "DEXTools",
+        "url": "https://www.dextools.io/?ref=apexflash",
+        "commission": "referral",
+        "featured": False,
+        "description": "DEX analytics & token scanner",
+    },
+    "coinglass": {
+        "name": "Coinglass",
+        "url": f"https://www.coinglass.com/pricing?ref={os.getenv('COINGLASS_REF', '')}",
+        "commission": "20%",
+        "featured": False,
+        "description": "Liquidation data & derivatives analytics",
+    },
+    "3commas": {
+        "name": "3Commas",
+        "url": f"https://3commas.io/?c={os.getenv('THREECOMMAS_REF', '')}",
+        "commission": "25%",
+        "featured": False,
+        "description": "Trading bots & portfolio management",
+    },
+    "nordvpn": {
+        "name": "NordVPN",
+        "url": f"https://nordvpn.com/risk-free/?ref={os.getenv('NORD_REF', '')}",
+        "commission": "40-100%",
+        "featured": True,
+        "description": "Secure your trading connection",
+    },
+}
+
+# === Premium Payment ===
+# Gumroad (card payments, backup)
 GUMROAD_PRO_URL = os.getenv("GUMROAD_PRO_URL", "https://apexflash.gumroad.com/l/pro")
 GUMROAD_ELITE_URL = os.getenv("GUMROAD_ELITE_URL", "https://apexflash.gumroad.com/l/elite")
+# In-bot SOL payment (0% processing fee — preferred!)
+PRO_PRICE_SOL = float(os.getenv("PRO_PRICE_SOL", "0.1"))    # ~$18 at SOL=$180
+ELITE_PRICE_SOL = float(os.getenv("ELITE_PRICE_SOL", "0.27"))  # ~$49 at SOL=$180
 
 # === Discord Integration ===
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")  # Whale alerts → Discord

@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.2.0 (MEGA BOT + FEES + REFERRALS + DISCORD/CHANNEL)
+Version: 3.3.0 (MEGA BOT + EXPANDED AFFILIATES + SOL PAYMENTS)
 """
 import logging
 import re
@@ -33,8 +33,9 @@ from telegram.ext import (
 )
 
 from config import (
-    BOT_TOKEN, AFFILIATE_LINKS, ADMIN_IDS,
+    BOT_TOKEN, AFFILIATE_LINKS, TOOL_AFFILIATE_LINKS, ADMIN_IDS,
     GUMROAD_PRO_URL, GUMROAD_ELITE_URL, TIERS,
+    PRO_PRICE_SOL, ELITE_PRICE_SOL,
     SCAN_INTERVAL, WEBSITE_URL, SUPPORT_URL,
     MIZAR_REFERRAL_URL, PLATFORM_FEE_PCT,
     ETH_WHALE_WALLETS, SOL_WHALE_WALLETS,
@@ -135,7 +136,7 @@ def main_menu_kb(user_id: int = 0) -> InlineKeyboardMarkup:
             InlineKeyboardButton("\U0001f4c8 Copy Trade", callback_data="copy_trade"),
             InlineKeyboardButton("\U0001f916 DCA Bot", callback_data="dca_bot"),
         ],
-        [InlineKeyboardButton("\U0001f4b1 Exchanges", callback_data="exchanges")],
+        [InlineKeyboardButton("\U0001f4b1 Partners & Tools", callback_data="exchanges")],
         [
             InlineKeyboardButton("\U0001f91d Referral", callback_data="referral"),
             InlineKeyboardButton("\U0001f48e Premium", callback_data="premium"),
@@ -194,7 +195,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "\U0001f4b0 *Trade* \u2014 Swap Solana tokens instantly\n"
         "\U0001f4c8 *Copy Trade* \u2014 Follow top traders\n"
         "\U0001f916 *DCA Bot* \u2014 Automate your strategy\n"
-        "\U0001f4b1 *Exchange Deals* \u2014 Up to 70% fee rebates\n"
+        "\U0001f4b1 *Partners & Tools* \u2014 Exchanges + crypto tools\n"
         "\U0001f91d *Referral* \u2014 Earn 25% of friends' fees\n"
         "\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
@@ -311,11 +312,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "copy_trade":    _cb_copy_trade,
         "dca_bot":       _cb_dca_bot,
         "exchanges":     _cb_exchanges,
+        "aff_exchanges": _cb_aff_exchanges,
+        "aff_tools":     _cb_aff_tools,
         # Referral
         "referral":      _cb_referral,
         "referral_link": _cb_referral_link,
         "referral_stats": _cb_referral_stats,
         "premium":       _cb_premium,
+        "pay_sol_pro":   _cb_pay_sol_pro,
+        "pay_sol_elite": _cb_pay_sol_elite,
+        "confirm_pay_pro":   _cb_confirm_pay_pro,
+        "confirm_pay_elite": _cb_confirm_pay_elite,
         "settings":      _cb_settings,
         "help":          _cb_help,
         "help_faq":      _cb_help_faq,
@@ -1465,17 +1472,53 @@ async def _cb_dca_bot(query, user, context):
 # ══════════════════════════════════════════════
 
 async def _cb_exchanges(query, user, context):
-    """Show exchange affiliate hub."""
+    """Show partner hub with exchange + tools categories."""
     text = (
-        "\U0001f4b1 *Partner Exchanges*\n"
+        "\U0001f4b1 *Partner Hub*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
-        "Trade with the lowest fees using\n"
-        "our exclusive referral links:\n\n"
+        "Trade with the lowest fees & access\n"
+        "top crypto tools with our deals:\n"
     )
 
-    # Featured exchanges
+    kb = [
+        [
+            InlineKeyboardButton("\U0001f3e6 Exchanges", callback_data="aff_exchanges"),
+            InlineKeyboardButton("\U0001f6e0 Crypto Tools", callback_data="aff_tools"),
+        ],
+        [_back_main()[0]],
+    ]
+
+    # Show featured exchanges preview
+    text += "\n\U0001f525 *Top Exchange Deals:*\n"
+    for key, aff in AFFILIATE_LINKS.items():
+        if aff.get("featured"):
+            text += f"\u2022 *{aff['name']}* \u2014 {aff['commission']} rebate\n"
+
+    text += "\n\U0001f6e0 *Top Tools:*\n"
+    for key, aff in TOOL_AFFILIATE_LINKS.items():
+        if aff.get("featured"):
+            text += f"\u2022 *{aff['name']}* \u2014 {aff['commission']}\n"
+
+    text += "\n\U0001f4a1 _Tap a category for all partner links!_"
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown", disable_web_page_preview=True,
+    )
+
+
+async def _cb_aff_exchanges(query, user, context):
+    """Show all exchange affiliate links."""
+    text = (
+        "\U0001f3e6 *Partner Exchanges*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+    )
+
+    # Featured
     for key, aff in AFFILIATE_LINKS.items():
         if aff.get("featured"):
             text += (
@@ -1485,32 +1528,84 @@ async def _cb_exchanges(query, user, context):
 
     text += "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
 
-    # Other exchanges
+    # Others
     for key, aff in AFFILIATE_LINKS.items():
         if not aff.get("featured"):
             text += f"\u2022 *{aff['name']}* \u2014 {aff['commission']} rebate\n"
 
-    text += "\n\U0001f4a1 _Sign up via our links to support ApexFlash!_"
+    text += "\n\U0001f4a1 _Sign up via our links for fee rebates!_"
 
-    # Buttons: featured
+    # Buttons
     featured_btns = [
         InlineKeyboardButton(f"\U0001f525 {v['name']}", url=v["url"])
-        for k, v in AFFILIATE_LINKS.items() if v.get("featured")
+        for k, v in AFFILIATE_LINKS.items() if v.get("featured") and v.get("url", "").find("YOUR_REF") == -1
     ]
-    # Other
     other_btns = [
         InlineKeyboardButton(v["name"], url=v["url"])
-        for k, v in AFFILIATE_LINKS.items() if not v.get("featured")
+        for k, v in AFFILIATE_LINKS.items()
+        if not v.get("featured") and v.get("url", "").find("YOUR_REF") == -1 and v.get("url", "").strip()
     ]
 
     kb = []
-    # 2 per row for featured
     for i in range(0, len(featured_btns), 2):
         kb.append(featured_btns[i:i + 2])
-    # 3 per row for others
     if other_btns:
         for i in range(0, len(other_btns), 3):
             kb.append(other_btns[i:i + 3])
+    kb.append([InlineKeyboardButton("\u25c0 Partners", callback_data="exchanges")])
+    kb.append([_back_main()[0]])
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown", disable_web_page_preview=True,
+    )
+
+
+async def _cb_aff_tools(query, user, context):
+    """Show crypto tools affiliate links."""
+    text = (
+        "\U0001f6e0 *Crypto Tools & Security*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+    )
+
+    # Featured tools
+    for key, aff in TOOL_AFFILIATE_LINKS.items():
+        if aff.get("featured"):
+            text += (
+                f"\U0001f525 *{aff['name']}* \u2014 {aff['commission']}\n"
+                f"   _{aff.get('description', '')}_\n\n"
+            )
+
+    text += "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+
+    # Others
+    for key, aff in TOOL_AFFILIATE_LINKS.items():
+        if not aff.get("featured"):
+            text += f"\u2022 *{aff['name']}* \u2014 {aff['commission']}\n"
+
+    text += "\n\U0001f512 _Protect your gains & level up your trading!_"
+
+    # Buttons
+    featured_btns = [
+        InlineKeyboardButton(f"\U0001f525 {v['name']}", url=v["url"])
+        for k, v in TOOL_AFFILIATE_LINKS.items()
+        if v.get("featured") and v.get("url", "").strip()
+    ]
+    other_btns = [
+        InlineKeyboardButton(v["name"], url=v["url"])
+        for k, v in TOOL_AFFILIATE_LINKS.items()
+        if not v.get("featured") and v.get("url", "").strip()
+    ]
+
+    kb = []
+    for i in range(0, len(featured_btns), 2):
+        kb.append(featured_btns[i:i + 2])
+    if other_btns:
+        for i in range(0, len(other_btns), 3):
+            kb.append(other_btns[i:i + 3])
+    kb.append([InlineKeyboardButton("\u25c0 Partners", callback_data="exchanges")])
     kb.append([_back_main()[0]])
 
     await query.edit_message_text(
@@ -1524,7 +1619,7 @@ async def _cb_exchanges(query, user, context):
 # ══════════════════════════════════════════════
 
 async def _cb_premium(query, user, context):
-    """Show premium tiers with upsell."""
+    """Show premium tiers with SOL payment + Gumroad backup."""
     current = user.get("tier", "free")
     tier_info = TIERS[current]
 
@@ -1556,21 +1651,188 @@ async def _cb_premium(query, user, context):
         "\u2022 1-on-1 onboarding call\n"
         "\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "\U0001f4b0 *Pay with SOL* \u2014 instant activation!\n"
+        "\U0001f4b3 *Pay with card* \u2014 via Gumroad\n"
     )
 
     kb = []
     if current == "free":
-        kb.append([InlineKeyboardButton("\U0001f680 Get Pro \u2014 $19/mo", url=GUMROAD_PRO_URL)])
-        kb.append([InlineKeyboardButton("\U0001f451 Get Elite \u2014 $49/mo", url=GUMROAD_ELITE_URL)])
+        kb.append([
+            InlineKeyboardButton(
+                f"\U0001f680 Pro \u2014 {PRO_PRICE_SOL} SOL", callback_data="pay_sol_pro"),
+            InlineKeyboardButton(
+                f"\U0001f451 Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite"),
+        ])
+        kb.append([InlineKeyboardButton("\U0001f4b3 Pro $19 (Card)", url=GUMROAD_PRO_URL)])
+        kb.append([InlineKeyboardButton("\U0001f4b3 Elite $49 (Card)", url=GUMROAD_ELITE_URL)])
     elif current == "pro":
-        kb.append([InlineKeyboardButton("\U0001f451 Upgrade to Elite", url=GUMROAD_ELITE_URL)])
+        kb.append([InlineKeyboardButton(
+            f"\U0001f451 Upgrade Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite")])
+        kb.append([InlineKeyboardButton("\U0001f4b3 Elite $49 (Card)", url=GUMROAD_ELITE_URL)])
     kb.append([_back_main()[0]])
 
     await query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(kb),
         parse_mode="Markdown", disable_web_page_preview=True,
     )
+
+
+async def _cb_pay_sol_pro(query, user, context):
+    """Handle SOL payment for Pro tier."""
+    await _process_sol_payment(query, user, context, "pro", PRO_PRICE_SOL)
+
+
+async def _cb_pay_sol_elite(query, user, context):
+    """Handle SOL payment for Elite tier."""
+    await _process_sol_payment(query, user, context, "elite", ELITE_PRICE_SOL)
+
+
+async def _process_sol_payment(query, user, context, tier: str, price_sol: float):
+    """Process SOL payment from user's bot wallet to fee wallet."""
+    # Check wallet exists
+    if not user.get("wallet_pubkey"):
+        text = (
+            "\u26a0\ufe0f *Wallet Required*\n\n"
+            "You need a bot wallet to pay with SOL.\n"
+            "Create one first, then fund it.\n"
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("\U0001f4b0 Create Wallet", callback_data="trade_create")],
+            [InlineKeyboardButton("\U0001f4b3 Pay with Card instead", url=GUMROAD_PRO_URL if tier == "pro" else GUMROAD_ELITE_URL)],
+            [_back_main()[0]],
+        ])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    # Check balance
+    balance = await get_sol_balance(user["wallet_pubkey"])
+    if balance is None or balance < price_sol:
+        text = (
+            f"\u26a0\ufe0f *Insufficient Balance*\n\n"
+            f"Required: *{price_sol} SOL*\n"
+            f"Your balance: *{balance:.4f} SOL*\n\n"
+            f"Deposit SOL to your bot wallet:\n"
+            f"`{user['wallet_pubkey']}`\n\n"
+            f"Then come back and tap Pay again!"
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("\U0001f504 Check Again", callback_data=f"pay_sol_{tier}")],
+            [InlineKeyboardButton("\U0001f4b3 Pay with Card", url=GUMROAD_PRO_URL if tier == "pro" else GUMROAD_ELITE_URL)],
+            [_back_main()[0]],
+        ])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    # Confirm payment
+    tier_info = TIERS[tier]
+    text = (
+        f"\U0001f4b0 *Confirm Payment*\n"
+        f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        f"Plan: *{tier_info['emoji']} {tier_info['name']}*\n"
+        f"Price: *{price_sol} SOL*\n"
+        f"Duration: *30 days*\n\n"
+        f"Your balance: *{balance:.4f} SOL*\n"
+        f"After payment: *{balance - price_sol:.4f} SOL*\n\n"
+        f"Tap \u2705 to confirm payment."
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"\u2705 Pay {price_sol} SOL", callback_data=f"confirm_pay_{tier}")],
+        [InlineKeyboardButton("\u274c Cancel", callback_data="premium")],
+    ])
+    await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
+
+
+async def _cb_confirm_pay_pro(query, user, context):
+    """Execute Pro payment."""
+    await _execute_sol_payment(query, user, context, "pro", PRO_PRICE_SOL)
+
+
+async def _cb_confirm_pay_elite(query, user, context):
+    """Execute Elite payment."""
+    await _execute_sol_payment(query, user, context, "elite", ELITE_PRICE_SOL)
+
+
+async def _execute_sol_payment(query, user, context, tier: str, price_sol: float):
+    """Execute the SOL transfer and activate tier."""
+    await query.edit_message_text(
+        "\u23f3 Processing payment...", parse_mode="Markdown",
+    )
+
+    try:
+        keypair = load_keypair(user["wallet_secret_enc"])
+        if not keypair:
+            raise ValueError("Could not load wallet keypair")
+
+        lamports = int(price_sol * 1_000_000_000)
+
+        # Transfer SOL to fee collection wallet
+        if not FEE_COLLECT_WALLET:
+            raise ValueError("Fee wallet not configured")
+
+        success = await collect_fee(keypair, lamports, FEE_COLLECT_WALLET)
+        if not success:
+            raise ValueError("Transaction failed")
+
+        # Activate premium tier
+        from datetime import timedelta
+        user["tier"] = tier
+        user["premium_expires"] = (
+            datetime.now(timezone.utc) + timedelta(days=30)
+        ).isoformat()
+
+        tier_info = TIERS[tier]
+        text = (
+            f"\u2705 *Payment Successful!*\n"
+            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+            f"Plan: *{tier_info['emoji']} {tier_info['name']}*\n"
+            f"Paid: *{price_sol} SOL*\n"
+            f"Active for: *30 days*\n\n"
+            f"\U0001f389 Welcome to {tier_info['name']}! Enjoy:\n"
+        )
+        if tier == "pro":
+            text += (
+                "\u2022 ETH + SOL instant alerts\n"
+                "\u2022 20 tracked wallets\n"
+                "\u2022 Copy Trading & DCA Bot\n"
+            )
+        else:
+            text += (
+                "\u2022 All chains (ETH, SOL, BSC, ARB)\n"
+                "\u2022 100 tracked wallets\n"
+                "\u2022 AI-powered signals\n"
+                "\u2022 Copy Trading & DCA Bot\n"
+            )
+
+        logger.info(f"Premium payment: user {query.from_user.id} → {tier} ({price_sol} SOL)")
+
+        kb = InlineKeyboardMarkup([[_back_main()[0]]])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
+
+        # Social proof
+        try:
+            uname = query.from_user.username or "Anon"
+            await notify_discord_trade(uname, "UPGRADE", f"{price_sol} SOL", f"{tier_info['name']} Plan", "", price_sol)
+        except Exception:
+            pass
+
+    except Exception as e:
+        logger.error(f"Premium payment error: {e}")
+        text = (
+            f"\u274c *Payment Failed*\n\n"
+            f"Error: {str(e)[:100]}\n\n"
+            f"Your SOL has not been deducted.\n"
+            f"Try again or pay with card."
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"\U0001f504 Try Again", callback_data=f"pay_sol_{tier}")],
+            [InlineKeyboardButton("\U0001f4b3 Pay with Card", url=GUMROAD_PRO_URL if tier == "pro" else GUMROAD_ELITE_URL)],
+            [_back_main()[0]],
+        ])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
 
 
 # ══════════════════════════════════════════════
@@ -2300,7 +2562,7 @@ def main() -> None:
         name="whale_scanner",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.2 starting (Trading + Fees + Referrals + Notifications)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.3 starting...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
