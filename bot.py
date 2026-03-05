@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.7.1 (MEGA BOT + FIX SELL DOUBLE-FEE BUG)
+Version: 3.7.2 (MEGA BOT + HARDENED BACKUP + 24/7 HEARTBEAT)
 """
 import logging
 import re
@@ -1073,6 +1073,14 @@ async def _cb_trade_create_wallet(query, user, context):
             parse_mode="Markdown",
         )
         logger.info(f"Wallet created for user {query.from_user.id}: {wallet_data['pubkey']}")
+        # CRITICAL: Instant backup — wallet = money, can't lose this
+        try:
+            await _send_backup_to_admin(
+                context.bot,
+                f"\U0001f510 WALLET CREATED — instant backup\nUser: {query.from_user.id}\nPubkey: {wallet_data['pubkey'][:20]}...\nTotal wallets: {sum(1 for u in users.values() if u.get('wallet_pubkey'))}",
+            )
+        except Exception:
+            pass
     except Exception as e:
         logger.error(f"Wallet creation error: {e}")
         await query.edit_message_text(
@@ -1827,6 +1835,15 @@ async def _cb_execute_buy(query, user, context, data):
         ]
         logger.info(f"TRADE OK: user={query.from_user.id} buy={sol_amount}SOL token={target_mint[:12]} tx={tx_sig}")
 
+        # CRITICAL: Instant backup after trade (wallet balances changed)
+        try:
+            await _send_backup_to_admin(
+                context.bot,
+                f"\U0001f4b5 BUY trade backup | {sol_amount} SOL | user {query.from_user.id} | tx: {tx_sig[:16]}...",
+            )
+        except Exception:
+            pass
+
         # ── Record trade for PnL + leaderboard ──
         _record_trade(
             query.from_user.id, user, "BUY", token_name, target_mint,
@@ -1992,6 +2009,15 @@ async def _cb_execute_sell(query, user, context, data):
             [_back_main()[0]],
         ]
         logger.info(f"SELL OK: user={query.from_user.id} pct={pct_label} tx={tx_sig}")
+
+        # CRITICAL: Instant backup after trade (wallet balances changed)
+        try:
+            await _send_backup_to_admin(
+                context.bot,
+                f"\U0001f4b8 SELL trade backup | {pct_label} | user {query.from_user.id} | tx: {tx_sig[:16]}...",
+            )
+        except Exception:
+            pass
 
         # ── Record trade for PnL + leaderboard ──
         prices = await get_crypto_prices()
@@ -3452,8 +3478,8 @@ async def auto_save_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Auto-save error: {e}")
 
 
-async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send backup to admin via Telegram every 6 hours. Deploy resilience."""
+async def _send_backup_to_admin(bot, caption: str = "") -> None:
+    """Send backup file to all admins. Used by auto-backup and critical events."""
     if not ADMIN_IDS or not users:
         return
     try:
@@ -3461,19 +3487,53 @@ async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         backup_json = export_backup(users, platform_stats)
         bio = io.BytesIO(backup_json.encode())
         bio.name = f"apexflash_backup_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.json"
+        default_caption = f"\U0001f4be Backup | {len(users)} users | {platform_stats.get('trades_total', 0)} trades"
         for admin_id in ADMIN_IDS:
             try:
-                await context.bot.send_document(
+                await bot.send_document(
                     chat_id=admin_id,
                     document=bio,
-                    caption=f"\U0001f4be Auto-backup | {len(users)} users | {platform_stats.get('trades_total', 0)} trades",
+                    caption=caption or default_caption,
                 )
                 bio.seek(0)
             except Exception:
                 pass
-        logger.info(f"Auto-backup sent to {len(ADMIN_IDS)} admin(s)")
     except Exception as e:
-        logger.error(f"Auto-backup error: {e}")
+        logger.error(f"Backup send error: {e}")
+
+
+async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send backup to admin via Telegram every 2 hours. Deploy resilience."""
+    await _send_backup_to_admin(context.bot, f"\U0001f4be Auto-backup (2h) | {len(users)} users | {platform_stats.get('trades_total', 0)} trades")
+    logger.info(f"Auto-backup sent to {len(ADMIN_IDS)} admin(s)")
+
+
+async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Hourly heartbeat — admin knows the bot is alive 24/7."""
+    if not ADMIN_IDS:
+        return
+    try:
+        uptime = datetime.now(timezone.utc) - bot_start_time
+        hours = int(uptime.total_seconds() // 3600)
+        mins = int((uptime.total_seconds() % 3600) // 60)
+        wallets = sum(1 for u in users.values() if u.get("wallet_pubkey"))
+        msg = (
+            f"\U0001f49a *Heartbeat OK*\n"
+            f"Uptime: {hours}h {mins}m\n"
+            f"Users: {len(users)} | Wallets: {wallets}\n"
+            f"Trades today: {platform_stats.get('trades_today', 0)} | "
+            f"Total: {platform_stats.get('trades_total', 0)}\n"
+            f"v3.7.2"
+        )
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id, text=msg, parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error(f"Heartbeat error: {e}")
 
 
 # ══════════════════════════════════════════════
@@ -3583,12 +3643,17 @@ def main() -> None:
         auto_save_job, interval=60, first=60, name="auto_save",
     )
 
-    # Auto-backup to admin every 6 hours (deploy resilience)
+    # Auto-backup to admin every 2 hours (deploy resilience — Render has no persistent disk)
     app.job_queue.run_repeating(
-        auto_backup_job, interval=6 * 3600, first=300, name="auto_backup",
+        auto_backup_job, interval=2 * 3600, first=300, name="auto_backup",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.7 starting...")
+    # Heartbeat monitor — hourly ping to admin (24/7 uptime awareness)
+    app.job_queue.run_repeating(
+        heartbeat_job, interval=3600, first=120, name="heartbeat",
+    )
+
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.7.2 starting...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
