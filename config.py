@@ -25,6 +25,17 @@ MIZAR_API_KEY = os.getenv("MIZAR_API_KEY", "")
 MIZAR_BASE_URL = "https://api.mizar.com/api/v1"
 MIZAR_REFERRAL_URL = os.getenv("MIZAR_REFERRAL_URL", "https://mizar.com/?ref=apexflash")
 
+# === Jupiter DEX (Solana Swaps) ===
+JUPITER_API_KEY = os.getenv("JUPITER_API_KEY", "")
+JUPITER_QUOTE_URL = "https://api.jup.ag/swap/v1/quote"
+JUPITER_SWAP_URL = "https://api.jup.ag/swap/v1/swap"
+HELIUS_RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
+
+# === Trading Config ===
+PLATFORM_FEE_PCT = float(os.getenv("PLATFORM_FEE_PCT", "1.0"))  # 1% per trade
+WALLET_ENCRYPTION_KEY = os.getenv("WALLET_ENCRYPTION_KEY", "")
+SOL_MINT = "So11111111111111111111111111111111111111112"
+
 # === OpenAI (for AI signals - Elite tier) ===
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 

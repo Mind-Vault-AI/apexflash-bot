@@ -5,6 +5,7 @@ The all-in-one crypto whale tracking & trading bot.
 
 Features:
   - Real-time whale alerts (ETH, SOL)
+  - Solana token swaps via Jupiter V6 (1% platform fee)
   - Copy trading via MIZAR marketplace
   - DCA bot automation via MIZAR
   - Exchange affiliate hub (50-70% fee rebates)
@@ -12,30 +13,39 @@ Features:
   - Admin dashboard with stats & broadcast
 
 Revenue model:
-  1. Affiliate commissions (every whale alert + exchange hub)
-  2. Premium subscriptions via Gumroad (Pro $19, Elite $49)
-  3. MIZAR copy trading referrals (future)
+  1. 1% fee on every Solana token swap (Jupiter V6)
+  2. Affiliate commissions (every whale alert + exchange hub)
+  3. Premium subscriptions via Gumroad (Pro $19, Elite $49)
+  4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 2.0.0 (MEGA BOT)
+Version: 3.0.0 (MEGA BOT + TRADING)
 """
 import logging
+import re
 import random
 from datetime import datetime, timezone
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, ContextTypes,
+    Application, CommandHandler, CallbackQueryHandler,
+    MessageHandler, filters, ContextTypes,
 )
 
 from config import (
     BOT_TOKEN, AFFILIATE_LINKS, ADMIN_IDS,
     GUMROAD_PRO_URL, GUMROAD_ELITE_URL, TIERS,
     SCAN_INTERVAL, WEBSITE_URL, SUPPORT_URL,
-    MIZAR_REFERRAL_URL,
+    MIZAR_REFERRAL_URL, PLATFORM_FEE_PCT,
     ETH_WHALE_WALLETS, SOL_WHALE_WALLETS,
+    WALLET_ENCRYPTION_KEY, SOL_MINT,
 )
 from chains import fetch_eth_whale_transfers, fetch_sol_whale_transfers, get_crypto_prices
+from wallet import create_wallet, load_keypair, get_sol_balance, get_token_balances
+from jupiter import (
+    get_quote, execute_swap, calculate_fee,
+    get_token_info, search_token, COMMON_TOKENS,
+)
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -63,8 +73,26 @@ def get_user(user_id: int) -> dict:
             "chains": ["ETH"],
             "joined": datetime.now(timezone.utc).isoformat(),
             "username": "",
+            # Solana wallet (created on demand)
+            "wallet_pubkey": "",
+            "wallet_secret_enc": "",
+            # Trading stats
+            "total_trades": 0,
+            "total_volume_usd": 0.0,
+            # Referral
+            "referred_by": 0,
+            "referral_earnings": 0.0,
         }
-    return users[user_id]
+    # Migrate old users missing wallet fields
+    u = users[user_id]
+    if "wallet_pubkey" not in u:
+        u["wallet_pubkey"] = ""
+        u["wallet_secret_enc"] = ""
+        u["total_trades"] = 0
+        u["total_volume_usd"] = 0.0
+        u["referred_by"] = 0
+        u["referral_earnings"] = 0.0
+    return u
 
 
 def is_admin(user_id: int) -> bool:
@@ -88,6 +116,9 @@ def main_menu_kb(user_id: int = 0) -> InlineKeyboardMarkup:
             InlineKeyboardButton("\U0001f4ca Top Wallets", callback_data="whale_top"),
             InlineKeyboardButton("\U0001f4b0 Latest Moves", callback_data="whale_latest"),
         ],
+        [InlineKeyboardButton(
+            "\U0001f4b0 Trade (Solana)", callback_data="trade",
+        )],
         [
             InlineKeyboardButton("\U0001f4c8 Copy Trade", callback_data="copy_trade"),
             InlineKeyboardButton("\U0001f916 DCA Bot", callback_data="dca_bot"),
@@ -128,6 +159,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Your all-in-one crypto trading edge:\n"
         "\n"
         "\U0001f40b *Whale Tracking* \u2014 Real-time alerts\n"
+        "\U0001f4b0 *Trade* \u2014 Swap Solana tokens instantly\n"
         "\U0001f4c8 *Copy Trade* \u2014 Follow top traders\n"
         "\U0001f916 *DCA Bot* \u2014 Automate your strategy\n"
         "\U0001f4b1 *Exchange Deals* \u2014 Up to 70% fee rebates\n"
@@ -235,6 +267,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "whale_off":     _cb_whale_off,
         "whale_latest":  _cb_whale_latest,
         "whale_top":     _cb_whale_top,
+        # Trading
+        "trade":         _cb_trade,
+        "trade_wallet":  _cb_trade_wallet,
+        "trade_create":  _cb_trade_create_wallet,
+        "trade_buy":     _cb_trade_buy,
+        "trade_sell":    _cb_trade_sell,
+        "trade_refresh": _cb_trade_refresh_balance,
+        # Copy / DCA
         "copy_trade":    _cb_copy_trade,
         "dca_bot":       _cb_dca_bot,
         "exchanges":     _cb_exchanges,
@@ -249,6 +289,35 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "admin_users":   _cb_admin_users,
         "admin_broadcast": _cb_admin_broadcast,
     }
+
+    # Handle dynamic buy/sell amount callbacks (buy_01, buy_05, buy_1, buy_5, sell_25, sell_50, sell_100)
+    if data.startswith("buy_"):
+        try:
+            await _cb_execute_buy(query, user, context, data)
+        except Exception as e:
+            logger.error(f"Buy [{data}] error: {e}")
+            try:
+                await query.edit_message_text(
+                    "\u26a0\ufe0f Trade failed. Use /start to return.",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+        return
+
+    if data.startswith("sell_"):
+        try:
+            await _cb_execute_sell(query, user, context, data)
+        except Exception as e:
+            logger.error(f"Sell [{data}] error: {e}")
+            try:
+                await query.edit_message_text(
+                    "\u26a0\ufe0f Trade failed. Use /start to return.",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+        return
 
     handler = routes.get(data)
     if handler:
@@ -462,7 +531,712 @@ async def _cb_whale_top(query, user, context):
 
 
 # ══════════════════════════════════════════════
-# TRADE SECTION (Copy Trade + DCA)
+# TRADE SECTION (Jupiter Solana Swaps)
+# ══════════════════════════════════════════════
+
+# Solana address regex (base58, 32-44 chars)
+SOL_ADDR_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
+
+
+async def _cb_trade(query, user, context):
+    """Trade sub-menu."""
+    has_wallet = bool(user.get("wallet_pubkey"))
+
+    text = (
+        "\U0001f4b0 *Solana Token Trading*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "Swap any Solana token instantly\n"
+        "via Jupiter aggregator.\n"
+        "\n"
+        "\u2705 Best price across all Solana DEXs\n"
+        "\u2705 Instant execution\n"
+        f"\u2705 Only {PLATFORM_FEE_PCT}% platform fee\n"
+        "\n"
+    )
+
+    if has_wallet:
+        short = f"{user['wallet_pubkey'][:6]}...{user['wallet_pubkey'][-4:]}"
+        text += (
+            f"\U0001f4bc Wallet: `{short}`\n"
+            "\n"
+            "*How to trade:*\n"
+            "1\ufe0f\u20e3 Send SOL to your wallet address\n"
+            "2\ufe0f\u20e3 Paste a token mint address in chat\n"
+            "3\ufe0f\u20e3 Choose amount and confirm\n"
+        )
+        kb = [
+            [InlineKeyboardButton("\U0001f4bc My Wallet", callback_data="trade_wallet")],
+            [
+                InlineKeyboardButton("\U0001f4b5 Buy Token", callback_data="trade_buy"),
+                InlineKeyboardButton("\U0001f4b8 Sell Token", callback_data="trade_sell"),
+            ],
+            [InlineKeyboardButton("\U0001f504 Refresh Balance", callback_data="trade_refresh")],
+            [_back_main()[0]],
+        ]
+    else:
+        text += (
+            "\u26a0\ufe0f *No wallet yet!*\n"
+            "Create a Solana wallet to start trading.\n"
+            "Your keys are encrypted and stored securely.\n"
+        )
+        kb = [
+            [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
+            [_back_main()[0]],
+        ]
+
+    text += (
+        "\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_trade_create_wallet(query, user, context):
+    """Create a new Solana wallet for the user."""
+    if user.get("wallet_pubkey"):
+        await query.edit_message_text(
+            "\u26a0\ufe0f You already have a wallet!\n\n"
+            f"\U0001f4bc `{user['wallet_pubkey']}`\n\n"
+            "Use \U0001f4bc My Wallet to view balance.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4bc My Wallet", callback_data="trade_wallet")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    if not WALLET_ENCRYPTION_KEY:
+        await query.edit_message_text(
+            "\u26a0\ufe0f Wallet system not configured yet.\n"
+            "Please try again later.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    try:
+        wallet_data = create_wallet()
+        user["wallet_pubkey"] = wallet_data["pubkey"]
+        user["wallet_secret_enc"] = wallet_data["encrypted_secret"]
+
+        text = (
+            "\u2705 *Wallet Created!*\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            "\n"
+            f"\U0001f4bc *Address:*\n`{wallet_data['pubkey']}`\n"
+            "\n"
+            "\U0001f4b5 *Next steps:*\n"
+            "1\ufe0f\u20e3 Copy the address above\n"
+            "2\ufe0f\u20e3 Send SOL to it from any wallet\n"
+            "3\ufe0f\u20e3 Paste a token address to trade!\n"
+            "\n"
+            "\U0001f512 _Your private key is encrypted and stored securely._\n"
+            "\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        )
+
+        kb = [
+            [InlineKeyboardButton("\U0001f4bc View Wallet", callback_data="trade_wallet")],
+            [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+            [_back_main()[0]],
+        ]
+
+        await query.edit_message_text(
+            text, reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown",
+        )
+        logger.info(f"Wallet created for user {query.from_user.id}: {wallet_data['pubkey']}")
+    except Exception as e:
+        logger.error(f"Wallet creation error: {e}")
+        await query.edit_message_text(
+            "\u26a0\ufe0f Failed to create wallet. Please try again.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+
+
+async def _cb_trade_wallet(query, user, context):
+    """Show wallet balance and details."""
+    if not user.get("wallet_pubkey"):
+        await query.edit_message_text(
+            "\u26a0\ufe0f No wallet found. Create one first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    await query.edit_message_text(
+        "\U0001f50d *Loading wallet...*", parse_mode="Markdown",
+    )
+
+    pubkey = user["wallet_pubkey"]
+    sol_bal = await get_sol_balance(pubkey)
+    tokens = await get_token_balances(pubkey)
+    prices = await get_crypto_prices()
+    sol_price = prices.get("SOL", 0)
+    sol_usd = sol_bal * sol_price
+
+    text = (
+        "\U0001f4bc *Your Wallet*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        f"\U0001f4cd `{pubkey}`\n"
+        "\n"
+        f"\u25ce *SOL:* {sol_bal:.4f}"
+    )
+    if sol_usd > 0:
+        text += f" (${sol_usd:,.2f})"
+    text += "\n"
+
+    if tokens:
+        text += "\n*Tokens:*\n"
+        for t in tokens[:10]:
+            mint_short = f"{t['mint'][:6]}...{t['mint'][-4:]}"
+            # Try to find name from COMMON_TOKENS
+            token_name = None
+            for sym, info in COMMON_TOKENS.items():
+                if info["mint"] == t["mint"]:
+                    token_name = sym
+                    break
+            display = token_name or mint_short
+            text += f"\u2022 {display}: {t['amount']:,.4f}\n"
+
+    text += (
+        "\n"
+        f"\U0001f4ca Trades: *{user.get('total_trades', 0)}*\n"
+        "\n"
+        "*To trade:* Paste a Solana token\n"
+        "mint address in chat!\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    kb = [
+        [
+            InlineKeyboardButton("\U0001f4b5 Buy", callback_data="trade_buy"),
+            InlineKeyboardButton("\U0001f4b8 Sell", callback_data="trade_sell"),
+        ],
+        [InlineKeyboardButton("\U0001f504 Refresh", callback_data="trade_refresh")],
+        [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+        [_back_main()[0]],
+    ]
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+async def _cb_trade_refresh_balance(query, user, context):
+    """Alias for wallet view (refresh)."""
+    await _cb_trade_wallet(query, user, context)
+
+
+async def _cb_trade_buy(query, user, context):
+    """Buy token instructions."""
+    if not user.get("wallet_pubkey"):
+        await query.edit_message_text(
+            "\u26a0\ufe0f Create a wallet first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    text = (
+        "\U0001f4b5 *Buy Tokens*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "*Paste a Solana token address* in chat\n"
+        "and I'll show you the token info with\n"
+        "buy buttons!\n"
+        "\n"
+        "\U0001f4a1 *Popular tokens:*\n"
+    )
+    for sym, info in list(COMMON_TOKENS.items())[:6]:
+        if sym != "SOL":
+            text += f"\u2022 {sym} \u2014 `{info['mint'][:20]}...`\n"
+
+    text += (
+        "\n"
+        "_Copy any mint address above and paste it_\n"
+        "_in this chat to start buying!_\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    kb = [
+        [InlineKeyboardButton("\U0001f4bc My Wallet", callback_data="trade_wallet")],
+        [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+        [_back_main()[0]],
+    ]
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+async def _cb_trade_sell(query, user, context):
+    """Show tokens available to sell."""
+    if not user.get("wallet_pubkey"):
+        await query.edit_message_text(
+            "\u26a0\ufe0f Create a wallet first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    await query.edit_message_text(
+        "\U0001f50d *Scanning tokens...*", parse_mode="Markdown",
+    )
+
+    tokens = await get_token_balances(user["wallet_pubkey"])
+
+    if not tokens:
+        await query.edit_message_text(
+            "\U0001f4b8 *Sell Tokens*\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            "\n"
+            "No tokens found in your wallet.\n"
+            "Buy some tokens first!\n",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4b5 Buy Token", callback_data="trade_buy")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    text = (
+        "\U0001f4b8 *Sell Tokens*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "Your tokens:\n\n"
+    )
+
+    # Store first sellable token for quick sell
+    first_token = None
+    for t in tokens[:8]:
+        token_name = None
+        for sym, info in COMMON_TOKENS.items():
+            if info["mint"] == t["mint"]:
+                token_name = sym
+                break
+        display = token_name or f"{t['mint'][:8]}..."
+        text += f"\u2022 *{display}:* {t['amount']:,.4f}\n"
+        if first_token is None:
+            first_token = t
+
+    text += (
+        "\n"
+        "To sell: paste the token mint address\n"
+        "and I'll detect it as a sell.\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    kb = []
+    # Quick sell buttons for first token
+    if first_token:
+        context.user_data["sell_mint"] = first_token["mint"]
+        context.user_data["sell_amount_raw"] = first_token["raw_amount"]
+        context.user_data["sell_decimals"] = first_token["decimals"]
+        kb.append([
+            InlineKeyboardButton("Sell 25%", callback_data="sell_25"),
+            InlineKeyboardButton("Sell 50%", callback_data="sell_50"),
+            InlineKeyboardButton("Sell 100%", callback_data="sell_100"),
+        ])
+    kb.append([InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")])
+    kb.append([_back_main()[0]])
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+async def _cb_execute_buy(query, user, context, data):
+    """Execute a buy order. data = buy_01, buy_05, buy_1, buy_5"""
+    if not user.get("wallet_pubkey") or not user.get("wallet_secret_enc"):
+        await query.edit_message_text(
+            "\u26a0\ufe0f No wallet. Create one first!",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    target_mint = context.user_data.get("target_mint")
+    if not target_mint:
+        await query.edit_message_text(
+            "\u26a0\ufe0f No token selected. Paste a mint address first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4b5 Buy Token", callback_data="trade_buy")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Parse SOL amount from callback data
+    amount_map = {
+        "buy_01": 0.1,
+        "buy_05": 0.5,
+        "buy_1": 1.0,
+        "buy_5": 5.0,
+    }
+    sol_amount = amount_map.get(data)
+    if not sol_amount:
+        await query.edit_message_text("\u26a0\ufe0f Invalid amount.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown")
+        return
+
+    await query.edit_message_text(
+        f"\u23f3 *Swapping {sol_amount} SOL...*\n"
+        f"Token: `{target_mint[:20]}...`\n"
+        f"Fee: {PLATFORM_FEE_PCT}%\n\n"
+        "_Getting best price via Jupiter..._",
+        parse_mode="Markdown",
+    )
+
+    # Calculate amounts (SOL has 9 decimals)
+    total_lamports = int(sol_amount * 1_000_000_000)
+    swap_lamports, fee_lamports = calculate_fee(total_lamports)
+
+    # Get quote
+    quote = await get_quote(
+        input_mint=SOL_MINT,
+        output_mint=target_mint,
+        amount_raw=swap_lamports,
+        slippage_bps=300,
+    )
+
+    if not quote:
+        await query.edit_message_text(
+            "\u274c *Quote Failed*\n\n"
+            "Could not get a price for this token.\n"
+            "The token may be illiquid or invalid.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f504 Try Again", callback_data=data)],
+                [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Execute swap
+    try:
+        keypair = load_keypair(user["wallet_secret_enc"])
+    except Exception as e:
+        logger.error(f"Keypair load error: {e}")
+        await query.edit_message_text(
+            "\u274c Wallet error. Please contact support.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    tx_sig = await execute_swap(keypair, quote)
+
+    if tx_sig:
+        user["total_trades"] = user.get("total_trades", 0) + 1
+        prices = await get_crypto_prices()
+        sol_price = prices.get("SOL", 0)
+        usd_value = sol_amount * sol_price
+        user["total_volume_usd"] = user.get("total_volume_usd", 0) + usd_value
+        fee_sol = fee_lamports / 1_000_000_000
+
+        out_amount = quote.get("outAmount", "?")
+        token_name = context.user_data.get("target_name", "Token")
+
+        text = (
+            "\u2705 *Swap Successful!*\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            "\n"
+            f"\U0001f4b5 Spent: *{sol_amount} SOL*"
+        )
+        if usd_value > 0:
+            text += f" (${usd_value:,.2f})"
+        text += (
+            f"\n\U0001f4b0 Fee: *{fee_sol:.4f} SOL* ({PLATFORM_FEE_PCT}%)\n"
+            f"\U0001f3af Received: *{token_name}*\n"
+            "\n"
+            f"\U0001f517 [View on Solscan](https://solscan.io/tx/{tx_sig})\n"
+            "\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        )
+        kb = [
+            [InlineKeyboardButton("\U0001f4bc View Wallet", callback_data="trade_wallet")],
+            [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+            [_back_main()[0]],
+        ]
+        logger.info(f"TRADE OK: user={query.from_user.id} buy={sol_amount}SOL token={target_mint[:12]} tx={tx_sig}")
+    else:
+        text = (
+            "\u274c *Swap Failed*\n\n"
+            "Transaction could not be executed.\n"
+            "Possible reasons:\n"
+            "\u2022 Insufficient SOL balance\n"
+            "\u2022 Slippage too high\n"
+            "\u2022 Network congestion\n"
+            "\n"
+            "Check your balance and try again."
+        )
+        kb = [
+            [InlineKeyboardButton("\U0001f4bc My Wallet", callback_data="trade_wallet")],
+            [InlineKeyboardButton("\U0001f504 Retry", callback_data=data)],
+            [_back_main()[0]],
+        ]
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown", disable_web_page_preview=True,
+    )
+
+
+async def _cb_execute_sell(query, user, context, data):
+    """Execute a sell order. data = sell_25, sell_50, sell_100"""
+    if not user.get("wallet_pubkey") or not user.get("wallet_secret_enc"):
+        await query.edit_message_text(
+            "\u26a0\ufe0f No wallet found.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    sell_mint = context.user_data.get("sell_mint")
+    sell_amount_raw = context.user_data.get("sell_amount_raw", "0")
+    if not sell_mint:
+        await query.edit_message_text(
+            "\u26a0\ufe0f No token selected for selling.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4b8 Sell Token", callback_data="trade_sell")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Calculate sell amount based on percentage
+    pct_map = {"sell_25": 0.25, "sell_50": 0.50, "sell_100": 1.0}
+    pct = pct_map.get(data, 1.0)
+    raw_total = int(sell_amount_raw)
+    sell_raw = int(raw_total * pct)
+
+    if sell_raw <= 0:
+        await query.edit_message_text(
+            "\u26a0\ufe0f Nothing to sell (zero balance).",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    pct_label = f"{int(pct * 100)}%"
+    await query.edit_message_text(
+        f"\u23f3 *Selling {pct_label} of token...*\n\n"
+        "_Getting best price via Jupiter..._",
+        parse_mode="Markdown",
+    )
+
+    # Apply fee
+    swap_amount, fee_amount = calculate_fee(sell_raw)
+
+    # Get quote (token → SOL)
+    quote = await get_quote(
+        input_mint=sell_mint,
+        output_mint=SOL_MINT,
+        amount_raw=swap_amount,
+        slippage_bps=300,
+    )
+
+    if not quote:
+        await query.edit_message_text(
+            "\u274c *Quote Failed*\n\nCould not get price.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f504 Retry", callback_data=data)],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    try:
+        keypair = load_keypair(user["wallet_secret_enc"])
+    except Exception as e:
+        logger.error(f"Keypair load error: {e}")
+        await query.edit_message_text(
+            "\u274c Wallet error.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    tx_sig = await execute_swap(keypair, quote)
+
+    if tx_sig:
+        user["total_trades"] = user.get("total_trades", 0) + 1
+        out_lamports = int(quote.get("outAmount", 0))
+        sol_received = out_lamports / 1_000_000_000
+
+        text = (
+            "\u2705 *Sell Successful!*\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            "\n"
+            f"\U0001f4b8 Sold: *{pct_label}* of token\n"
+            f"\U0001f4b5 Received: ~*{sol_received:.4f} SOL*\n"
+            f"\U0001f4b0 Fee: {PLATFORM_FEE_PCT}%\n"
+            "\n"
+            f"\U0001f517 [View on Solscan](https://solscan.io/tx/{tx_sig})\n"
+            "\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        )
+        kb = [
+            [InlineKeyboardButton("\U0001f4bc View Wallet", callback_data="trade_wallet")],
+            [_back_main()[0]],
+        ]
+        logger.info(f"SELL OK: user={query.from_user.id} pct={pct_label} tx={tx_sig}")
+    else:
+        text = (
+            "\u274c *Sell Failed*\n\n"
+            "Transaction failed. Try again."
+        )
+        kb = [
+            [InlineKeyboardButton("\U0001f504 Retry", callback_data=data)],
+            [_back_main()[0]],
+        ]
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown", disable_web_page_preview=True,
+    )
+
+
+async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Detect Solana token addresses pasted in chat and show buy options."""
+    text = update.message.text.strip()
+
+    # Check if it looks like a Solana address
+    if not SOL_ADDR_RE.match(text):
+        return
+
+    user_id = update.effective_user.id
+    user = get_user(user_id)
+
+    if not user.get("wallet_pubkey"):
+        await update.message.reply_text(
+            "\U0001f4b0 That looks like a Solana token!\n\n"
+            "Create a wallet first to start trading:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Look up token info
+    await update.message.reply_text(
+        f"\U0001f50d Looking up token `{text[:12]}...`",
+        parse_mode="Markdown",
+    )
+
+    token_info = await get_token_info(text)
+
+    if token_info and token_info.get("symbol"):
+        name = token_info.get("name", "Unknown")
+        symbol = token_info.get("symbol", "???")
+        decimals = token_info.get("decimals", 0)
+
+        # Store target mint for buy callbacks
+        context.user_data["target_mint"] = text
+        context.user_data["target_name"] = symbol
+        context.user_data["target_decimals"] = decimals
+
+        # Get SOL balance for display
+        sol_bal = await get_sol_balance(user["wallet_pubkey"])
+        prices = await get_crypto_prices()
+        sol_price = prices.get("SOL", 0)
+
+        msg = (
+            f"\U0001f3af *{name}* ({symbol})\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            "\n"
+            f"\U0001f4cd Mint: `{text}`\n"
+            f"\U0001f522 Decimals: {decimals}\n"
+            "\n"
+            f"\U0001f4bc Your SOL: *{sol_bal:.4f}*"
+        )
+        if sol_price:
+            msg += f" (${sol_bal * sol_price:,.2f})"
+        msg += (
+            f"\n\U0001f4b0 Fee: *{PLATFORM_FEE_PCT}%* per trade\n"
+            "\n"
+            "\u2b07\ufe0f *Choose buy amount:*"
+        )
+
+        kb = [
+            [
+                InlineKeyboardButton("0.1 SOL", callback_data="buy_01"),
+                InlineKeyboardButton("0.5 SOL", callback_data="buy_05"),
+            ],
+            [
+                InlineKeyboardButton("1 SOL", callback_data="buy_1"),
+                InlineKeyboardButton("5 SOL", callback_data="buy_5"),
+            ],
+            [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+            [_back_main()[0]],
+        ]
+
+        await update.message.reply_text(
+            msg, reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown",
+        )
+    else:
+        # Also try to store it for selling (user might own this token)
+        context.user_data["target_mint"] = text
+        context.user_data["target_name"] = "Unknown"
+
+        await update.message.reply_text(
+            f"\u26a0\ufe0f Token `{text[:20]}...` not found on Jupiter.\n\n"
+            "It may be a very new or illiquid token.\n"
+            "Try again or paste a different address.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4b5 Buy Anyway (0.1 SOL)", callback_data="buy_01")],
+                [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+            ]),
+            parse_mode="Markdown",
+        )
+
+
+# ══════════════════════════════════════════════
+# TRADE SECTION (Copy Trade + DCA via MIZAR)
 # ══════════════════════════════════════════════
 
 async def _cb_copy_trade(query, user, context):
@@ -948,6 +1722,10 @@ async def _cb_admin_stats(query, user, context):
     active = sum(1 for u in users.values() if u.get("alerts_on"))
     conversion = ((pro_c + elite_c) / max(total, 1)) * 100
     active_rate = (active / max(total, 1)) * 100
+    total_trades = sum(u.get("total_trades", 0) for u in users.values())
+    total_vol = sum(u.get("total_volume_usd", 0) for u in users.values())
+    wallets_created = sum(1 for u in users.values() if u.get("wallet_pubkey"))
+    trade_fees_est = total_vol * PLATFORM_FEE_PCT / 100
 
     text = (
         "\U0001f4ca *Revenue & Growth*\n"
@@ -955,12 +1733,18 @@ async def _cb_admin_stats(query, user, context):
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         f"\n"
         f"\U0001f4b0 *Revenue*\n"
-        f"\u2022 MRR: *${mrr}/mo*\n"
+        f"\u2022 Trade fees ({PLATFORM_FEE_PCT}%): *~${trade_fees_est:,.2f}*\n"
+        f"\u2022 MRR (subs): *${mrr}/mo*\n"
         f"\u2022 Pro: {pro_c} \u00d7 $19 = ${pro_c * 19}\n"
         f"\u2022 Elite: {elite_c} \u00d7 $49 = ${elite_c * 49}\n"
         f"\u2022 Affiliate: _check exchange dashboards_\n"
         f"\n"
-        f"\U0001f4c8 *Growth*\n"
+        f"\U0001f4c8 *Trading*\n"
+        f"\u2022 Total trades: *{total_trades}*\n"
+        f"\u2022 Volume: *${total_vol:,.2f}*\n"
+        f"\u2022 Wallets: *{wallets_created}*\n"
+        f"\n"
+        f"\U0001f465 *Growth*\n"
         f"\u2022 Total signups: {total}\n"
         f"\u2022 Conversion: {conversion:.1f}%\n"
         f"\u2022 Active rate: {active_rate:.1f}%\n"
@@ -1149,9 +1933,31 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
 
                 try:
                     text = format_whale_alert(alert, prices)
+
+                    # Add trade + affiliate buttons
+                    alert_kb = []
+                    featured = [
+                        (k, v) for k, v in AFFILIATE_LINKS.items()
+                        if v.get("featured")
+                    ]
+                    if featured:
+                        _, aff = random.choice(featured)
+                        alert_kb.append([
+                            InlineKeyboardButton(
+                                f"\U0001f525 {aff['name']} \u2014 {aff['commission']}",
+                                url=aff["url"],
+                            )
+                        ])
+                    alert_kb.append([
+                        InlineKeyboardButton(
+                            "\U0001f4b0 Trade Now", callback_data="trade",
+                        )
+                    ])
+
                     await context.bot.send_message(
                         chat_id=user_id,
                         text=text,
+                        reply_markup=InlineKeyboardMarkup(alert_kb),
                         parse_mode="Markdown",
                         disable_web_page_preview=True,
                     )
@@ -1185,6 +1991,11 @@ def main() -> None:
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))
 
+    # Token address detection (Solana addresses pasted in chat)
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND, handle_token_address,
+    ))
+
     # Whale scanner repeating job
     app.job_queue.run_repeating(
         scan_and_alert,
@@ -1193,7 +2004,7 @@ def main() -> None:
         name="whale_scanner",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v2.0 starting...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.0 starting (Jupiter Trading)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
