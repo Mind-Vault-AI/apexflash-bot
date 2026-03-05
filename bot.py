@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.6.0 (MEGA BOT + GAMIFICATION + DAILY DIGEST)
+Version: 3.7.0 (MEGA BOT + PERSISTENCE + AUTO-BACKUP)
 """
 import logging
 import re
@@ -61,6 +61,7 @@ from notifications import (
     notify_discord_digest, notify_channel_digest,
 )
 from gumroad import verify_license, get_subscriber_count
+from persistence import save_users, load_users, save_stats, load_stats, export_backup, import_backup
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -72,15 +73,16 @@ logging.basicConfig(
 logger = logging.getLogger("ApexFlash")
 
 # ══════════════════════════════════════════════
-# USER STORE  (Phase 2: migrate to PostgreSQL)
+# USER STORE  (persistent JSON — survives restarts)
 # ══════════════════════════════════════════════
-users: dict[int, dict] = {}
+users: dict[int, dict] = load_users()
 seen_tx_hashes: set[str] = set()
 bot_start_time = datetime.now(timezone.utc)
 # Global kill switch — mutable at runtime via /killswitch
 trading_enabled: bool = TRADING_ENABLED
-# Global platform stats (for social proof + digest)
-platform_stats = {
+# Global platform stats (for social proof + digest) — loaded from disk if available
+_saved_stats = load_stats()
+platform_stats = _saved_stats if _saved_stats else {
     "trades_today": 0,
     "volume_today_usd": 0.0,
     "trades_total": 0,
@@ -250,6 +252,12 @@ def get_user(user_id: int) -> dict:
     return u
 
 
+def _persist():
+    """Save users + stats to disk after any mutation."""
+    save_users(users)
+    save_stats(platform_stats)
+
+
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
@@ -347,6 +355,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "Select an option below:"
     )
+
+    _persist()  # Save new user / referral link
 
     await update.message.reply_text(
         text,
@@ -636,6 +646,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         try:
             actual_data = data.replace("confirm_buy_", "buy_")
             await _cb_execute_buy(query, user, context, actual_data)
+            _persist()
         except Exception as e:
             logger.error(f"Buy [{data}] error: {e}")
             try:
@@ -665,6 +676,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         try:
             actual_data = data.replace("confirm_sell_", "sell_")
             await _cb_execute_sell(query, user, context, actual_data)
+            _persist()
         except Exception as e:
             logger.error(f"Sell [{data}] error: {e}")
             try:
@@ -690,10 +702,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 pass
         return
 
+    # Static route handlers
+    # Mutating actions that need persistence:
+    _mutating = {
+        "create_wallet", "accept_terms", "pay_sol_pro", "pay_sol_elite",
+        "confirm_pay_pro", "confirm_pay_elite", "activate_license",
+        "settings", "referral_link",
+    }
     handler = routes.get(data)
     if handler:
         try:
             await handler(query, user, context)
+            if data in _mutating:
+                _persist()
         except Exception as e:
             logger.error(f"Callback [{data}] error: {e}")
             try:
@@ -3428,6 +3449,99 @@ async def daily_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ══════════════════════════════════════════════
+# AUTO-SAVE & BACKUP JOBS
+# ══════════════════════════════════════════════
+
+async def auto_save_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Periodic auto-save every 60 seconds — safety net."""
+    try:
+        _persist()
+    except Exception as e:
+        logger.error(f"Auto-save error: {e}")
+
+
+async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send backup to admin via Telegram every 6 hours. Deploy resilience."""
+    if not ADMIN_IDS or not users:
+        return
+    try:
+        import io
+        backup_json = export_backup(users, platform_stats)
+        bio = io.BytesIO(backup_json.encode())
+        bio.name = f"apexflash_backup_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.json"
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_document(
+                    chat_id=admin_id,
+                    document=bio,
+                    caption=f"\U0001f4be Auto-backup | {len(users)} users | {platform_stats.get('trades_total', 0)} trades",
+                )
+                bio.seek(0)
+            except Exception:
+                pass
+        logger.info(f"Auto-backup sent to {len(ADMIN_IDS)} admin(s)")
+    except Exception as e:
+        logger.error(f"Auto-backup error: {e}")
+
+
+# ══════════════════════════════════════════════
+# ADMIN: /backup & /restore COMMANDS
+# ══════════════════════════════════════════════
+
+async def cmd_backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin command: send manual backup file."""
+    if not is_admin(update.effective_user.id):
+        return
+    import io
+    backup_json = export_backup(users, platform_stats)
+    bio = io.BytesIO(backup_json.encode())
+    bio.name = f"apexflash_backup_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.json"
+    await update.message.reply_document(
+        document=bio,
+        caption=f"\U0001f4be Manual backup | {len(users)} users | {platform_stats.get('trades_total', 0)} trades",
+    )
+
+
+async def cmd_restore(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin command: restore from backup file. Reply to a backup JSON file with /restore."""
+    if not is_admin(update.effective_user.id):
+        return
+    global users, platform_stats
+
+    reply = update.message.reply_to_message
+    if not reply or not reply.document:
+        await update.message.reply_text(
+            "\u26a0\ufe0f Reply to a backup JSON file with /restore"
+        )
+        return
+
+    try:
+        file = await reply.document.get_file()
+        raw = await file.download_as_bytearray()
+        json_str = raw.decode("utf-8")
+        restored_users, restored_stats = import_backup(json_str)
+
+        if not restored_users:
+            await update.message.reply_text("\u274c Backup file contains no users.")
+            return
+
+        users.update(restored_users)
+        if restored_stats:
+            for k, v in restored_stats.items():
+                platform_stats[k] = v
+        _persist()
+
+        await update.message.reply_text(
+            f"\u2705 Restored {len(restored_users)} users from backup.\n"
+            f"Total users now: {len(users)}"
+        )
+        logger.info(f"Backup restored: {len(restored_users)} users by admin {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"Restore error: {e}")
+        await update.message.reply_text(f"\u274c Restore failed: {e}")
+
+
+# ══════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════
 
@@ -3446,6 +3560,8 @@ def main() -> None:
     app.add_handler(CommandHandler("broadcast", cmd_broadcast))
     app.add_handler(CommandHandler("activate", cmd_activate))
     app.add_handler(CommandHandler("killswitch", cmd_killswitch))
+    app.add_handler(CommandHandler("backup", cmd_backup))
+    app.add_handler(CommandHandler("restore", cmd_restore))
 
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))
@@ -3470,7 +3586,17 @@ def main() -> None:
         name="daily_digest",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.6 starting...")
+    # Auto-save every 60s (safety net for crash recovery)
+    app.job_queue.run_repeating(
+        auto_save_job, interval=60, first=60, name="auto_save",
+    )
+
+    # Auto-backup to admin every 6 hours (deploy resilience)
+    app.job_queue.run_repeating(
+        auto_backup_job, interval=6 * 3600, first=300, name="auto_backup",
+    )
+
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.7 starting...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
