@@ -19,12 +19,12 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.5.0 (MEGA BOT + RISK MANAGEMENT + DISCLAIMERS)
+Version: 3.6.0 (MEGA BOT + GAMIFICATION + DAILY DIGEST)
 """
 import logging
 import re
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, time as dt_time
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -58,6 +58,7 @@ from jupiter import (
 from notifications import (
     notify_discord_whale, notify_discord_trade,
     notify_telegram_channel, notify_channel_trade,
+    notify_discord_digest, notify_channel_digest,
 )
 from gumroad import verify_license, get_subscriber_count
 
@@ -78,6 +79,16 @@ seen_tx_hashes: set[str] = set()
 bot_start_time = datetime.now(timezone.utc)
 # Global kill switch — mutable at runtime via /killswitch
 trading_enabled: bool = TRADING_ENABLED
+# Global platform stats (for social proof + digest)
+platform_stats = {
+    "trades_today": 0,
+    "volume_today_usd": 0.0,
+    "trades_total": 0,
+    "volume_total_usd": 0.0,
+    "last_reset": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+    "top_gainer_today": {"token": "", "pct": 0.0, "user_anon": ""},
+    "active_traders_today": set(),
+}
 
 # ══════════════════════════════════════════════
 # DISCLAIMER TEXT
@@ -125,6 +136,51 @@ def _increment_daily_trades(user: dict) -> None:
         user["last_trade_date"] = today
         user["trades_today"] = 0
     user["trades_today"] = user.get("trades_today", 0) + 1
+
+
+def _reset_daily_stats():
+    """Reset daily platform stats at midnight UTC."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if platform_stats["last_reset"] != today:
+        platform_stats["trades_today"] = 0
+        platform_stats["volume_today_usd"] = 0.0
+        platform_stats["top_gainer_today"] = {"token": "", "pct": 0.0, "user_anon": ""}
+        platform_stats["active_traders_today"] = set()
+        platform_stats["last_reset"] = today
+
+
+def _record_trade(user_id: int, user: dict, side: str, token_name: str,
+                  token_mint: str, sol_amount: float, usd_value: float,
+                  tx_sig: str, entry_price_usd: float = 0.0):
+    """Record a trade for history, PnL, leaderboard, and platform stats."""
+    _reset_daily_stats()
+
+    trade = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "side": side,  # "BUY" or "SELL"
+        "token": token_name,
+        "mint": token_mint,
+        "sol": sol_amount,
+        "usd": usd_value,
+        "tx": tx_sig,
+        "entry_price_usd": entry_price_usd,
+    }
+
+    # User trade history (keep last 50)
+    if "trade_history" not in user:
+        user["trade_history"] = []
+    user["trade_history"].append(trade)
+    if len(user["trade_history"]) > 50:
+        user["trade_history"] = user["trade_history"][-50:]
+
+    # Platform stats
+    platform_stats["trades_today"] += 1
+    platform_stats["trades_total"] += 1
+    platform_stats["volume_today_usd"] += usd_value
+    platform_stats["volume_total_usd"] += usd_value
+    platform_stats["active_traders_today"].add(user_id)
+
+    logger.info(f"TRADE RECORDED: {side} {sol_amount} SOL for {token_name} by user {user_id}")
 
 
 def _get_price_impact(quote: dict) -> float:
@@ -562,6 +618,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "activate_license": _cb_activate_license,
         "accept_terms":  _cb_accept_terms,
         "view_disclaimer": _cb_view_disclaimer,
+        "leaderboard":   _cb_leaderboard,
         "settings":      _cb_settings,
         "help":          _cb_help,
         "help_faq":      _cb_help_faq,
@@ -884,6 +941,17 @@ async def _cb_trade(query, user, context):
         "\n"
     )
 
+    # Live activity counter (social proof)
+    _reset_daily_stats()
+    active_now = len(platform_stats["active_traders_today"])
+    today_count = platform_stats["trades_today"]
+    if today_count > 0 or active_now > 0:
+        text += (
+            f"\U0001f7e2 *Live:* {active_now} traders active | "
+            f"{today_count} trades today\n"
+            "\n"
+        )
+
     if has_wallet:
         short = f"{user['wallet_pubkey'][:6]}...{user['wallet_pubkey'][-4:]}"
         text += (
@@ -1043,9 +1111,38 @@ async def _cb_trade_wallet(query, user, context):
             display = token_name or mint_short
             text += f"\u2022 {display}: {t['amount']:,.4f}\n"
 
+    # Trade stats
+    total_trades = user.get("total_trades", 0)
+    total_vol = user.get("total_volume_usd", 0)
+    text += f"\n\U0001f4ca *Stats:* {total_trades} trades"
+    if total_vol > 0:
+        text += f" | ${total_vol:,.0f} volume"
+    text += "\n"
+
+    # Recent trade history (last 5)
+    history = user.get("trade_history", [])
+    if history:
+        text += "\n\U0001f4dc *Recent Trades:*\n"
+        for t in history[-5:]:
+            side_emoji = "\U0001f7e2" if t["side"] == "BUY" else "\U0001f534"
+            sol_str = f"{t['sol']:.2f}" if t['sol'] >= 0.01 else f"{t['sol']:.4f}"
+            text += f"{side_emoji} {t['side']} {sol_str} SOL \u2192 {t['token']}\n"
+
+    # Platform activity (social proof)
+    _reset_daily_stats()
+    active = len(platform_stats["active_traders_today"])
+    today_trades = platform_stats["trades_today"]
+    today_vol = platform_stats["volume_today_usd"]
+    if today_trades > 0 or active > 0:
+        text += (
+            f"\n\U0001f30d *Platform Today:* {today_trades} trades"
+            f" | {active} traders"
+        )
+        if today_vol > 0:
+            text += f" | ${today_vol:,.0f}"
+        text += "\n"
+
     text += (
-        "\n"
-        f"\U0001f4ca Trades: *{user.get('total_trades', 0)}*\n"
         "\n"
         "*To trade:* Paste a Solana token\n"
         "mint address in chat!\n"
@@ -1060,6 +1157,7 @@ async def _cb_trade_wallet(query, user, context):
             InlineKeyboardButton("\U0001f4b8 Sell", callback_data="trade_sell"),
         ],
         [InlineKeyboardButton("\U0001f504 Refresh", callback_data="trade_refresh")],
+        [InlineKeyboardButton("\U0001f3c6 Leaderboard", callback_data="leaderboard")],
         [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
         [_back_main()[0]],
     ]
@@ -1503,6 +1601,87 @@ async def _cb_preview_sell(query, user, context, data):
 
 
 # ══════════════════════════════════════════════
+# LEADERBOARD
+# ══════════════════════════════════════════════
+
+async def _cb_leaderboard(query, user, context):
+    """Show anonymized leaderboard — top traders by volume."""
+    _reset_daily_stats()
+
+    # Gather all users with trades
+    traders = []
+    for uid, u in users.items():
+        trades = u.get("total_trades", 0)
+        vol = u.get("total_volume_usd", 0)
+        if trades > 0:
+            # Anonymize: show first 2 chars of username or "Trader"
+            uname = u.get("username", "")
+            anon = f"{uname[:2]}***" if uname and len(uname) >= 2 else f"Trader#{uid % 1000:03d}"
+            traders.append({
+                "name": anon,
+                "trades": trades,
+                "volume": vol,
+                "today": uid in platform_stats["active_traders_today"],
+            })
+
+    # Sort by volume (highest first)
+    traders.sort(key=lambda x: x["volume"], reverse=True)
+
+    text = (
+        "\U0001f3c6 *ApexFlash Leaderboard*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+    )
+
+    if not traders:
+        text += (
+            "No trades yet! Be the first.\n"
+            "\n"
+            "Paste a token address to start trading.\n"
+        )
+    else:
+        medals = ["\U0001f947", "\U0001f948", "\U0001f949"]
+        for i, t in enumerate(traders[:10]):
+            rank = medals[i] if i < 3 else f"{i+1}."
+            active = " \U0001f7e2" if t["today"] else ""
+            text += (
+                f"{rank} *{t['name']}*{active}\n"
+                f"   {t['trades']} trades | ${t['volume']:,.0f} volume\n"
+            )
+
+        # Platform totals
+        text += (
+            "\n"
+            f"\U0001f30d *Platform Total:*\n"
+            f"\u2022 {platform_stats['trades_total']} trades all-time\n"
+            f"\u2022 ${platform_stats['volume_total_usd']:,.0f} total volume\n"
+            f"\u2022 {len(traders)} active traders\n"
+        )
+
+    # Mandatory disclaimer
+    text += (
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\u26a0\ufe0f _Leaderboard shows volume, not profit._\n"
+        "_High volume does not mean positive returns._\n"
+        "_Past performance is not indicative of future results._\n"
+        "_Trading crypto involves substantial risk of loss._"
+    )
+
+    kb = [
+        [InlineKeyboardButton("\U0001f4bc My Wallet", callback_data="trade_wallet")],
+        [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+        [_back_main()[0]],
+    ]
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+# ══════════════════════════════════════════════
 # TRADE EXECUTION (now requires confirmation)
 # ══════════════════════════════════════════════
 
@@ -1626,6 +1805,12 @@ async def _cb_execute_buy(query, user, context, data):
             [_back_main()[0]],
         ]
         logger.info(f"TRADE OK: user={query.from_user.id} buy={sol_amount}SOL token={target_mint[:12]} tx={tx_sig}")
+
+        # ── Record trade for PnL + leaderboard ──
+        _record_trade(
+            query.from_user.id, user, "BUY", token_name, target_mint,
+            sol_amount, usd_value, tx_sig, entry_price_usd=sol_price,
+        )
 
         # ── Fee collection (best-effort, async) ──
         try:
@@ -1786,6 +1971,20 @@ async def _cb_execute_sell(query, user, context, data):
             [_back_main()[0]],
         ]
         logger.info(f"SELL OK: user={query.from_user.id} pct={pct_label} tx={tx_sig}")
+
+        # ── Record trade for PnL + leaderboard ──
+        prices = await get_crypto_prices()
+        sol_price = prices.get("SOL", 0)
+        sell_usd_value = sol_received * sol_price
+        sell_token_name = "Token"
+        for sym, info in COMMON_TOKENS.items():
+            if info["mint"] == sell_mint:
+                sell_token_name = sym
+                break
+        _record_trade(
+            query.from_user.id, user, "SELL", sell_token_name, sell_mint,
+            sol_received, sell_usd_value, tx_sig,
+        )
 
         # ── Fee collection (best-effort) ──
         try:
@@ -3170,6 +3369,47 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ══════════════════════════════════════════════
+# DAILY DIGEST JOB
+# ══════════════════════════════════════════════
+
+async def daily_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Post daily digest summary to Discord + TG channel. Runs once/day at 20:00 UTC."""
+    try:
+        _reset_daily_stats()
+
+        stats = {
+            "trades_today": platform_stats["trades_today"],
+            "volume_today_usd": platform_stats["volume_today_usd"],
+            "active_traders": len(platform_stats["active_traders_today"]),
+            "total_users": len(users),
+            "trades_total": platform_stats["trades_total"],
+            "volume_total_usd": platform_stats["volume_total_usd"],
+        }
+
+        # Skip if no activity today (don't spam empty digests)
+        if stats["trades_today"] == 0 and stats["active_traders"] == 0:
+            logger.info("Daily digest: no activity, skipping")
+            return
+
+        # Discord
+        try:
+            await notify_discord_digest(stats)
+        except Exception as e:
+            logger.debug(f"Digest Discord error: {e}")
+
+        # Telegram channel
+        try:
+            await notify_channel_digest(context.bot, stats)
+        except Exception as e:
+            logger.debug(f"Digest TG channel error: {e}")
+
+        logger.info(f"Daily digest posted: {stats['trades_today']} trades, ${stats['volume_today_usd']:,.0f} volume")
+
+    except Exception as e:
+        logger.error(f"Daily digest error: {e}")
+
+
+# ══════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════
 
@@ -3205,8 +3445,15 @@ def main() -> None:
         name="whale_scanner",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.4 starting...")
-    logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s")
+    # Daily digest — posts to Discord + TG channel at 20:00 UTC
+    app.job_queue.run_daily(
+        daily_digest_job,
+        time=dt_time(hour=20, minute=0, tzinfo=timezone.utc),
+        name="daily_digest",
+    )
+
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.6 starting...")
+    logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
 

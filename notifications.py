@@ -218,3 +218,96 @@ async def notify_channel_trade(bot, action: str, sol_amount: float,
     except Exception as e:
         logger.error(f"Telegram channel trade post failed: {e}")
         return False
+
+
+# ══════════════════════════════════════════════
+# DAILY DIGEST
+# ══════════════════════════════════════════════
+
+def _discord_digest_embed(stats: dict) -> dict:
+    """Build a Discord embed for the daily digest."""
+    trades = stats.get("trades_today", 0)
+    volume = stats.get("volume_today_usd", 0)
+    active = stats.get("active_traders", 0)
+    total_users = stats.get("total_users", 0)
+    total_trades = stats.get("trades_total", 0)
+
+    embed = {
+        "title": "\U0001f4ca ApexFlash Daily Digest",
+        "color": 0x7C3AED,
+        "fields": [
+            {"name": "Trades Today", "value": str(trades), "inline": True},
+            {"name": "Volume Today", "value": f"${volume:,.0f}", "inline": True},
+            {"name": "Active Traders", "value": str(active), "inline": True},
+            {"name": "Total Users", "value": str(total_users), "inline": True},
+            {"name": "All-Time Trades", "value": str(total_trades), "inline": True},
+        ],
+        "footer": {
+            "text": f"ApexFlash | Trade any Solana token | {WEBSITE_URL}",
+        },
+    }
+
+    content = (
+        "\U0001f4ca **Daily Digest** \u2014 Here's what happened on ApexFlash today!\n"
+        "\U0001f916 **Start trading**: https://t.me/ApexFlashBot"
+    )
+
+    return {"content": content, "embeds": [embed]}
+
+
+async def notify_discord_digest(stats: dict) -> bool:
+    """Send daily digest to Discord."""
+    webhook = DISCORD_TRADE_WEBHOOK_URL or DISCORD_WEBHOOK_URL
+    if not webhook:
+        return False
+    payload = _discord_digest_embed(stats)
+    return await _send_discord_webhook(webhook, payload)
+
+
+async def notify_channel_digest(bot, stats: dict,
+                                channel_id: str = "") -> bool:
+    """Post daily digest to Telegram channel."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from config import ALERT_CHANNEL_ID
+
+    target = channel_id or ALERT_CHANNEL_ID
+    if not target:
+        return False
+
+    trades = stats.get("trades_today", 0)
+    volume = stats.get("volume_today_usd", 0)
+    active = stats.get("active_traders", 0)
+    total_users = stats.get("total_users", 0)
+
+    text = (
+        "\U0001f4ca *ApexFlash Daily Digest*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        f"\U0001f4b0 *{trades}* trades executed\n"
+        f"\U0001f4b5 *${volume:,.0f}* volume\n"
+        f"\U0001f465 *{active}* active traders\n"
+        f"\U0001f310 *{total_users}* total users\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\U0001f916 Trade any Solana token with 1% fee!\n"
+        "\U0001f449 @ApexFlashBot"
+    )
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("\U0001f916 Start Trading", url="https://t.me/ApexFlashBot")],
+    ])
+
+    try:
+        await bot.send_message(
+            chat_id=target,
+            text=text,
+            reply_markup=kb,
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Telegram digest post failed: {e}")
+        return False
