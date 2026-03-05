@@ -43,6 +43,15 @@ FEE_COLLECT_WALLET = os.getenv(
 # Referral config — referrers earn a share of fees from referred users
 REFERRAL_FEE_SHARE_PCT = float(os.getenv("REFERRAL_FEE_SHARE_PCT", "25.0"))  # 25%
 
+# === Risk Management ===
+TRADING_ENABLED = os.getenv("TRADING_ENABLED", "true").lower() == "true"  # Global kill switch
+MAX_TRADE_SOL = float(os.getenv("MAX_TRADE_SOL", "10.0"))  # Max single trade in SOL
+MIN_SOL_RESERVE = float(os.getenv("MIN_SOL_RESERVE", "0.01"))  # Keep for rent/fees
+MAX_SLIPPAGE_BPS = int(os.getenv("MAX_SLIPPAGE_BPS", "500"))  # 5% max slippage
+DEFAULT_SLIPPAGE_BPS = int(os.getenv("DEFAULT_SLIPPAGE_BPS", "300"))  # 3% default
+PRICE_IMPACT_WARN_PCT = float(os.getenv("PRICE_IMPACT_WARN_PCT", "3.0"))  # Warn if > 3%
+MAX_DAILY_TRADES = int(os.getenv("MAX_DAILY_TRADES", "50"))  # Per user per day
+
 # === OpenAI (for AI signals - Elite tier) ===
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 

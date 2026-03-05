@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.4.0 (MEGA BOT + GUMROAD LICENSE VERIFICATION)
+Version: 3.5.0 (MEGA BOT + RISK MANAGEMENT + DISCLAIMERS)
 """
 import logging
 import re
@@ -42,6 +42,9 @@ from config import (
     ETH_WHALE_WALLETS, SOL_WHALE_WALLETS,
     WALLET_ENCRYPTION_KEY, SOL_MINT,
     FEE_COLLECT_WALLET, REFERRAL_FEE_SHARE_PCT,
+    TRADING_ENABLED, MAX_TRADE_SOL, MIN_SOL_RESERVE,
+    MAX_SLIPPAGE_BPS, DEFAULT_SLIPPAGE_BPS,
+    PRICE_IMPACT_WARN_PCT, MAX_DAILY_TRADES,
 )
 from chains import fetch_eth_whale_transfers, fetch_sol_whale_transfers, get_crypto_prices
 from wallet import (
@@ -73,6 +76,66 @@ logger = logging.getLogger("ApexFlash")
 users: dict[int, dict] = {}
 seen_tx_hashes: set[str] = set()
 bot_start_time = datetime.now(timezone.utc)
+# Global kill switch — mutable at runtime via /killswitch
+trading_enabled: bool = TRADING_ENABLED
+
+# ══════════════════════════════════════════════
+# DISCLAIMER TEXT
+# ══════════════════════════════════════════════
+
+RISK_DISCLAIMER = (
+    "\u26a0\ufe0f *Risk Disclaimer*\n"
+    "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+    "\n"
+    "Cryptocurrency trading involves *substantial risk of loss*.\n"
+    "\n"
+    "\u2022 You may lose *100% of your deposited funds*\n"
+    "\u2022 Past performance does not guarantee future results\n"
+    "\u2022 Only trade with funds you can afford to lose\n"
+    "\u2022 This bot is a *tool*, not financial advice\n"
+    "\u2022 You are *solely responsible* for your trades\n"
+    "\u2022 Slippage, MEV, and network issues can cause losses\n"
+    "\n"
+    "By using this bot, you accept full responsibility for all "
+    "trading decisions and outcomes.\n"
+    "\n"
+    "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+)
+
+
+# ══════════════════════════════════════════════
+# RISK MANAGEMENT HELPERS
+# ══════════════════════════════════════════════
+
+def _user_daily_trades(user: dict) -> int:
+    """Count trades today for rate limiting."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if user.get("last_trade_date") != today:
+        user["last_trade_date"] = today
+        user["trades_today"] = 0
+    return user.get("trades_today", 0)
+
+
+def _increment_daily_trades(user: dict) -> None:
+    """Record a trade for daily limit tracking."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if user.get("last_trade_date") != today:
+        user["last_trade_date"] = today
+        user["trades_today"] = 0
+    user["trades_today"] = user.get("trades_today", 0) + 1
+
+
+def _get_price_impact(quote: dict) -> float:
+    """Extract price impact percentage from Jupiter quote."""
+    try:
+        impact = quote.get("priceImpactPct")
+        if impact is not None:
+            return abs(float(impact)) * 100
+    except (ValueError, TypeError):
+        pass
+    return 0.0
 
 
 def get_user(user_id: int) -> dict:
@@ -99,6 +162,10 @@ def get_user(user_id: int) -> dict:
             "referral_count": 0,
             # State tracking
             "awaiting_input": "",
+            # Risk management
+            "accepted_terms": False,
+            "trades_today": 0,
+            "last_trade_date": "",
         }
     # Migrate old users missing wallet/referral fields
     u = users[user_id]
@@ -118,6 +185,12 @@ def get_user(user_id: int) -> dict:
         u["gumroad_license"] = ""
     if "awaiting_input" not in u:
         u["awaiting_input"] = ""
+    if "accepted_terms" not in u:
+        u["accepted_terms"] = False
+    if "trades_today" not in u:
+        u["trades_today"] = 0
+    if "last_trade_date" not in u:
+        u["last_trade_date"] = ""
     return u
 
 
@@ -211,6 +284,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "\U0001f4b1 *Partners & Tools* \u2014 Exchanges + crypto tools\n"
         "\U0001f91d *Referral* \u2014 Earn 25% of friends' fees\n"
         "\n"
+        "\u26a0\ufe0f _Trading involves risk. Only trade with funds_\n"
+        "_you can afford to lose._\n"
+        "\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "Select an option below:"
@@ -292,6 +368,25 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text(
         f"\u2705 Broadcast complete: {sent} delivered, {failed} failed."
     )
+
+
+async def cmd_killswitch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Toggle global trading kill switch. Admin only."""
+    global trading_enabled
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("\u26d4 Unauthorized.")
+        return
+
+    trading_enabled = not trading_enabled
+    status = "ENABLED" if trading_enabled else "DISABLED"
+    emoji = "\u2705" if trading_enabled else "\U0001f6d1"
+    await update.message.reply_text(
+        f"{emoji} *Trading Kill Switch*\n\n"
+        f"Trading is now: *{status}*\n\n"
+        f"{'All users can trade normally.' if trading_enabled else 'ALL trades are blocked until re-enabled.'}",
+        parse_mode="Markdown",
+    )
+    logger.warning(f"KILL SWITCH: trading={trading_enabled} by admin {update.effective_user.id}")
 
 
 async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -465,6 +560,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "confirm_pay_pro":   _cb_confirm_pay_pro,
         "confirm_pay_elite": _cb_confirm_pay_elite,
         "activate_license": _cb_activate_license,
+        "accept_terms":  _cb_accept_terms,
+        "view_disclaimer": _cb_view_disclaimer,
         "settings":      _cb_settings,
         "help":          _cb_help,
         "help_faq":      _cb_help_faq,
@@ -477,9 +574,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     }
 
     # Handle dynamic buy/sell amount callbacks (buy_01, buy_05, buy_1, buy_5, sell_25, sell_50, sell_100)
-    if data.startswith("buy_"):
+    # These now go through confirm step first (confirm_buy_X / confirm_sell_X)
+    if data.startswith("confirm_buy_"):
         try:
-            await _cb_execute_buy(query, user, context, data)
+            actual_data = data.replace("confirm_buy_", "buy_")
+            await _cb_execute_buy(query, user, context, actual_data)
         except Exception as e:
             logger.error(f"Buy [{data}] error: {e}")
             try:
@@ -491,11 +590,40 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 pass
         return
 
-    if data.startswith("sell_"):
+    if data.startswith("buy_"):
         try:
-            await _cb_execute_sell(query, user, context, data)
+            await _cb_preview_buy(query, user, context, data)
+        except Exception as e:
+            logger.error(f"Buy preview [{data}] error: {e}")
+            try:
+                await query.edit_message_text(
+                    "\u26a0\ufe0f Trade failed. Use /start to return.",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+        return
+
+    if data.startswith("confirm_sell_"):
+        try:
+            actual_data = data.replace("confirm_sell_", "sell_")
+            await _cb_execute_sell(query, user, context, actual_data)
         except Exception as e:
             logger.error(f"Sell [{data}] error: {e}")
+            try:
+                await query.edit_message_text(
+                    "\u26a0\ufe0f Trade failed. Use /start to return.",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+        return
+
+    if data.startswith("sell_"):
+        try:
+            await _cb_preview_sell(query, user, context, data)
+        except Exception as e:
+            logger.error(f"Sell preview [{data}] error: {e}")
             try:
                 await query.edit_message_text(
                     "\u26a0\ufe0f Trade failed. Use /start to return.",
@@ -725,7 +853,20 @@ SOL_ADDR_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 
 
 async def _cb_trade(query, user, context):
-    """Trade sub-menu."""
+    """Trade sub-menu with risk management."""
+    global trading_enabled
+
+    # Kill switch check
+    if not trading_enabled:
+        await query.edit_message_text(
+            "\U0001f6d1 *Trading Paused*\n\n"
+            "Trading is temporarily disabled.\n"
+            "Please try again later.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
     has_wallet = bool(user.get("wallet_pubkey"))
 
     text = (
@@ -739,6 +880,7 @@ async def _cb_trade(query, user, context):
         "\u2705 Best price across all Solana DEXs\n"
         "\u2705 Instant execution\n"
         f"\u2705 Only {PLATFORM_FEE_PCT}% platform fee\n"
+        f"\u2705 Max single trade: {MAX_TRADE_SOL} SOL\n"
         "\n"
     )
 
@@ -759,6 +901,7 @@ async def _cb_trade(query, user, context):
                 InlineKeyboardButton("\U0001f4b8 Sell Token", callback_data="trade_sell"),
             ],
             [InlineKeyboardButton("\U0001f504 Refresh Balance", callback_data="trade_refresh")],
+            [InlineKeyboardButton("\u26a0\ufe0f Risk Disclaimer", callback_data="view_disclaimer")],
             [_back_main()[0]],
         ]
     else:
@@ -1063,6 +1206,306 @@ async def _cb_trade_sell(query, user, context):
     )
 
 
+# ══════════════════════════════════════════════
+# RISK MANAGEMENT — TERMS, CONFIRMATION, CHECKS
+# ══════════════════════════════════════════════
+
+async def _cb_accept_terms(query, user, context):
+    """User accepts risk disclaimer."""
+    user["accepted_terms"] = True
+    logger.info(f"Terms accepted: user {query.from_user.id}")
+    await query.edit_message_text(
+        "\u2705 *Terms Accepted*\n\n"
+        "You can now trade. Be careful and only risk what you can afford to lose.\n\n"
+        "Tap below to continue:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+            [_back_main()[0]],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_view_disclaimer(query, user, context):
+    """Show full risk disclaimer."""
+    kb = [[_back_main()[0]]]
+    if not user.get("accepted_terms"):
+        kb.insert(0, [InlineKeyboardButton(
+            "\u2705 I Understand & Accept", callback_data="accept_terms",
+        )])
+    await query.edit_message_text(
+        RISK_DISCLAIMER,
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+
+
+def _check_trade_allowed(user: dict, sol_amount: float = 0) -> str | None:
+    """Pre-trade risk checks. Returns error message or None if OK."""
+    global trading_enabled
+
+    # Kill switch
+    if not trading_enabled:
+        return (
+            "\U0001f6d1 *Trading Paused*\n\n"
+            "Trading is temporarily disabled by admin.\n"
+            "Please try again later."
+        )
+
+    # Terms acceptance
+    if not user.get("accepted_terms"):
+        return None  # Handled separately with accept flow
+
+    # Daily trade limit
+    daily = _user_daily_trades(user)
+    if daily >= MAX_DAILY_TRADES:
+        return (
+            f"\u26a0\ufe0f *Daily Limit Reached*\n\n"
+            f"You've made {daily}/{MAX_DAILY_TRADES} trades today.\n"
+            f"Limits reset at midnight UTC."
+        )
+
+    # Max single trade size
+    if sol_amount > MAX_TRADE_SOL:
+        return (
+            f"\u26a0\ufe0f *Trade Too Large*\n\n"
+            f"Max single trade: *{MAX_TRADE_SOL} SOL*\n"
+            f"You tried: *{sol_amount} SOL*\n\n"
+            f"Split into smaller trades for safety."
+        )
+
+    return None
+
+
+async def _cb_preview_buy(query, user, context, data):
+    """Show trade confirmation with quote before executing."""
+    global trading_enabled
+
+    # Check terms first
+    if not user.get("accepted_terms"):
+        await query.edit_message_text(
+            RISK_DISCLAIMER,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "\u2705 I Understand & Accept", callback_data="accept_terms",
+                )],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    if not user.get("wallet_pubkey"):
+        await query.edit_message_text(
+            "\u26a0\ufe0f Create a wallet first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    target_mint = context.user_data.get("target_mint")
+    if not target_mint:
+        await query.edit_message_text(
+            "\u26a0\ufe0f No token selected. Paste a mint address first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4b5 Buy Token", callback_data="trade_buy")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Parse SOL amount
+    amount_map = {"buy_01": 0.1, "buy_05": 0.5, "buy_1": 1.0, "buy_5": 5.0}
+    sol_amount = amount_map.get(data)
+    if not sol_amount:
+        return
+
+    # Risk checks
+    error = _check_trade_allowed(user, sol_amount)
+    if error:
+        await query.edit_message_text(
+            error,
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Balance check
+    balance = await get_sol_balance(user["wallet_pubkey"])
+    needed = sol_amount + MIN_SOL_RESERVE
+    if balance < needed:
+        await query.edit_message_text(
+            f"\u26a0\ufe0f *Insufficient Balance*\n\n"
+            f"Balance: *{balance:.4f} SOL*\n"
+            f"Needed: *{sol_amount} SOL* + {MIN_SOL_RESERVE} reserve\n"
+            f"= *{needed:.4f} SOL*\n\n"
+            f"Deposit more SOL to your wallet first.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4bc My Wallet", callback_data="trade_wallet")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Get quote for preview
+    await query.edit_message_text(
+        "\U0001f50d *Getting quote...*", parse_mode="Markdown",
+    )
+
+    total_lamports = int(sol_amount * 1_000_000_000)
+    swap_lamports, fee_lamports = calculate_fee(total_lamports)
+
+    quote = await get_quote(
+        input_mint=SOL_MINT,
+        output_mint=target_mint,
+        amount_raw=swap_lamports,
+        slippage_bps=DEFAULT_SLIPPAGE_BPS,
+    )
+
+    if not quote:
+        await query.edit_message_text(
+            "\u274c *Quote Failed*\n\nCould not get price. Token may be illiquid.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f504 Retry", callback_data=data)],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Store quote for execution
+    context.user_data["pending_quote"] = quote
+    context.user_data["pending_buy_data"] = data
+
+    # Extract info for confirmation
+    token_name = context.user_data.get("target_name", "Token")
+    fee_sol = fee_lamports / 1_000_000_000
+    price_impact = _get_price_impact(quote)
+    out_amount = quote.get("outAmount", "?")
+
+    # Price impact warning
+    impact_warn = ""
+    if price_impact > PRICE_IMPACT_WARN_PCT:
+        impact_warn = (
+            f"\n\u26a0\ufe0f *HIGH PRICE IMPACT: {price_impact:.1f}%*\n"
+            f"You may receive significantly less than expected!\n"
+        )
+
+    text = (
+        "\U0001f4cb *Trade Confirmation*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        f"\U0001f504 *BUY {token_name}*\n"
+        f"\U0001f4b5 Spend: *{sol_amount} SOL*\n"
+        f"\U0001f4b0 Fee: *{fee_sol:.4f} SOL* ({PLATFORM_FEE_PCT}%)\n"
+        f"\U0001f3af Slippage: max {DEFAULT_SLIPPAGE_BPS/100:.1f}%\n"
+        f"\U0001f4bc Balance: *{balance:.4f} SOL*\n"
+        f"{impact_warn}\n"
+        f"\u26a0\ufe0f _This trade is irreversible once confirmed._\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    kb = [
+        [
+            InlineKeyboardButton(
+                f"\u2705 Confirm Buy {sol_amount} SOL",
+                callback_data=f"confirm_{data}",
+            ),
+        ],
+        [InlineKeyboardButton("\u274c Cancel", callback_data="trade")],
+    ]
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+async def _cb_preview_sell(query, user, context, data):
+    """Show sell confirmation before executing."""
+    # Check terms first
+    if not user.get("accepted_terms"):
+        await query.edit_message_text(
+            RISK_DISCLAIMER,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "\u2705 I Understand & Accept", callback_data="accept_terms",
+                )],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Kill switch / limits
+    error = _check_trade_allowed(user)
+    if error:
+        await query.edit_message_text(
+            error,
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    sell_mint = context.user_data.get("sell_mint")
+    sell_amount_raw = context.user_data.get("sell_amount_raw", "0")
+    if not sell_mint:
+        await query.edit_message_text(
+            "\u26a0\ufe0f No token selected.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    pct_map = {"sell_25": 25, "sell_50": 50, "sell_100": 100}
+    pct_label = pct_map.get(data, 100)
+
+    # Find token name
+    token_name = "Token"
+    for sym, info in COMMON_TOKENS.items():
+        if info["mint"] == sell_mint:
+            token_name = sym
+            break
+
+    text = (
+        "\U0001f4cb *Sell Confirmation*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        f"\U0001f4b8 *SELL {pct_label}% of {token_name}*\n"
+        f"\U0001f4b0 Fee: {PLATFORM_FEE_PCT}%\n"
+        f"\U0001f3af Slippage: max {DEFAULT_SLIPPAGE_BPS/100:.1f}%\n"
+        f"\n"
+        f"\u26a0\ufe0f _This trade is irreversible once confirmed._\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    kb = [
+        [InlineKeyboardButton(
+            f"\u2705 Confirm Sell {pct_label}%",
+            callback_data=f"confirm_{data}",
+        )],
+        [InlineKeyboardButton("\u274c Cancel", callback_data="trade")],
+    ]
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+# ══════════════════════════════════════════════
+# TRADE EXECUTION (now requires confirmation)
+# ══════════════════════════════════════════════
+
 async def _cb_execute_buy(query, user, context, data):
     """Execute a buy order. data = buy_01, buy_05, buy_1, buy_5"""
     if not user.get("wallet_pubkey") or not user.get("wallet_secret_enc"):
@@ -1116,7 +1559,7 @@ async def _cb_execute_buy(query, user, context, data):
         input_mint=SOL_MINT,
         output_mint=target_mint,
         amount_raw=swap_lamports,
-        slippage_bps=300,
+        slippage_bps=DEFAULT_SLIPPAGE_BPS,
     )
 
     if not quote:
@@ -1149,6 +1592,7 @@ async def _cb_execute_buy(query, user, context, data):
 
     if tx_sig:
         user["total_trades"] = user.get("total_trades", 0) + 1
+        _increment_daily_trades(user)
         prices = await get_crypto_prices()
         sol_price = prices.get("SOL", 0)
         usd_value = sol_amount * sol_price
@@ -1290,7 +1734,7 @@ async def _cb_execute_sell(query, user, context, data):
         input_mint=sell_mint,
         output_mint=SOL_MINT,
         amount_raw=swap_amount,
-        slippage_bps=300,
+        slippage_bps=DEFAULT_SLIPPAGE_BPS,
     )
 
     if not quote:
@@ -1319,6 +1763,7 @@ async def _cb_execute_sell(query, user, context, data):
 
     if tx_sig:
         user["total_trades"] = user.get("total_trades", 0) + 1
+        _increment_daily_trades(user)
         out_lamports = int(quote.get("outAmount", 0))
         sol_received = out_lamports / 1_000_000_000
 
@@ -2742,6 +3187,7 @@ def main() -> None:
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CommandHandler("broadcast", cmd_broadcast))
     app.add_handler(CommandHandler("activate", cmd_activate))
+    app.add_handler(CommandHandler("killswitch", cmd_killswitch))
 
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))
