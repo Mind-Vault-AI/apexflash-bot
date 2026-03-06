@@ -1,10 +1,18 @@
 """
-ApexFlash MEGA BOT - Twitter/X Auto-Poster
+ApexFlash MEGA BOT - Twitter/X Auto-Poster + Analytics
 Posts to @MindVault_ai via Twitter API v2 (tweepy).
 Pay-per-use plan: ~90 tweets/month (3/day).
+
+Analytics features:
+- Tracks all posted tweets (in-memory, survives within session)
+- Fetches engagement metrics (impressions, likes, retweets, replies)
+- Smart content rotation: boosts categories that perform well
+- /tweetstats admin command for performance overview
 """
 import random
 import logging
+from datetime import datetime, timezone
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +23,29 @@ try:
 except ImportError:
     TWEEPY_AVAILABLE = False
     logger.warning("tweepy not installed — Twitter posting disabled")
+
+
+# ══════════════════════════════════════════════
+# TWEET HISTORY & ANALYTICS (in-memory)
+# ══════════════════════════════════════════════
+
+# Stores: [{"id": str, "cat": str, "text": str, "ts": datetime, "metrics": dict}]
+tweet_history: list[dict] = []
+
+# Category performance scores (higher = more engagement)
+# Starts equal, adjusts based on real engagement data
+category_scores: dict[str, float] = {
+    "feature": 1.0,
+    "whale": 1.0,
+    "tip": 1.0,
+    "cta": 1.0,
+    "referral": 1.0,
+    "trust": 1.0,
+    "exchange": 1.0,
+}
+
+# Track recently used tweets to avoid repeats
+_recent_indices: list[int] = []
 
 
 # ══════════════════════════════════════════════
@@ -223,26 +254,17 @@ TWEETS = [
 ]
 
 
-def get_scheduled_tweet(hour_utc: int) -> str:
-    """Pick a tweet based on time of day (same logic as Telegram)."""
-    if 6 <= hour_utc < 12:
-        cats = ["tip", "whale", "trust"]
-    elif 12 <= hour_utc < 18:
-        cats = ["feature", "whale", "exchange"]
-    else:
-        cats = ["cta", "referral", "feature"]
+# ══════════════════════════════════════════════
+# ANALYTICS: Fetch engagement metrics
+# ══════════════════════════════════════════════
 
-    pool = [t for t in TWEETS if t["cat"] in cats]
-    if not pool:
-        pool = TWEETS
-    return random.choice(pool)["text"]
-
-
-def _create_client(api_key: str, api_secret: str,
-                   access_token: str, access_secret: str) -> "tweepy.Client":
-    """Create an authenticated tweepy v2 Client."""
+def _get_client(api_key: str, api_secret: str,
+                access_token: str, access_secret: str) -> Optional["tweepy.Client"]:
+    """Create authenticated tweepy v2 Client."""
     if not TWEEPY_AVAILABLE:
-        raise RuntimeError("tweepy is not installed")
+        return None
+    if not all([api_key, api_secret, access_token, access_secret]):
+        return None
     return tweepy.Client(
         consumer_key=api_key,
         consumer_secret=api_secret,
@@ -251,12 +273,242 @@ def _create_client(api_key: str, api_secret: str,
     )
 
 
+def fetch_tweet_metrics(client: "tweepy.Client", tweet_ids: list[str]) -> dict:
+    """Fetch public_metrics for a list of tweet IDs.
+
+    Returns: {tweet_id: {impressions, likes, retweets, replies, quotes, bookmarks}}
+    """
+    if not tweet_ids or not client:
+        return {}
+
+    metrics = {}
+    try:
+        # Twitter API allows up to 100 tweet IDs per request
+        batch = tweet_ids[:100]
+        response = client.get_tweets(
+            ids=batch,
+            tweet_fields=["public_metrics", "created_at"],
+        )
+        if response and response.data:
+            for tweet in response.data:
+                pm = tweet.public_metrics or {}
+                metrics[str(tweet.id)] = {
+                    "impressions": pm.get("impression_count", 0),
+                    "likes": pm.get("like_count", 0),
+                    "retweets": pm.get("retweet_count", 0),
+                    "replies": pm.get("reply_count", 0),
+                    "quotes": pm.get("quote_count", 0),
+                    "bookmarks": pm.get("bookmark_count", 0),
+                }
+    except Exception as e:
+        logger.error(f"Failed to fetch tweet metrics: {e}")
+
+    return metrics
+
+
+def update_history_metrics(api_key: str, api_secret: str,
+                           access_token: str, access_secret: str) -> int:
+    """Fetch metrics for all tracked tweets and update history.
+
+    Returns number of tweets updated.
+    """
+    if not tweet_history:
+        return 0
+
+    client = _get_client(api_key, api_secret, access_token, access_secret)
+    if not client:
+        return 0
+
+    ids = [t["id"] for t in tweet_history if t.get("id")]
+    if not ids:
+        return 0
+
+    metrics = fetch_tweet_metrics(client, ids)
+
+    updated = 0
+    for entry in tweet_history:
+        tid = entry.get("id")
+        if tid and tid in metrics:
+            entry["metrics"] = metrics[tid]
+            updated += 1
+
+    # Update category scores based on engagement
+    _recalculate_category_scores()
+
+    return updated
+
+
+def _recalculate_category_scores():
+    """Recalculate category scores based on engagement data.
+
+    Uses engagement rate: (likes + retweets + replies) / impressions
+    Falls back to absolute engagement if impressions are 0.
+    """
+    cat_engagement: dict[str, list[float]] = {}
+
+    for entry in tweet_history:
+        m = entry.get("metrics")
+        if not m:
+            continue
+
+        cat = entry.get("cat", "unknown")
+        impressions = m.get("impressions", 0)
+        engagement = m.get("likes", 0) + m.get("retweets", 0) + m.get("replies", 0)
+
+        if impressions > 0:
+            rate = engagement / impressions * 100  # engagement rate %
+        else:
+            rate = engagement * 0.1  # fallback: raw engagement scaled down
+
+        if cat not in cat_engagement:
+            cat_engagement[cat] = []
+        cat_engagement[cat].append(rate)
+
+    # Update scores: average engagement rate per category
+    for cat, rates in cat_engagement.items():
+        if rates:
+            avg = sum(rates) / len(rates)
+            # Score range: 0.3 (worst) to 3.0 (best) — smoothed
+            category_scores[cat] = max(0.3, min(3.0, 0.5 + avg * 2))
+
+    if cat_engagement:
+        logger.info(f"Category scores updated: {category_scores}")
+
+
+# ══════════════════════════════════════════════
+# SMART CONTENT SELECTION
+# ══════════════════════════════════════════════
+
+def get_scheduled_tweet(hour_utc: int) -> tuple[str, str]:
+    """Pick a tweet based on time of day + engagement scores.
+
+    Returns: (text, category)
+    """
+    if 6 <= hour_utc < 12:
+        cats = ["tip", "whale", "trust"]
+    elif 12 <= hour_utc < 18:
+        cats = ["feature", "whale", "exchange"]
+    else:
+        cats = ["cta", "referral", "feature"]
+
+    pool = [(i, t) for i, t in enumerate(TWEETS) if t["cat"] in cats]
+    if not pool:
+        pool = list(enumerate(TWEETS))
+
+    # Filter out recently used tweets (avoid repeats within last 6 posts)
+    if len(pool) > 3:
+        pool = [(i, t) for i, t in pool if i not in _recent_indices[-6:]]
+        if not pool:
+            pool = [(i, t) for i, t in enumerate(TWEETS) if t["cat"] in cats]
+
+    # Weighted random selection based on category scores
+    weights = [category_scores.get(t["cat"], 1.0) for _, t in pool]
+    total = sum(weights)
+    weights = [w / total for w in weights]
+
+    chosen_idx, chosen = random.choices(pool, weights=weights, k=1)[0]
+
+    # Track to avoid repeats
+    _recent_indices.append(chosen_idx)
+    if len(_recent_indices) > 12:
+        _recent_indices.pop(0)
+
+    return chosen["text"], chosen["cat"]
+
+
+# ══════════════════════════════════════════════
+# STATS FORMATTING (for /tweetstats command)
+# ══════════════════════════════════════════════
+
+def get_stats_text() -> str:
+    """Format tweet analytics for the /tweetstats admin command."""
+    if not tweet_history:
+        return (
+            "\U0001f4ca *Twitter Analytics*\n\n"
+            "No tweets tracked yet.\n"
+            "Tweets are tracked after the bot posts them.\n"
+            "Check back after the next scheduled post."
+        )
+
+    total = len(tweet_history)
+    with_metrics = sum(1 for t in tweet_history if t.get("metrics"))
+
+    # Aggregate metrics
+    total_impressions = 0
+    total_likes = 0
+    total_retweets = 0
+    total_replies = 0
+    total_bookmarks = 0
+
+    for entry in tweet_history:
+        m = entry.get("metrics", {})
+        total_impressions += m.get("impressions", 0)
+        total_likes += m.get("likes", 0)
+        total_retweets += m.get("retweets", 0)
+        total_replies += m.get("replies", 0)
+        total_bookmarks += m.get("bookmarks", 0)
+
+    total_engagement = total_likes + total_retweets + total_replies
+    eng_rate = (total_engagement / total_impressions * 100) if total_impressions > 0 else 0
+
+    lines = [
+        "\U0001f4ca *Twitter Analytics — @MindVault\\_ai*\n",
+        f"\U0001f4dd Tweets posted: {total}",
+        f"\U0001f4c8 With metrics: {with_metrics}\n",
+        "*Totals:*",
+        f"  \U0001f441 Impressions: {total_impressions:,}",
+        f"  \u2764\ufe0f Likes: {total_likes:,}",
+        f"  \U0001f501 Retweets: {total_retweets:,}",
+        f"  \U0001f4ac Replies: {total_replies:,}",
+        f"  \U0001f516 Bookmarks: {total_bookmarks:,}",
+        f"  \U0001f4af Engagement rate: {eng_rate:.2f}%\n",
+        "*Category scores (auto-adjusted):*",
+    ]
+
+    for cat, score in sorted(category_scores.items(), key=lambda x: -x[1]):
+        bar_len = int(score * 5)
+        bar = "\u2588" * bar_len + "\u2591" * (15 - bar_len)
+        lines.append(f"  {cat:10s} {bar} {score:.1f}x")
+
+    # Best & worst performing tweet
+    if with_metrics > 0:
+        best = max(
+            (t for t in tweet_history if t.get("metrics")),
+            key=lambda t: t["metrics"].get("likes", 0) + t["metrics"].get("retweets", 0),
+        )
+        worst = min(
+            (t for t in tweet_history if t.get("metrics")),
+            key=lambda t: t["metrics"].get("impressions", 0),
+        )
+        bm = best["metrics"]
+        wm = worst["metrics"]
+
+        lines.append(f"\n*Best tweet* ({best['cat']}):")
+        lines.append(f"  {bm.get('impressions', 0):,} views, {bm.get('likes', 0)} likes, {bm.get('retweets', 0)} RTs")
+        preview = best["text"][:60].replace("\n", " ")
+        lines.append(f"  _{preview}..._")
+
+        lines.append(f"\n*Lowest reach* ({worst['cat']}):")
+        lines.append(f"  {wm.get('impressions', 0):,} views, {wm.get('likes', 0)} likes")
+        preview = worst["text"][:60].replace("\n", " ")
+        lines.append(f"  _{preview}..._")
+
+    lines.append(f"\n_Auto-adjusting: high-engagement categories get posted more._")
+
+    return "\n".join(lines)
+
+
+# ══════════════════════════════════════════════
+# POSTING
+# ══════════════════════════════════════════════
+
 async def post_tweet(api_key: str, api_secret: str,
                      access_token: str, access_secret: str) -> bool:
     """Post a marketing tweet to @MindVault_ai.
 
-    Uses tweepy synchronously (Twitter API is sync) but wrapped
-    for async context via the bot's job queue.
+    - Selects content using smart rotation (engagement-weighted)
+    - Tracks posted tweet for analytics
+    - Fetches metrics for previous tweets
     """
     if not TWEEPY_AVAILABLE:
         logger.warning("tweepy not installed — skipping Twitter post")
@@ -267,20 +519,48 @@ async def post_tweet(api_key: str, api_secret: str,
         return False
 
     try:
-        from datetime import datetime, timezone
         hour = datetime.now(timezone.utc).hour
-        text = get_scheduled_tweet(hour)
+        text, cat = get_scheduled_tweet(hour)
 
-        client = _create_client(api_key, api_secret, access_token, access_secret)
+        client = _get_client(api_key, api_secret, access_token, access_secret)
+        if not client:
+            return False
+
         response = client.create_tweet(text=text)
 
         if response and response.data:
-            tweet_id = response.data.get("id", "unknown")
-            logger.info(f"Tweet posted: https://x.com/MindVault_ai/status/{tweet_id}")
+            tweet_id = str(response.data.get("id", "unknown"))
+            logger.info(f"Tweet posted [{cat}]: https://x.com/MindVault_ai/status/{tweet_id}")
+
+            # Track in history
+            tweet_history.append({
+                "id": tweet_id,
+                "cat": cat,
+                "text": text,
+                "ts": datetime.now(timezone.utc),
+                "metrics": None,  # fetched later
+            })
+
+            # Keep history manageable (last 100 tweets)
+            while len(tweet_history) > 100:
+                tweet_history.pop(0)
+
+            # Fetch metrics for previous tweets (not current — too fresh)
+            if len(tweet_history) > 1:
+                try:
+                    updated = update_history_metrics(
+                        api_key, api_secret, access_token, access_secret
+                    )
+                    if updated:
+                        logger.info(f"Updated metrics for {updated} tweets")
+                except Exception as e:
+                    logger.warning(f"Metrics fetch failed (non-critical): {e}")
+
             return True
         else:
             logger.error(f"Tweet post failed — no data in response: {response}")
             return False
+
     except tweepy.TooManyRequests:
         logger.warning("Twitter rate limit hit — skipping this post")
         return False

@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.7.4 (MEGA BOT + HARDENED BACKUP + 24/7 HEARTBEAT + AUTO-MARKETING + TWITTER)
+Version: 3.7.5 (MEGA BOT + HARDENED BACKUP + 24/7 HEARTBEAT + AUTO-MARKETING + TWITTER ANALYTICS)
 """
 import logging
 import re
@@ -66,7 +66,7 @@ from notifications import (
 from gumroad import verify_license, get_subscriber_count
 from persistence import save_users, load_users, save_stats, load_stats, export_backup, import_backup
 from marketing import post_to_channel as marketing_post
-from twitter_poster import post_tweet as twitter_post
+from twitter_poster import post_tweet as twitter_post, get_stats_text as twitter_stats_text
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -439,6 +439,16 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text(
         f"\u2705 Broadcast complete: {sent} delivered, {failed} failed."
     )
+
+
+async def cmd_tweetstats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show Twitter/X analytics dashboard. Admin only."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("\u26d4 Unauthorized.")
+        return
+
+    stats = twitter_stats_text()
+    await update.message.reply_text(stats, parse_mode="Markdown")
 
 
 async def cmd_killswitch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3645,6 +3655,7 @@ def main() -> None:
     app.add_handler(CommandHandler("killswitch", cmd_killswitch))
     app.add_handler(CommandHandler("backup", cmd_backup))
     app.add_handler(CommandHandler("restore", cmd_restore))
+    app.add_handler(CommandHandler("tweetstats", cmd_tweetstats))
 
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))
@@ -3690,7 +3701,7 @@ def main() -> None:
             marketing_job, time=post_time, name=f"marketing_{post_time.hour:02d}",
         )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.7.4 starting (Telegram + Twitter)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.7.5 starting (Telegram + Twitter Analytics)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
