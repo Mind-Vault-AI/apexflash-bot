@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.7.6 (MEGA BOT + HARDENED BACKUP + 24/7 HEARTBEAT — stable recovery)
+Version: 3.7.6 (MEGA BOT + HARDENED BACKUP + 24/7 HEARTBEAT — manual async polling)
 """
 import logging
 import re
@@ -3658,7 +3658,41 @@ def main() -> None:
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
 
-    app.run_polling(drop_pending_updates=True)
+    # Manual async startup instead of run_polling() which crashes on Render
+    # due to signal handling / dependency incompatibility
+    import asyncio
+    import signal
+
+    async def _run():
+        try:
+            await app.initialize()
+            await app.start()
+            await app.updater.start_polling(drop_pending_updates=True)
+            logger.info("Bot polling started successfully!")
+
+            # Keep running until terminated
+            stop_event = asyncio.Event()
+
+            def _signal_handler(sig, frame):
+                logger.info(f"Received signal {sig}, shutting down...")
+                stop_event.set()
+
+            signal.signal(signal.SIGINT, _signal_handler)
+            signal.signal(signal.SIGTERM, _signal_handler)
+
+            await stop_event.wait()
+        except Exception as e:
+            logger.error(f"Run error: {e}", exc_info=True)
+        finally:
+            logger.info("Shutting down...")
+            try:
+                await app.updater.stop()
+                await app.stop()
+                await app.shutdown()
+            except Exception:
+                pass
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":
