@@ -21,47 +21,117 @@ Revenue model:
 Author: MindVault AI / Erik
 Version: 3.7.6 (MEGA BOT + HARDENED BACKUP + 24/7 HEARTBEAT — stable recovery)
 """
+import sys
+import os
+import json as _json
+import urllib.request
+
+def _boot_diag(msg):
+    """Ultra-early diagnostic — runs before ANY framework imports."""
+    token = os.getenv("BOT_TOKEN", "")
+    chat = os.getenv("ALERT_CHANNEL_ID", "")
+    if not token or not chat:
+        print(f"DIAG (no TG): {msg}", flush=True)
+        return
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = _json.dumps({"chat_id": chat, "text": f"🔧 {msg}"}).encode()
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5)
+    except Exception as ex:
+        print(f"DIAG (TG fail): {msg} | {ex}", flush=True)
+
+_boot_diag(f"BOOT: Python {sys.version}, importing stdlib...")
+
 import logging
 import re
 import random
 from datetime import datetime, timezone, time as dt_time
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters, ContextTypes,
-)
+_boot_diag("BOOT: stdlib OK, importing telegram...")
 
-from config import (
-    BOT_TOKEN, AFFILIATE_LINKS, TOOL_AFFILIATE_LINKS, ADMIN_IDS,
-    GUMROAD_PRO_URL, GUMROAD_ELITE_URL, TIERS,
-    GUMROAD_ACCESS_TOKEN,
-    PRO_PRICE_SOL, ELITE_PRICE_SOL,
-    SCAN_INTERVAL, WEBSITE_URL, SUPPORT_URL,
-    MIZAR_REFERRAL_URL, PLATFORM_FEE_PCT,
-    ETH_WHALE_WALLETS, SOL_WHALE_WALLETS,
-    WALLET_ENCRYPTION_KEY, SOL_MINT,
-    FEE_COLLECT_WALLET, REFERRAL_FEE_SHARE_PCT,
-    TRADING_ENABLED, MAX_TRADE_SOL, MIN_SOL_RESERVE,
-    MAX_SLIPPAGE_BPS, DEFAULT_SLIPPAGE_BPS,
-    PRICE_IMPACT_WARN_PCT, MAX_DAILY_TRADES,
-)
-from chains import fetch_eth_whale_transfers, fetch_sol_whale_transfers, get_crypto_prices
-from wallet import (
-    create_wallet, load_keypair, get_sol_balance,
-    get_token_balances, collect_fee, transfer_sol,
-)
-from jupiter import (
-    get_quote, execute_swap, calculate_fee,
-    get_token_info, search_token, COMMON_TOKENS,
-)
-from notifications import (
-    notify_discord_whale, notify_discord_trade,
-    notify_telegram_channel, notify_channel_trade,
-    notify_discord_digest, notify_channel_digest,
-)
-from gumroad import verify_license, get_subscriber_count
-from persistence import save_users, load_users, save_stats, load_stats, export_backup, import_backup
+try:
+    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+    from telegram.ext import (
+        Application, CommandHandler, CallbackQueryHandler,
+        MessageHandler, filters, ContextTypes,
+    )
+    _boot_diag("BOOT: telegram OK, importing config...")
+except Exception as e:
+    _boot_diag(f"CRASH: telegram import failed: {e}")
+    raise
+
+try:
+    from config import (
+        BOT_TOKEN, AFFILIATE_LINKS, TOOL_AFFILIATE_LINKS, ADMIN_IDS,
+        GUMROAD_PRO_URL, GUMROAD_ELITE_URL, TIERS,
+        GUMROAD_ACCESS_TOKEN,
+        PRO_PRICE_SOL, ELITE_PRICE_SOL,
+        SCAN_INTERVAL, WEBSITE_URL, SUPPORT_URL,
+        MIZAR_REFERRAL_URL, PLATFORM_FEE_PCT,
+        ETH_WHALE_WALLETS, SOL_WHALE_WALLETS,
+        WALLET_ENCRYPTION_KEY, SOL_MINT,
+        FEE_COLLECT_WALLET, REFERRAL_FEE_SHARE_PCT,
+        TRADING_ENABLED, MAX_TRADE_SOL, MIN_SOL_RESERVE,
+        MAX_SLIPPAGE_BPS, DEFAULT_SLIPPAGE_BPS,
+        PRICE_IMPACT_WARN_PCT, MAX_DAILY_TRADES,
+    )
+    _boot_diag(f"BOOT: config OK (token={BOT_TOKEN[:10]}...), importing modules...")
+except Exception as e:
+    _boot_diag(f"CRASH: config import failed: {e}")
+    raise
+
+try:
+    from chains import fetch_eth_whale_transfers, fetch_sol_whale_transfers, get_crypto_prices
+    _boot_diag("BOOT: chains OK")
+except Exception as e:
+    _boot_diag(f"CRASH: chains import failed: {e}")
+    raise
+
+try:
+    from wallet import (
+        create_wallet, load_keypair, get_sol_balance,
+        get_token_balances, collect_fee, transfer_sol,
+    )
+    _boot_diag("BOOT: wallet OK")
+except Exception as e:
+    _boot_diag(f"CRASH: wallet import failed: {e}")
+    raise
+
+try:
+    from jupiter import (
+        get_quote, execute_swap, calculate_fee,
+        get_token_info, search_token, COMMON_TOKENS,
+    )
+    _boot_diag("BOOT: jupiter OK")
+except Exception as e:
+    _boot_diag(f"CRASH: jupiter import failed: {e}")
+    raise
+
+try:
+    from notifications import (
+        notify_discord_whale, notify_discord_trade,
+        notify_telegram_channel, notify_channel_trade,
+        notify_discord_digest, notify_channel_digest,
+    )
+    _boot_diag("BOOT: notifications OK")
+except Exception as e:
+    _boot_diag(f"CRASH: notifications import failed: {e}")
+    raise
+
+try:
+    from gumroad import verify_license, get_subscriber_count
+    _boot_diag("BOOT: gumroad OK")
+except Exception as e:
+    _boot_diag(f"CRASH: gumroad import failed: {e}")
+    raise
+
+try:
+    from persistence import save_users, load_users, save_stats, load_stats, export_backup, import_backup
+    _boot_diag("BOOT: ALL IMPORTS OK ✅")
+except Exception as e:
+    _boot_diag(f"CRASH: persistence import failed: {e}")
+    raise
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -3658,12 +3728,34 @@ def main() -> None:
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
 
+    _diag("Step 2: About to start polling...")
     app.run_polling(drop_pending_updates=True)
 
 
-if __name__ == "__main__":
+def _diag(msg):
+    """Send diagnostic message to ALERT_CHANNEL_ID via raw API (bypass bot framework)."""
+    import urllib.request, json as _json, os
+    token = os.getenv("BOT_TOKEN", "")
+    chat = os.getenv("ALERT_CHANNEL_ID", "")
+    if not token or not chat:
+        return
     try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = _json.dumps({"chat_id": chat, "text": f"🔧 DIAG: {msg}"}).encode()
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5)
+    except Exception:
+        pass  # Silent fail — diagnostic only
+
+
+if __name__ == "__main__":
+    import traceback
+    _diag("Step 0: bot.py started")
+    try:
+        _diag("Step 1: calling main()")
         main()
     except Exception as e:
+        tb = traceback.format_exc()
+        _diag(f"FATAL CRASH:\n{str(e)[:500]}\n\n{tb[-500:]}")
         logging.error(f"FATAL: Bot crashed at startup: {e}", exc_info=True)
         raise
