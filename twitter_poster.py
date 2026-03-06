@@ -9,10 +9,12 @@ Analytics features:
 - Smart content rotation: boosts categories that perform well
 - /tweetstats admin command for performance overview
 """
+from __future__ import annotations
+
 import random
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List, Dict, Tuple
 
 logger = logging.getLogger(__name__)
 

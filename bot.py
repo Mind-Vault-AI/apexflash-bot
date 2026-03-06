@@ -47,7 +47,7 @@ from config import (
     PRICE_IMPACT_WARN_PCT, MAX_DAILY_TRADES,
     TWITTER_API_KEY, TWITTER_API_SECRET,
     TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET,
-    TWITTER_ENABLED,
+    TWITTER_ENABLED, ALERT_CHANNEL_ID,
 )
 from chains import fetch_eth_whale_transfers, fetch_sol_whale_transfers, get_crypto_prices
 from wallet import (
@@ -3538,7 +3538,7 @@ async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             f"Users: {len(users)} | Wallets: {wallets}\n"
             f"Trades today: {platform_stats.get('trades_today', 0)} | "
             f"Total: {platform_stats.get('trades_total', 0)}\n"
-            f"v3.7.4"
+            f"v3.7.5"
         )
         for admin_id in ADMIN_IDS:
             try:
@@ -3710,4 +3710,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        logging.error(f"FATAL: Bot crashed at startup: {e}", exc_info=True)
+        raise
