@@ -1,7 +1,7 @@
 """
 ApexFlash MEGA BOT - Twitter/X Auto-Poster
-Posts to @apexflashpro via Twitter API v2 (tweepy).
-Free tier: 1,500 tweets/month — we use ~90/month (3/day).
+Posts to @MindVault_ai via Twitter API v2 (tweepy).
+Pay-per-use plan: ~90 tweets/month (3/day).
 """
 import random
 import logging
@@ -253,7 +253,7 @@ def _create_client(api_key: str, api_secret: str,
 
 async def post_tweet(api_key: str, api_secret: str,
                      access_token: str, access_secret: str) -> bool:
-    """Post a marketing tweet to @apexflashpro.
+    """Post a marketing tweet to @MindVault_ai.
 
     Uses tweepy synchronously (Twitter API is sync) but wrapped
     for async context via the bot's job queue.
@@ -276,7 +276,7 @@ async def post_tweet(api_key: str, api_secret: str,
 
         if response and response.data:
             tweet_id = response.data.get("id", "unknown")
-            logger.info(f"Tweet posted: https://x.com/apexflashpro/status/{tweet_id}")
+            logger.info(f"Tweet posted: https://x.com/MindVault_ai/status/{tweet_id}")
             return True
         else:
             logger.error(f"Tweet post failed — no data in response: {response}")
