@@ -4,3 +4,4 @@ aiohttp==3.9.5
 python-dotenv==1.0.1
 solders>=0.21.0
 cryptography>=42.0.0
+tweepy>=4.14.0
