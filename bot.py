@@ -45,7 +45,47 @@ for mod_name in ["aiohttp", "cryptography", "solders", "dotenv"]:
     except Exception as e:
         send(f"❌ {mod_name} FAILED: {e}")
 
-send("🔄 All imports tested. Sleeping forever to stay alive...")
+# Report ALL installed package versions
+try:
+    import subprocess
+    result = subprocess.run([sys.executable, "-m", "pip", "list", "--format=json"],
+                          capture_output=True, text=True, timeout=30)
+    pkgs = json.loads(result.stdout)
+    pkg_lines = [f"{p['name']}=={p['version']}" for p in pkgs]
+    # Send in chunks (Telegram 4096 char limit)
+    chunk = "📦 INSTALLED PACKAGES:\n"
+    for line in pkg_lines:
+        if len(chunk) + len(line) > 3900:
+            send(chunk)
+            chunk = "📦 PACKAGES (cont):\n"
+        chunk += line + "\n"
+    if chunk:
+        send(chunk)
+except Exception as e:
+    send(f"❌ pip list failed: {e}")
+
+# Test run_polling specifically
+send("🧪 Testing run_polling now...")
+try:
+    from telegram.ext import Application
+    bot_token = os.getenv("BOT_TOKEN", "")
+    app = Application.builder().token(bot_token).build()
+
+    import asyncio
+    async def test_init():
+        await app.initialize()
+        me = await app.bot.get_me()
+        send(f"✅ Bot init OK: @{me.username}")
+        await app.shutdown()
+
+    asyncio.run(test_init())
+    send("✅ asyncio + telegram init works fine!")
+except Exception as e:
+    import traceback
+    tb = traceback.format_exc()
+    send(f"❌ Telegram init FAILED:\n{str(e)[:300]}\n\n{tb[-800:]}")
+
+send("🔄 All tests done. Sleeping forever to stay alive...")
 
 # Keep the process alive — no framework, no polling
 counter = 0
