@@ -26,7 +26,7 @@ import re
 import random
 from datetime import datetime, timezone, time as dt_time
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes,
@@ -653,6 +653,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "admin_stats":   _cb_admin_stats,
         "admin_users":   _cb_admin_users,
         "admin_broadcast": _cb_admin_broadcast,
+        # Withdraw
+        "withdraw_start":   _cb_withdraw_start,
+        "withdraw_confirm": _cb_withdraw_confirm,
+        "withdraw_cancel":  _cb_trade_wallet,
     }
 
     # Handle dynamic buy/sell amount callbacks (buy_01, buy_05, buy_1, buy_5, sell_25, sell_50, sell_100)
@@ -711,6 +715,21 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             try:
                 await query.edit_message_text(
                     "\u26a0\ufe0f Trade failed. Use /start to return.",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+        return
+
+    # Withdraw amount selection (withdraw_amt_25, withdraw_amt_50, withdraw_amt_100)
+    if data.startswith("withdraw_amt_"):
+        try:
+            await _cb_withdraw_amount(query, user, context)
+        except Exception as e:
+            logger.error(f"Withdraw amount [{data}] error: {e}")
+            try:
+                await query.edit_message_text(
+                    "⚠️ Withdrawal failed. Use /start to return.",
                     parse_mode="Markdown",
                 )
             except Exception:
@@ -1200,6 +1219,7 @@ async def _cb_trade_wallet(query, user, context):
             InlineKeyboardButton("\U0001f4b5 Buy", callback_data="trade_buy"),
             InlineKeyboardButton("\U0001f4b8 Sell", callback_data="trade_sell"),
         ],
+        [InlineKeyboardButton("📤 Withdraw SOL", callback_data="withdraw_start")],
         [InlineKeyboardButton("\U0001f504 Refresh", callback_data="trade_refresh")],
         [InlineKeyboardButton("\U0001f3c6 Leaderboard", callback_data="leaderboard")],
         [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
@@ -1214,6 +1234,205 @@ async def _cb_trade_wallet(query, user, context):
 async def _cb_trade_refresh_balance(query, user, context):
     """Alias for wallet view (refresh)."""
     await _cb_trade_wallet(query, user, context)
+
+
+# ── Withdraw SOL ──────────────────────────────
+
+async def _cb_withdraw_start(query, user, context):
+    """Prompt user to enter destination address for withdrawal."""
+    pubkey = user.get("wallet_pubkey")
+    if not pubkey:
+        await query.edit_message_text(
+            "⚠️ No wallet found. Create one first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔐 Create Wallet", callback_data="trade_create")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    sol_bal = await get_sol_balance(pubkey)
+    available = sol_bal - MIN_SOL_RESERVE
+    if available <= 0:
+        await query.edit_message_text(
+            f"⚠️ *Insufficient balance*\n\n"
+            f"◎ Balance: {sol_bal:.4f} SOL\n"
+            f"🔒 Reserved for fees: {MIN_SOL_RESERVE} SOL\n\n"
+            f"You need more than {MIN_SOL_RESERVE} SOL to withdraw.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    context.user_data["awaiting_input"] = "withdraw_address"
+    await query.edit_message_text(
+        "📤 *Withdraw SOL*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"◎ Available: *{available:.4f} SOL*\n"
+        f"🔒 Reserved: {MIN_SOL_RESERVE} SOL (tx fees)\n\n"
+        "📍 *Send me the destination SOL address:*",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Cancel", callback_data="trade_wallet")],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_withdraw_amount(update_or_query, user, context):
+    """Show confirmation after user selects withdraw percentage."""
+    query = update_or_query
+    data = query.data  # withdraw_amt_25, withdraw_amt_50, withdraw_amt_100
+    pct_str = data.replace("withdraw_amt_", "")
+    try:
+        pct = int(pct_str)
+    except ValueError:
+        await query.edit_message_text("⚠️ Invalid amount. Use /start to return.", parse_mode="Markdown")
+        return
+
+    dest = context.user_data.get("withdraw_dest")
+    pubkey = user.get("wallet_pubkey")
+    if not dest or not pubkey:
+        await query.edit_message_text(
+            "⚠️ Session expired. Start a new withdrawal from your wallet.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Fresh balance check (security)
+    sol_bal = await get_sol_balance(pubkey)
+    available = sol_bal - MIN_SOL_RESERVE
+    if available <= 0:
+        context.user_data.pop("withdraw_dest", None)
+        await query.edit_message_text(
+            "⚠️ *Insufficient balance* — cannot withdraw.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    import math
+    send_sol = available * (pct / 100.0)
+    send_lamports = math.floor(send_sol * 1_000_000_000)
+    send_display = send_lamports / 1_000_000_000
+
+    context.user_data["withdraw_lamports"] = send_lamports
+
+    dest_short = f"{dest[:6]}...{dest[-4:]}"
+    await query.edit_message_text(
+        "📤 *Confirm Withdrawal*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"💰 Amount: *{send_display:.4f} SOL*\n"
+        f"📍 To: `{dest_short}`\n"
+        f"📍 Full: `{dest}`\n\n"
+        "⚠️ This action cannot be undone!",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Confirm Send", callback_data="withdraw_confirm")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="withdraw_cancel")],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_withdraw_confirm(query, user, context):
+    """Execute the SOL withdrawal or cancel."""
+    dest = context.user_data.get("withdraw_dest")
+    lamports = context.user_data.get("withdraw_lamports")
+    pubkey = user.get("wallet_pubkey")
+    encrypted = user.get("wallet_secret")
+
+    # Clean up session data regardless of outcome
+    def _clear_withdraw():
+        context.user_data.pop("withdraw_dest", None)
+        context.user_data.pop("withdraw_lamports", None)
+
+    if not all([dest, lamports, pubkey, encrypted]):
+        _clear_withdraw()
+        await query.edit_message_text(
+            "⚠️ Session expired. Start a new withdrawal from your wallet.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Final balance safety check
+    sol_bal = await get_sol_balance(pubkey)
+    available = sol_bal - MIN_SOL_RESERVE
+    needed_sol = lamports / 1_000_000_000
+    if needed_sol > available:
+        _clear_withdraw()
+        await query.edit_message_text(
+            f"⚠️ *Balance changed!*\n\n"
+            f"Requested: {needed_sol:.4f} SOL\n"
+            f"Available: {available:.4f} SOL\n\n"
+            "Try again with updated balance.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    await query.edit_message_text("⏳ *Processing withdrawal...*", parse_mode="Markdown")
+
+    try:
+        keypair = load_keypair(encrypted)
+        tx_sig = await transfer_sol(keypair, dest, lamports)
+    except Exception as e:
+        logger.error(f"Withdraw error for user {user.get('user_id')}: {e}")
+        _clear_withdraw()
+        await query.edit_message_text(
+            "❌ *Withdrawal failed*\n\n"
+            f"Error: {str(e)[:100]}\n\n"
+            "Please try again or contact support.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Try Again", callback_data="withdraw_start")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    _clear_withdraw()
+
+    if tx_sig:
+        sol_sent = lamports / 1_000_000_000
+        new_bal = await get_sol_balance(pubkey)
+        dest_short = f"{dest[:6]}...{dest[-4:]}"
+        await query.edit_message_text(
+            "✅ *Withdrawal Successful!*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💰 Sent: *{sol_sent:.4f} SOL*\n"
+            f"📍 To: `{dest_short}`\n"
+            f"◎ Remaining: *{new_bal:.4f} SOL*\n\n"
+            f"🔗 [View on Solscan](https://solscan.io/tx/{tx_sig})",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+        )
+        logger.info(f"Withdraw OK: user={user.get('user_id')} amount={sol_sent:.4f} tx={tx_sig}")
+    else:
+        await query.edit_message_text(
+            "❌ *Withdrawal failed*\n\n"
+            "Transaction could not be confirmed.\n"
+            "Your SOL is safe — please try again.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Try Again", callback_data="withdraw_start")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            ]),
+            parse_mode="Markdown",
+        )
 
 
 async def _cb_trade_buy(query, user, context):
@@ -2110,6 +2329,66 @@ async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYP
                 parse_mode="Markdown",
             )
             return
+
+    # ── Handle withdraw address input (when awaiting) ──
+    if context.user_data.get("awaiting_input") == "withdraw_address":
+        context.user_data["awaiting_input"] = None
+        # Validate as SOL address
+        if not SOL_ADDR_RE.match(text):
+            await update.message.reply_text(
+                "⚠️ That doesn't look like a valid Solana address.\n\n"
+                "Please send a valid SOL address (32-44 characters, base58).",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("❌ Cancel", callback_data="trade_wallet")],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+        # Block self-transfer
+        if text == user.get("wallet_pubkey"):
+            await update.message.reply_text(
+                "⚠️ Cannot withdraw to your own bot wallet.\n\n"
+                "Send a *different* SOL address (e.g. your Trust Wallet, Phantom, exchange).",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("❌ Cancel", callback_data="trade_wallet")],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+
+        # Store destination and show amount options
+        context.user_data["withdraw_dest"] = text
+        sol_bal = await get_sol_balance(user["wallet_pubkey"])
+        available = sol_bal - MIN_SOL_RESERVE
+        if available <= 0:
+            context.user_data.pop("withdraw_dest", None)
+            await update.message.reply_text(
+                "⚠️ *Insufficient balance* — cannot withdraw.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+
+        dest_short = f"{text[:6]}...{text[-4:]}"
+        await update.message.reply_text(
+            "📤 *Withdraw SOL*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📍 To: `{dest_short}`\n"
+            f"◎ Available: *{available:.4f} SOL*\n\n"
+            "💰 *How much do you want to send?*",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("25%", callback_data="withdraw_amt_25"),
+                    InlineKeyboardButton("50%", callback_data="withdraw_amt_50"),
+                    InlineKeyboardButton("100%", callback_data="withdraw_amt_100"),
+                ],
+                [InlineKeyboardButton("❌ Cancel", callback_data="withdraw_cancel")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
 
     # Check if it looks like a Solana address
     if not SOL_ADDR_RE.match(text):
@@ -3708,6 +3987,17 @@ def main() -> None:
 
     # Startup notification to channel
     async def post_init(application: Application) -> None:
+        # Set persistent "/" menu commands (visible to all users)
+        try:
+            await application.bot.set_my_commands([
+                BotCommand("start", "Start the bot"),
+                BotCommand("help", "How to use ApexFlash"),
+                BotCommand("myid", "Show your Telegram ID"),
+            ])
+            logger.info("✅ Menu commands set")
+        except Exception as e:
+            logger.warning(f"set_my_commands failed: {e}")
+
         if ALERT_CHANNEL_ID:
             try:
                 await application.bot.send_message(
