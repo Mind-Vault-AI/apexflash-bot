@@ -62,21 +62,41 @@ def load_keypair(encrypted_secret: str) -> Keypair:
 
 
 # ══════════════════════════════════════════════
-# SOLANA RPC CALLS (via Helius)
+# SOLANA RPC CALLS (Helius + public fallback)
 # ══════════════════════════════════════════════
 
+_PUBLIC_RPC = "https://api.mainnet-beta.solana.com"
+
+
 async def _rpc(method: str, params: list) -> dict:
-    """JSON-RPC call to Solana via Helius."""
+    """JSON-RPC call to Solana. Tries Helius first, falls back to public RPC."""
     payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+    endpoints = [HELIUS_RPC_URL, _PUBLIC_RPC]
+
     async with aiohttp.ClientSession() as session:
-        async with session.post(
-            HELIUS_RPC_URL, json=payload,
-            timeout=aiohttp.ClientTimeout(total=12),
-        ) as resp:
-            data = await resp.json()
-            if "error" in data:
-                logger.error(f"RPC [{method}]: {data['error']}")
-            return data
+        for i, url in enumerate(endpoints):
+            try:
+                async with session.post(
+                    url, json=payload,
+                    timeout=aiohttp.ClientTimeout(total=12),
+                ) as resp:
+                    if resp.status == 429:
+                        logger.warning(f"RPC [{method}]: 429 rate-limited on endpoint {i}, trying fallback")
+                        continue
+                    if resp.status != 200:
+                        logger.warning(f"RPC [{method}]: HTTP {resp.status} on endpoint {i}, trying fallback")
+                        continue
+                    data = await resp.json()
+                    if "error" in data:
+                        logger.error(f"RPC [{method}]: {data['error']}")
+                    return data
+            except Exception as e:
+                logger.warning(f"RPC [{method}]: endpoint {i} failed: {e}")
+                continue
+
+    # All endpoints failed
+    logger.error(f"RPC [{method}]: all endpoints failed")
+    return {"error": "all RPC endpoints unreachable"}
 
 
 async def get_sol_balance(pubkey: str) -> float:
@@ -84,9 +104,11 @@ async def get_sol_balance(pubkey: str) -> float:
     try:
         data = await _rpc("getBalance", [pubkey])
         lamports = data.get("result", {}).get("value", 0)
-        return lamports / 1_000_000_000
+        sol = lamports / 1_000_000_000
+        logger.info(f"Balance for {pubkey[:8]}...: {sol} SOL ({lamports} lamports)")
+        return sol
     except Exception as e:
-        logger.error(f"Balance error: {e}")
+        logger.error(f"Balance error for {pubkey[:8]}...: {e}")
         return 0.0
 
 
