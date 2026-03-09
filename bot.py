@@ -993,7 +993,7 @@ async def _cb_whale_top(query, user, context):
     text += (
         f"\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-        f"\U0001f4cd Tracking *{len(ETH_WHALE_WALLETS)}* ETH "
+        f"\U0001f4e1 Tracking *{len(ETH_WHALE_WALLETS)}* ETH "
         f"+ *{len(SOL_WHALE_WALLETS)}* SOL wallets\n"
         f"\U0001f48e Pro users get custom wallet tracking"
     )
@@ -1205,7 +1205,7 @@ async def _cb_trade_wallet(query, user, context):
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
-        f"\U0001f4cd `{pubkey}`\n"
+        f"\U0001f4cb `{pubkey}`\n"
         "\n"
         f"\u25ce *SOL:* {sol_bal:.4f}"
     )
@@ -1327,7 +1327,7 @@ async def _cb_withdraw_start(query, user, context):
         "━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"◎ Available: *{available:.4f} SOL*\n"
         f"🔒 Reserved: {MIN_SOL_RESERVE} SOL (tx fees)\n\n"
-        "📍 *Send me the destination SOL address:*",
+        "📤 *Send me the destination SOL address:*",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("❌ Cancel", callback_data="trade_wallet")],
         ]),
@@ -1382,8 +1382,8 @@ async def _cb_withdraw_amount(update_or_query, user, context):
         "📤 *Confirm Withdrawal*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"💰 Amount: *{send_display:.4f} SOL*\n"
-        f"📍 To: `{dest_short}`\n"
-        f"📍 Full: `{dest}`\n\n"
+        f"📤 To: `{dest_short}`\n"
+        f"📋 Full: `{dest}`\n\n"
         "⚠️ This action cannot be undone!",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ Confirm Send", callback_data="withdraw_confirm")],
@@ -1464,7 +1464,7 @@ async def _cb_withdraw_confirm(query, user, context):
             "✅ *Withdrawal Successful!*\n"
             "━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"💰 Sent: *{sol_sent:.4f} SOL*\n"
-            f"📍 To: `{dest_short}`\n"
+            f"📤 To: `{dest_short}`\n"
             f"◎ Remaining: *{new_bal:.4f} SOL*\n\n"
             f"🔗 [View on Solscan](https://solscan.io/tx/{tx_sig})",
             reply_markup=InlineKeyboardMarkup([
@@ -2920,7 +2920,7 @@ async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(
             "📤 *Withdraw SOL*\n"
             "━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"📍 To: `{dest_short}`\n"
+            f"📤 To: `{dest_short}`\n"
             f"◎ Available: *{available:.4f} SOL*\n\n"
             "💰 *How much do you want to send?*",
             reply_markup=InlineKeyboardMarkup([
@@ -2978,7 +2978,7 @@ async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYP
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
             "\n"
-            f"\U0001f4cd Mint: `{text}`\n"
+            f"\U0001f517 Mint: `{text}`\n"
             f"\U0001f522 Decimals: {decimals}\n"
             "\n"
             f"\U0001f4bc Your SOL: *{sol_bal:.4f}*"
