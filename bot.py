@@ -4447,7 +4447,7 @@ async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             f"Users: {len(users)} | Wallets: {wallets}\n"
             f"Trades today: {platform_stats.get('trades_today', 0)} | "
             f"Total: {platform_stats.get('trades_total', 0)}\n"
-            f"v3.8.0"
+            f"v3.9.1"
         )
         for admin_id in ADMIN_IDS:
             try:
@@ -4543,6 +4543,48 @@ async def cmd_restore(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text(f"\u274c Restore failed: {e}")
 
 
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Auto-restore when admin forwards a backup JSON file (no /restore needed)."""
+    if not is_admin(update.effective_user.id):
+        return
+    doc = update.message.document
+    if not doc or not doc.file_name or not doc.file_name.endswith(".json"):
+        return
+    if "backup" not in doc.file_name.lower() and "apexflash" not in doc.file_name.lower():
+        return
+
+    global users, platform_stats
+    try:
+        file = await doc.get_file()
+        raw = await file.download_as_bytearray()
+        json_str = raw.decode("utf-8")
+        restored_users, restored_stats = import_backup(json_str)
+
+        if not restored_users:
+            await update.message.reply_text("\u274c Backup file contains no users.")
+            return
+
+        users.update(restored_users)
+        if restored_stats:
+            for k, v in restored_stats.items():
+                platform_stats[k] = v
+        _persist()
+
+        wallets = sum(1 for u in restored_users.values() if u.get("wallet_pubkey"))
+        await update.message.reply_text(
+            f"\u2705 *Auto-Restore Complete*\n\n"
+            f"Users restored: *{len(restored_users)}*\n"
+            f"Wallets restored: *{wallets}*\n"
+            f"Total users now: *{len(users)}*\n\n"
+            f"\U0001f512 All wallet keys recovered.",
+            parse_mode="Markdown",
+        )
+        logger.info(f"Auto-restore from document: {len(restored_users)} users, {wallets} wallets")
+    except Exception as e:
+        logger.error(f"Document restore error: {e}")
+        await update.message.reply_text(f"\u274c Auto-restore failed: {e}")
+
+
 # ══════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════
@@ -4569,6 +4611,9 @@ def main() -> None:
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))
 
+    # Document handler — admin can forward backup JSON to auto-restore
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+
     # Token address detection (Solana addresses pasted in chat)
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND, handle_token_address,
@@ -4594,9 +4639,9 @@ def main() -> None:
         auto_save_job, interval=60, first=60, name="auto_save",
     )
 
-    # Auto-backup to admin every 2 hours (deploy resilience — Render has no persistent disk)
+    # Auto-backup to admin every 30 min (deploy resilience — Render has no persistent disk)
     app.job_queue.run_repeating(
-        auto_backup_job, interval=2 * 3600, first=300, name="auto_backup",
+        auto_backup_job, interval=30 * 60, first=300, name="auto_backup",
     )
 
     # Heartbeat monitor — hourly ping to admin (24/7 uptime awareness)
@@ -4615,7 +4660,7 @@ def main() -> None:
             marketing_job, time=post_time, name=f"marketing_{post_time.hour:02d}",
         )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.9.0 starting (SL/TP + Twitter Analytics)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.9.1 starting (auto-restore + 30min backup)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
@@ -4633,16 +4678,36 @@ def main() -> None:
         except Exception as e:
             logger.warning(f"set_my_commands failed: {e}")
 
+        # CRITICAL: Alert admin if data was lost on restart
+        if not users:
+            for admin_id in ADMIN_IDS:
+                try:
+                    await application.bot.send_message(
+                        chat_id=admin_id,
+                        text=(
+                            "\u26a0\ufe0f *DATA LOST — Render restart detected*\n\n"
+                            "Users: 0 | Wallets: 0\n\n"
+                            "\U0001f504 *To restore:* Forward the latest backup "
+                            "JSON file to this chat.\n\n"
+                            "_The bot will auto-restore all wallets and user data._"
+                        ),
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    pass
+            logger.warning("NO USER DATA — sent restore request to admins")
+
         if ALERT_CHANNEL_ID:
             try:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT v3.9.0 is LIVE*\n\n"
+                        "\u26a1 *ApexFlash MEGA BOT v3.9.1 is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"
                         "\u2705 SL/TP monitor active (30s)\n"
+                        "\u2705 Auto-backup every 30 min\n"
                         "\u2705 Marketing auto-poster scheduled"
                     ),
                     parse_mode="Markdown",
