@@ -681,6 +681,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 pass
         return
 
+    if data == "buy_custom":
+        # Prompt user to type a custom SOL amount
+        context.user_data["awaiting_input"] = "custom_buy_amount"
+        await query.edit_message_text(
+            "\u270f\ufe0f *Custom Buy Amount*\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+            f"Type your desired SOL amount (0.01 \u2013 {MAX_TRADE_SOL}):\n\n"
+            "_Example: `0.25` or `3.5`_",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\u274c Cancel", callback_data="trade_buy")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
     if data.startswith("buy_"):
         try:
             await _cb_preview_buy(query, user, context, data)
@@ -2206,9 +2222,12 @@ async def _cb_preview_buy(query, user, context, data):
         )
         return
 
-    # Parse SOL amount
+    # Parse SOL amount (preset or custom)
     amount_map = {"buy_01": 0.1, "buy_05": 0.5, "buy_1": 1.0, "buy_5": 5.0}
-    sol_amount = amount_map.get(data)
+    if data == "buy_custom_exec":
+        sol_amount = context.user_data.get("custom_sol_amount")
+    else:
+        sol_amount = amount_map.get(data)
     if not sol_amount:
         return
 
@@ -2497,14 +2516,17 @@ async def _cb_execute_buy(query, user, context, data):
         )
         return
 
-    # Parse SOL amount from callback data
+    # Parse SOL amount from callback data (preset or custom)
     amount_map = {
         "buy_01": 0.1,
         "buy_05": 0.5,
         "buy_1": 1.0,
         "buy_5": 5.0,
     }
-    sol_amount = amount_map.get(data)
+    if data == "buy_custom_exec":
+        sol_amount = context.user_data.get("custom_sol_amount")
+    else:
+        sol_amount = amount_map.get(data)
     if not sol_amount:
         await query.edit_message_text("\u26a0\ufe0f Invalid amount.",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
@@ -2875,6 +2897,68 @@ async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             return
 
+    # ── Handle custom buy amount input ──
+    if context.user_data.get("awaiting_input") == "custom_buy_amount":
+        context.user_data["awaiting_input"] = None
+        try:
+            sol_amount = float(text.replace(",", "."))
+        except ValueError:
+            await update.message.reply_text(
+                "\u26a0\ufe0f Invalid number. Please type a valid amount (e.g. `0.25` or `3.5`).",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("\u274c Cancel", callback_data="trade_buy")],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+        if sol_amount < 0.01:
+            await update.message.reply_text(
+                f"\u26a0\ufe0f Minimum buy is *0.01 SOL*.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("\u270f\ufe0f Try Again", callback_data="buy_custom")],
+                    [InlineKeyboardButton("\u274c Cancel", callback_data="trade_buy")],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+        if sol_amount > MAX_TRADE_SOL:
+            await update.message.reply_text(
+                f"\u26a0\ufe0f Maximum single trade is *{MAX_TRADE_SOL} SOL*.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("\u270f\ufe0f Try Again", callback_data="buy_custom")],
+                    [InlineKeyboardButton("\u274c Cancel", callback_data="trade_buy")],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+        # Store custom amount and trigger preview
+        context.user_data["custom_sol_amount"] = sol_amount
+        # Show buy buttons with the custom amount
+        token_name = context.user_data.get("target_name", "Token")
+        target_mint = context.user_data.get("target_mint")
+        if not target_mint:
+            await update.message.reply_text(
+                "\u26a0\ufe0f No token selected. Paste a mint address first!",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("\U0001f4b5 Buy Token", callback_data="trade_buy")],
+                    [_back_main()[0]],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+        await update.message.reply_text(
+            f"\u2705 Custom amount: *{sol_amount} SOL*\n\n"
+            f"Token: *{token_name}*\n\n"
+            "Tap below to preview the trade:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"\U0001f4b5 Preview Buy {sol_amount} SOL", callback_data="buy_custom_exec")],
+                [InlineKeyboardButton("\u270f\ufe0f Change Amount", callback_data="buy_custom")],
+                [InlineKeyboardButton("\u274c Cancel", callback_data="trade_buy")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
     # ── Handle withdraw address input (when awaiting) ──
     if context.user_data.get("awaiting_input") == "withdraw_address":
         context.user_data["awaiting_input"] = None
@@ -3000,6 +3084,7 @@ async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYP
                 InlineKeyboardButton("1 SOL", callback_data="buy_1"),
                 InlineKeyboardButton("5 SOL", callback_data="buy_5"),
             ],
+            [InlineKeyboardButton("\u270f\ufe0f Custom Amount", callback_data="buy_custom")],
             [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
             [_back_main()[0]],
         ]
