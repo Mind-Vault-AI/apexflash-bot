@@ -203,14 +203,14 @@ TOOL_AFFILIATE_LINKS = {
 # === Premium Payment ===
 # Gumroad (card payments, backup) — actual account is mindvault34.gumroad.com
 GUMROAD_ACCESS_TOKEN = os.getenv("GUMROAD_ACCESS_TOKEN", "")
-GUMROAD_PRO_URL = os.getenv("GUMROAD_PRO_URL", "https://mindvault34.gumroad.com/l/pctpy")
-GUMROAD_ELITE_URL = os.getenv("GUMROAD_ELITE_URL", "https://mindvault34.gumroad.com/l/rwauqu")
+GUMROAD_PRO_URL = os.getenv("GUMROAD_PRO_URL", "https://mindvault34.gumroad.com/l/rwauqu")
+GUMROAD_ELITE_URL = os.getenv("GUMROAD_ELITE_URL", "https://mindvault34.gumroad.com/l/unetcl")
 # Gumroad product IDs for license verification
-GUMROAD_PRO_PRODUCT_ID = os.getenv("GUMROAD_PRO_PRODUCT_ID", "pctpy")
-GUMROAD_ELITE_PRODUCT_ID = os.getenv("GUMROAD_ELITE_PRODUCT_ID", "rwauqu")
+GUMROAD_PRO_PRODUCT_ID = os.getenv("GUMROAD_PRO_PRODUCT_ID", "rwauqu")
+GUMROAD_ELITE_PRODUCT_ID = os.getenv("GUMROAD_ELITE_PRODUCT_ID", "unetcl")
 # In-bot SOL payment (0% processing fee — preferred!)
-PRO_PRICE_SOL = float(os.getenv("PRO_PRICE_SOL", "0.1"))    # ~$18 at SOL=$180
-ELITE_PRICE_SOL = float(os.getenv("ELITE_PRICE_SOL", "0.27"))  # ~$49 at SOL=$180
+PRO_PRICE_SOL = float(os.getenv("PRO_PRICE_SOL", "0.23"))    # ~$19 at SOL=$83
+ELITE_PRICE_SOL = float(os.getenv("ELITE_PRICE_SOL", "0.59"))  # ~$49 at SOL=$83
 
 # === Twitter/X Auto-Posting ===
 # Get keys from: https://developer.x.com → Your App → Keys and tokens
