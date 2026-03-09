@@ -75,7 +75,7 @@ AFFILIATE_LINKS = {
     },
     "blofin": {
         "name": "BloFin",
-        "url": f"https://www.blofin.com/register?referral_code={os.getenv('BLOFIN_REF', '')}",
+        "url": f"https://www.blofin.com/register?referral_code={os.getenv('BLOFIN_REF', 'b996a0111c1b4497b53d9b3cc82e4539')}",
         "commission": "50%",
         "featured": True,
         "category": "exchange",
