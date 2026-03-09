@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.7.5 (MEGA BOT + HARDENED BACKUP + 24/7 HEARTBEAT + AUTO-MARKETING + TWITTER ANALYTICS)
+Version: 3.9.0 (MEGA BOT + SL/TP + WITHDRAW + HARDENED BACKUP + 24/7 HEARTBEAT + AUTO-MARKETING)
 """
 import logging
 import re
@@ -657,6 +657,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "withdraw_start":   _cb_withdraw_start,
         "withdraw_confirm": _cb_withdraw_confirm,
         "withdraw_cancel":  _cb_trade_wallet,
+        # SL/TP
+        "set_sl_tp":      _cb_sl_select_start,
+        "skip_sl_tp":     _cb_skip_sl_tp,
+        "positions":      _cb_positions,
     }
 
     # Handle dynamic buy/sell amount callbacks (buy_01, buy_05, buy_1, buy_5, sell_25, sell_50, sell_100)
@@ -730,6 +734,54 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             try:
                 await query.edit_message_text(
                     "⚠️ Withdrawal failed. Use /start to return.",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+        return
+
+    # SL/TP selection callbacks (sl_10, sl_15, sl_25, sl_none, tp_25, tp_50, tp_100, tp_none)
+    if data.startswith("sl_"):
+        try:
+            await _cb_sl_select(query, user, context)
+            _persist()
+        except Exception as e:
+            logger.error(f"SL select [{data}] error: {e}")
+            try:
+                await query.edit_message_text(
+                    "⚠️ SL/TP setup failed. Use /start to return.",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+        return
+
+    if data.startswith("tp_"):
+        try:
+            await _cb_tp_select(query, user, context)
+            _persist()
+        except Exception as e:
+            logger.error(f"TP select [{data}] error: {e}")
+            try:
+                await query.edit_message_text(
+                    "⚠️ SL/TP setup failed. Use /start to return.",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+        return
+
+    # Cancel SL/TP position (cancel_pos_0, cancel_pos_1, etc.)
+    if data.startswith("cancel_pos_"):
+        try:
+            idx = int(data.replace("cancel_pos_", ""))
+            await _cb_cancel_position(query, user, context, idx)
+            _persist()
+        except Exception as e:
+            logger.error(f"Cancel position [{data}] error: {e}")
+            try:
+                await query.edit_message_text(
+                    "⚠️ Cancel failed. Use /start to return.",
                     parse_mode="Markdown",
                 )
             except Exception:
@@ -1220,6 +1272,7 @@ async def _cb_trade_wallet(query, user, context):
             InlineKeyboardButton("\U0001f4b8 Sell", callback_data="trade_sell"),
         ],
         [InlineKeyboardButton("📤 Withdraw SOL", callback_data="withdraw_start")],
+        [InlineKeyboardButton("📊 Positions (SL/TP)", callback_data="positions")],
         [InlineKeyboardButton("\U0001f504 Refresh", callback_data="trade_refresh")],
         [InlineKeyboardButton("\U0001f3c6 Leaderboard", callback_data="leaderboard")],
         [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
@@ -1433,6 +1486,480 @@ async def _cb_withdraw_confirm(query, user, context):
             ]),
             parse_mode="Markdown",
         )
+
+
+# ══════════════════════════════════════════════
+# STOP LOSS / TAKE PROFIT (SL/TP)
+# ══════════════════════════════════════════════
+
+_sl_tp_lock = False  # prevents overlapping monitor cycles
+
+
+async def _ask_sl_tp(chat_id, user, context, bot,
+                     mint: str, token_name: str, entry_sol: float,
+                     token_amount_raw: str, token_decimals: int, tx_sig: str):
+    """After a successful buy, ask user if they want SL/TP protection."""
+    # Store pending position data in context for the callbacks
+    context.user_data["pending_position"] = {
+        "mint": mint,
+        "token": token_name,
+        "entry_sol": entry_sol,
+        "token_amount_raw": token_amount_raw,
+        "token_decimals": token_decimals,
+        "buy_tx": tx_sig,
+    }
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            "🛡️ *Protect your trade?*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🎯 {token_name} | Entry: *{entry_sol:.4f} SOL*\n\n"
+            "Set stop loss & take profit to auto-sell\n"
+            "when price hits your targets. 24/7 monitoring."
+        ),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🛡️ Set SL/TP", callback_data="set_sl_tp")],
+            [InlineKeyboardButton("⏭️ Skip", callback_data="skip_sl_tp")],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_sl_select_start(query, user, context):
+    """Start SL selection — show stop loss percentage options."""
+    pending = context.user_data.get("pending_position")
+    if not pending:
+        await query.edit_message_text(
+            "⚠️ No pending trade found. Buy a token first!",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    token = pending.get("token", "Token")
+    await query.edit_message_text(
+        f"🔴 *Set Stop Loss for {token}*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "Auto-sell if your position drops by:\n\n"
+        "• -10% → conservative\n"
+        "• -15% → balanced\n"
+        "• -25% → aggressive\n",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("-10%", callback_data="sl_10"),
+                InlineKeyboardButton("-15%", callback_data="sl_15"),
+                InlineKeyboardButton("-25%", callback_data="sl_25"),
+            ],
+            [InlineKeyboardButton("⏭️ No Stop Loss", callback_data="sl_none")],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_sl_select(query, user, context):
+    """Handle SL selection, then ask for TP."""
+    data = query.data  # sl_10, sl_15, sl_25, sl_none
+    pending = context.user_data.get("pending_position")
+    if not pending:
+        await query.edit_message_text(
+            "⚠️ Session expired. Buy a token first!",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    sl_map = {"sl_10": 10, "sl_15": 15, "sl_25": 25, "sl_none": 0}
+    sl_pct = sl_map.get(data, 0)
+    context.user_data["pending_sl"] = sl_pct
+
+    token = pending.get("token", "Token")
+    sl_text = f"-{sl_pct}%" if sl_pct > 0 else "None"
+
+    await query.edit_message_text(
+        f"🟢 *Set Take Profit for {token}*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Stop Loss: *{sl_text}* ✓\n\n"
+        "Auto-sell when your position gains:\n\n"
+        "• +25% → quick scalp\n"
+        "• +50% → balanced\n"
+        "• +100% → moon bag\n",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("+25%", callback_data="tp_25"),
+                InlineKeyboardButton("+50%", callback_data="tp_50"),
+                InlineKeyboardButton("+100%", callback_data="tp_100"),
+            ],
+            [InlineKeyboardButton("⏭️ No Take Profit", callback_data="tp_none")],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_tp_select(query, user, context):
+    """Handle TP selection — save position with SL/TP."""
+    data = query.data  # tp_25, tp_50, tp_100, tp_none
+    pending = context.user_data.get("pending_position")
+    if not pending:
+        await query.edit_message_text(
+            "⚠️ Session expired. Buy a token first!",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    tp_map = {"tp_25": 25, "tp_50": 50, "tp_100": 100, "tp_none": 0}
+    tp_pct = tp_map.get(data, 0)
+    sl_pct = context.user_data.get("pending_sl", 0)
+
+    # Both zero = user chose no SL and no TP → skip saving
+    if sl_pct == 0 and tp_pct == 0:
+        context.user_data.pop("pending_position", None)
+        context.user_data.pop("pending_sl", None)
+        await query.edit_message_text(
+            "⏭️ No SL/TP set — trade is unprotected.\n"
+            "You can always set protection later from your positions.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Save position
+    position = {
+        "mint": pending["mint"],
+        "token": pending["token"],
+        "entry_sol": pending["entry_sol"],
+        "token_amount_raw": pending["token_amount_raw"],
+        "token_decimals": pending["token_decimals"],
+        "sl_pct": sl_pct,
+        "tp_pct": tp_pct,
+        "created": datetime.now(timezone.utc).isoformat(),
+        "buy_tx": pending.get("buy_tx", ""),
+    }
+
+    if "active_positions" not in user:
+        user["active_positions"] = []
+    user["active_positions"].append(position)
+    _persist()
+
+    # Clean up
+    context.user_data.pop("pending_position", None)
+    context.user_data.pop("pending_sl", None)
+
+    sl_text = f"-{sl_pct}%" if sl_pct > 0 else "Off"
+    tp_text = f"+{tp_pct}%" if tp_pct > 0 else "Off"
+    entry = position["entry_sol"]
+    sl_val = f"{entry * (1 - sl_pct / 100):.4f}" if sl_pct > 0 else "—"
+    tp_val = f"{entry * (1 + tp_pct / 100):.4f}" if tp_pct > 0 else "—"
+
+    await query.edit_message_text(
+        "✅ *Position Protected!*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🎯 {position['token']}\n"
+        f"📥 Entry: *{entry:.4f} SOL*\n\n"
+        f"🔴 Stop Loss: *{sl_text}* (trigger: {sl_val} SOL)\n"
+        f"🟢 Take Profit: *{tp_text}* (trigger: {tp_val} SOL)\n\n"
+        "🤖 Bot monitors 24/7 — auto-sells when triggered.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 My Positions", callback_data="positions")],
+            [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            [_back_main()[0]],
+        ]),
+        parse_mode="Markdown",
+    )
+    logger.info(f"SL/TP set: user={query.from_user.id} token={position['token']} SL={sl_pct}% TP={tp_pct}%")
+
+
+async def _cb_skip_sl_tp(query, user, context):
+    """User chose to skip SL/TP."""
+    context.user_data.pop("pending_position", None)
+    context.user_data.pop("pending_sl", None)
+    await query.edit_message_text(
+        "⏭️ No SL/TP set — trade is unprotected.\n\n"
+        "You can set protection anytime from 📊 Positions.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            [_back_main()[0]],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+# ── View & Cancel Positions ──────────────────
+
+async def _cb_positions(query, user, context):
+    """Show all active SL/TP positions."""
+    positions = user.get("active_positions", [])
+
+    if not positions:
+        await query.edit_message_text(
+            "📊 *My Positions*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "No active SL/TP positions.\n\n"
+            "Buy a token and set SL/TP to start!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    text = (
+        "📊 *My Positions (SL/TP)*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+    )
+
+    kb = []
+    for i, pos in enumerate(positions):
+        sl_text = f"-{pos['sl_pct']}%" if pos.get("sl_pct", 0) > 0 else "Off"
+        tp_text = f"+{pos['tp_pct']}%" if pos.get("tp_pct", 0) > 0 else "Off"
+        entry = pos.get("entry_sol", 0)
+
+        # Try to get current value via Jupiter quote
+        current_text = "⏳"
+        try:
+            raw_amount = int(pos["token_amount_raw"])
+            quote = await get_quote(
+                input_mint=pos["mint"],
+                output_mint=SOL_MINT,
+                amount_raw=raw_amount,
+                slippage_bps=DEFAULT_SLIPPAGE_BPS,
+            )
+            if quote and quote.get("outAmount"):
+                current_sol = int(quote["outAmount"]) / 1_000_000_000
+                pnl_pct = ((current_sol - entry) / entry * 100) if entry > 0 else 0
+                pnl_emoji = "🟢" if pnl_pct >= 0 else "🔴"
+                current_text = f"{current_sol:.4f} SOL ({pnl_emoji} {pnl_pct:+.1f}%)"
+        except Exception:
+            current_text = "⚠️ Price unavailable"
+
+        text += (
+            f"\n*{i + 1}. {pos['token']}*\n"
+            f"   📥 Entry: {entry:.4f} SOL\n"
+            f"   📈 Now: {current_text}\n"
+            f"   🔴 SL: {sl_text} | 🟢 TP: {tp_text}\n"
+        )
+        kb.append([InlineKeyboardButton(
+            f"❌ Cancel #{i + 1} ({pos['token']})",
+            callback_data=f"cancel_pos_{i}",
+        )])
+
+    kb.append([InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")])
+    kb.append([_back_main()[0]])
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_cancel_position(query, user, context, index: int):
+    """Cancel SL/TP for a position (keeps tokens, removes auto-sell)."""
+    positions = user.get("active_positions", [])
+    if index < 0 or index >= len(positions):
+        await query.edit_message_text(
+            "⚠️ Position not found.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    removed = positions.pop(index)
+    _persist()
+
+    await query.edit_message_text(
+        f"❌ *SL/TP Cancelled for {removed['token']}*\n\n"
+        "Your tokens are safe — only the auto-sell was removed.\n"
+        "You can still sell manually from the Trade menu.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 My Positions", callback_data="positions")],
+            [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            [_back_main()[0]],
+        ]),
+        parse_mode="Markdown",
+    )
+    logger.info(f"SL/TP cancelled: user={query.from_user.id} token={removed['token']}")
+
+
+# ── Background SL/TP Monitor ─────────────────
+
+async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
+    """Check all active SL/TP positions every 30s.
+
+    Logic: For each position, get Jupiter quote (sell token → SOL).
+    If current_sol <= entry × (1 - sl_pct/100) → stop loss triggered.
+    If current_sol >= entry × (1 + tp_pct/100) → take profit triggered.
+    """
+    global _sl_tp_lock
+    import asyncio
+
+    if _sl_tp_lock:
+        return  # previous cycle still running
+    _sl_tp_lock = True
+
+    try:
+        # Collect all positions across all users
+        all_positions = []  # (chat_id, user, pos_index, position)
+        for chat_id, user in users.items():
+            for i, pos in enumerate(user.get("active_positions", [])):
+                all_positions.append((chat_id, user, i, pos))
+
+        if not all_positions:
+            return
+
+        # Group by mint to minimize API calls (1 quote per unique mint+amount combo)
+        # But each position can have different token amounts, so we check individually
+        # Rate limit: max 10 checks per cycle
+        checked = 0
+        triggered = []  # (chat_id, user, pos_index, position, trigger_type, current_sol)
+
+        for chat_id, user, pos_index, pos in all_positions:
+            if checked >= 10:
+                break  # rate limit — continue next cycle
+
+            try:
+                raw_amount = int(pos["token_amount_raw"])
+                if raw_amount <= 0:
+                    continue
+
+                entry_sol = pos.get("entry_sol", 0)
+                if entry_sol <= 0:
+                    continue
+
+                sl_pct = pos.get("sl_pct", 0)
+                tp_pct = pos.get("tp_pct", 0)
+                if sl_pct == 0 and tp_pct == 0:
+                    continue  # nothing to monitor
+
+                # Get current value: "if I sell all my tokens now, how much SOL?"
+                quote = await get_quote(
+                    input_mint=pos["mint"],
+                    output_mint=SOL_MINT,
+                    amount_raw=raw_amount,
+                    slippage_bps=DEFAULT_SLIPPAGE_BPS,
+                )
+                checked += 1
+
+                if not quote or not quote.get("outAmount"):
+                    continue
+
+                current_sol = int(quote["outAmount"]) / 1_000_000_000
+
+                # Check stop loss
+                if sl_pct > 0:
+                    sl_trigger = entry_sol * (1 - sl_pct / 100)
+                    if current_sol <= sl_trigger:
+                        triggered.append((chat_id, user, pos_index, pos, "SL", current_sol))
+                        continue  # don't also check TP
+
+                # Check take profit
+                if tp_pct > 0:
+                    tp_trigger = entry_sol * (1 + tp_pct / 100)
+                    if current_sol >= tp_trigger:
+                        triggered.append((chat_id, user, pos_index, pos, "TP", current_sol))
+
+                # Rate limit delay between API calls
+                await asyncio.sleep(1)
+
+            except Exception as pos_err:
+                logger.warning(f"SL/TP check error for {pos.get('token', '?')}: {pos_err}")
+                continue
+
+        # Execute triggered sells (process in reverse to maintain indices)
+        for chat_id, user, pos_index, pos, trigger_type, current_sol in reversed(triggered):
+            try:
+                encrypted = user.get("wallet_secret_enc")
+                if not encrypted:
+                    continue
+
+                keypair = load_keypair(encrypted)
+                raw_amount = int(pos["token_amount_raw"])
+
+                # Get fresh quote for execution
+                quote = await get_quote(
+                    input_mint=pos["mint"],
+                    output_mint=SOL_MINT,
+                    amount_raw=raw_amount,
+                    slippage_bps=DEFAULT_SLIPPAGE_BPS,
+                )
+
+                if not quote:
+                    logger.warning(f"SL/TP sell quote failed for {pos['token']}")
+                    continue
+
+                # Calculate fee on output
+                out_lamports = int(quote.get("outAmount", 0))
+                swap_lamports, fee_lamports = calculate_fee(out_lamports)
+
+                # Execute sell
+                tx_sig = await execute_swap(keypair, quote)
+
+                if tx_sig:
+                    # Collect fee
+                    try:
+                        if FEE_COLLECT_WALLET and fee_lamports > 5000:
+                            await collect_fee(keypair, fee_lamports, FEE_COLLECT_WALLET)
+                    except Exception:
+                        pass
+
+                    # Remove position (safe because we process in reverse)
+                    positions = user.get("active_positions", [])
+                    if pos_index < len(positions):
+                        positions.pop(pos_index)
+
+                    entry = pos.get("entry_sol", 0)
+                    pnl_sol = current_sol - entry
+                    pnl_pct = (pnl_sol / entry * 100) if entry > 0 else 0
+                    pnl_emoji = "🟢" if pnl_sol >= 0 else "🔴"
+
+                    trigger_label = "🔴 STOP LOSS" if trigger_type == "SL" else "🟢 TAKE PROFIT"
+
+                    # Record trade
+                    _record_trade(
+                        chat_id, user, "SELL", pos["token"], pos["mint"],
+                        current_sol, 0, tx_sig,
+                    )
+
+                    _persist()
+
+                    # Notify user
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=(
+                            f"{trigger_label} *TRIGGERED!*\n"
+                            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            f"🎯 {pos['token']}\n"
+                            f"📥 Entry: *{entry:.4f} SOL*\n"
+                            f"📤 Sold: *{current_sol:.4f} SOL*\n"
+                            f"{pnl_emoji} P/L: *{pnl_sol:+.4f} SOL* ({pnl_pct:+.1f}%)\n\n"
+                            f"🔗 [View on Solscan](https://solscan.io/tx/{tx_sig})"
+                        ),
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+
+                    logger.info(
+                        f"SL/TP {trigger_type} executed: user={chat_id} "
+                        f"token={pos['token']} entry={entry:.4f} exit={current_sol:.4f} "
+                        f"pnl={pnl_pct:+.1f}% tx={tx_sig}"
+                    )
+                else:
+                    logger.warning(f"SL/TP sell failed for {pos['token']} user={chat_id}")
+
+                await asyncio.sleep(1)  # rate limit between sells
+
+            except Exception as sell_err:
+                logger.error(f"SL/TP sell error for {pos.get('token', '?')}: {sell_err}")
+                continue
+
+    except Exception as monitor_err:
+        logger.error(f"SL/TP monitor error: {monitor_err}")
+    finally:
+        _sl_tp_lock = False
 
 
 async def _cb_trade_buy(query, user, context):
@@ -2116,6 +2643,24 @@ async def _cb_execute_buy(query, user, context, data):
             await notify_channel_trade(context.bot, "BUY", sol_amount, token_name, tx_sig)
         except Exception:
             pass
+
+        # ── SL/TP prompt (send as separate message after the buy confirmation) ──
+        try:
+            token_decimals = context.user_data.get("target_decimals", 0)
+            await _ask_sl_tp(
+                chat_id=query.from_user.id,
+                user=user,
+                context=context,
+                bot=context.bot,
+                mint=target_mint,
+                token_name=token_name,
+                entry_sol=sol_amount,
+                token_amount_raw=str(out_amount),
+                token_decimals=token_decimals,
+                tx_sig=tx_sig,
+            )
+        except Exception as sltp_err:
+            logger.warning(f"SL/TP prompt failed (non-fatal): {sltp_err}")
     else:
         text = (
             "\u274c *Swap Failed*\n\n"
@@ -3974,13 +4519,18 @@ def main() -> None:
         heartbeat_job, interval=3600, first=120, name="heartbeat",
     )
 
+    # SL/TP monitor — checks positions every 30s for stop loss / take profit triggers
+    app.job_queue.run_repeating(
+        sl_tp_monitor_job, interval=30, first=60, name="sl_tp_monitor",
+    )
+
     # Marketing auto-poster — 3x daily to Telegram + Twitter (08:00, 14:00, 20:00 UTC)
     for post_time in [dt_time(8, 0), dt_time(14, 0), dt_time(20, 0)]:
         app.job_queue.run_daily(
             marketing_job, time=post_time, name=f"marketing_{post_time.hour:02d}",
         )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.8.0 starting (Telegram + Twitter Analytics)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.9.0 starting (SL/TP + Twitter Analytics)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
@@ -4003,10 +4553,11 @@ def main() -> None:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT v3.8.0 is LIVE*\n\n"
+                        "\u26a1 *ApexFlash MEGA BOT v3.9.0 is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"
+                        "\u2705 SL/TP monitor active (30s)\n"
                         "\u2705 Marketing auto-poster scheduled"
                     ),
                     parse_mode="Markdown",
