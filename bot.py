@@ -4720,4 +4720,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import traceback
+    try:
+        main()
+    except Exception as e:
+        logging.error(f"FATAL CRASH: {e}")
+        logging.error(traceback.format_exc())
+        raise
