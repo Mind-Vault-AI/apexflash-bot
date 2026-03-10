@@ -1,1 +1,1 @@
-worker: python diagnose.py
+worker: python start.py
