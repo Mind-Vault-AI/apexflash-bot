@@ -4720,23 +4720,43 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import os as _os
+    import time as _time
     import traceback
     import httpx
-    try:
-        main()
-    except Exception as e:
-        err_msg = f"FATAL CRASH:\n{e}\n\n{traceback.format_exc()}"
-        logging.error(err_msg)
-        # Send crash report to admin via Telegram
+
+    def _send_crash_report(msg: str):
+        """Send crash report to admin via Telegram."""
         try:
-            _tok = os.getenv("BOT_TOKEN", "")
-            _admin = os.getenv("ADMIN_IDS", "").split(",")[0].strip()
+            _tok = _os.getenv("BOT_TOKEN", "")
+            _admin = _os.getenv("ADMIN_IDS", "").split(",")[0].strip()
             if _tok and _admin:
                 httpx.post(
                     f"https://api.telegram.org/bot{_tok}/sendMessage",
-                    json={"chat_id": int(_admin), "text": f"🔴 BOT CRASH:\n\n{err_msg[:3800]}"},
+                    json={"chat_id": int(_admin), "text": msg[:4000]},
                     timeout=10,
                 )
         except Exception:
             pass
+
+    # Clear any stale Telegram polling connections (crash loop fix)
+    try:
+        _tok = _os.getenv("BOT_TOKEN", "")
+        if _tok:
+            httpx.post(
+                f"https://api.telegram.org/bot{_tok}/deleteWebhook",
+                json={"drop_pending_updates": True},
+                timeout=10,
+            )
+            logging.info("Cleared webhook + pending updates before startup")
+            _time.sleep(3)  # Let Telegram release old polling connections
+    except Exception as e:
+        logging.warning(f"Pre-startup cleanup failed: {e}")
+
+    try:
+        main()
+    except Exception as e:
+        err_msg = f"\U0001f534 BOT CRASH:\n\n{e}\n\n{traceback.format_exc()}"
+        logging.error(err_msg)
+        _send_crash_report(err_msg)
         raise
