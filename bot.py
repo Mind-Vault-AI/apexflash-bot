@@ -4721,9 +4721,22 @@ def main() -> None:
 
 if __name__ == "__main__":
     import traceback
+    import httpx
     try:
         main()
     except Exception as e:
-        logging.error(f"FATAL CRASH: {e}")
-        logging.error(traceback.format_exc())
+        err_msg = f"FATAL CRASH:\n{e}\n\n{traceback.format_exc()}"
+        logging.error(err_msg)
+        # Send crash report to admin via Telegram
+        try:
+            _tok = os.getenv("BOT_TOKEN", "")
+            _admin = os.getenv("ADMIN_IDS", "").split(",")[0].strip()
+            if _tok and _admin:
+                httpx.post(
+                    f"https://api.telegram.org/bot{_tok}/sendMessage",
+                    json={"chat_id": int(_admin), "text": f"🔴 BOT CRASH:\n\n{err_msg[:3800]}"},
+                    timeout=10,
+                )
+        except Exception:
+            pass
         raise
