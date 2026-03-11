@@ -1,7 +1,10 @@
 """
 ApexFlash MEGA BOT - Data Persistence
-JSON file storage with atomic writes. Telegram backup for deploy resilience.
-Zero cost, zero dependencies beyond stdlib.
+Redis (Upstash) as primary storage, JSON files as fallback.
+Telegram backup as tertiary safety net.
+
+Priority: Redis > JSON file > Telegram backup
+If UPSTASH_REDIS_URL is not set, falls back to JSON-only (current behavior).
 """
 import json
 import logging
@@ -14,9 +17,58 @@ DATA_DIR = Path("data")
 USERS_FILE = DATA_DIR / "users.json"
 STATS_FILE = DATA_DIR / "stats.json"
 
+# Redis keys
+_REDIS_USERS_KEY = "apexflash:users"
+_REDIS_STATS_KEY = "apexflash:stats"
+
+# Redis connection (lazy init)
+_redis_client = None
+_redis_available = None  # None = not checked yet
+
 
 def _ensure_dir():
     DATA_DIR.mkdir(exist_ok=True)
+
+
+def _get_redis():
+    """Lazy-init Redis connection. Returns client or None."""
+    global _redis_client, _redis_available
+
+    if _redis_available is False:
+        return None
+
+    if _redis_client is not None:
+        return _redis_client
+
+    url = os.getenv("UPSTASH_REDIS_URL", "")
+    if not url:
+        _redis_available = False
+        logger.info("No UPSTASH_REDIS_URL — using JSON-only persistence")
+        return None
+
+    try:
+        import redis as redis_lib
+        _redis_client = redis_lib.from_url(url, decode_responses=True, socket_timeout=5)
+        _redis_client.ping()
+        _redis_available = True
+        logger.info("Redis connected (Upstash)")
+        return _redis_client
+    except Exception as e:
+        logger.warning(f"Redis connection failed, falling back to JSON: {e}")
+        _redis_available = False
+        _redis_client = None
+        return None
+
+
+def _serialize_for_json(data: dict) -> dict:
+    """Convert sets to lists for JSON serialization."""
+    result = {}
+    for k, v in data.items():
+        if isinstance(v, set):
+            result[k] = list(v)
+        else:
+            result[k] = v
+    return result
 
 
 # ══════════════════════════════════════════════
@@ -24,22 +76,50 @@ def _ensure_dir():
 # ══════════════════════════════════════════════
 
 def save_users(users: dict) -> bool:
-    """Save users dict to JSON file. Atomic write (tmp + rename)."""
+    """Save users dict. Redis primary, JSON fallback."""
+    serializable = {str(k): v for k, v in users.items()}
+    json_str = json.dumps(serializable, default=str)
+    saved = False
+
+    # 1) Redis (primary)
+    r = _get_redis()
+    if r:
+        try:
+            r.set(_REDIS_USERS_KEY, json_str)
+            saved = True
+        except Exception as e:
+            logger.error(f"Redis save_users failed: {e}")
+
+    # 2) JSON file (fallback / local cache)
     try:
         _ensure_dir()
-        serializable = {str(k): v for k, v in users.items()}
         tmp = USERS_FILE.with_suffix(".tmp")
         with open(tmp, "w") as f:
-            json.dump(serializable, f, default=str)
+            f.write(json_str)
         tmp.replace(USERS_FILE)
-        return True
+        saved = True
     except Exception as e:
-        logger.error(f"Save users failed: {e}")
-        return False
+        logger.error(f"JSON save_users failed: {e}")
+
+    return saved
 
 
 def load_users() -> dict:
-    """Load users dict from JSON file. Returns empty dict if none."""
+    """Load users dict. Redis first, then JSON fallback."""
+    # 1) Try Redis
+    r = _get_redis()
+    if r:
+        try:
+            data = r.get(_REDIS_USERS_KEY)
+            if data:
+                parsed = json.loads(data)
+                users = {int(k): v for k, v in parsed.items()}
+                logger.info(f"Loaded {len(users)} users from Redis")
+                return users
+        except Exception as e:
+            logger.error(f"Redis load_users failed: {e}")
+
+    # 2) Fallback to JSON file
     try:
         if not USERS_FILE.exists():
             logger.info("No users file found — starting fresh")
@@ -48,6 +128,13 @@ def load_users() -> dict:
             data = json.load(f)
         users = {int(k): v for k, v in data.items()}
         logger.info(f"Loaded {len(users)} users from disk")
+        # Seed Redis if we loaded from disk but Redis is available
+        if r and users:
+            try:
+                r.set(_REDIS_USERS_KEY, json.dumps({str(k): v for k, v in users.items()}, default=str))
+                logger.info("Seeded Redis with users from disk")
+            except Exception:
+                pass
         return users
     except Exception as e:
         logger.error(f"Load users failed: {e}")
@@ -59,37 +146,66 @@ def load_users() -> dict:
 # ══════════════════════════════════════════════
 
 def save_stats(stats: dict) -> bool:
-    """Save platform stats to JSON file."""
+    """Save platform stats. Redis primary, JSON fallback."""
+    serializable = _serialize_for_json(stats)
+    json_str = json.dumps(serializable, default=str)
+    saved = False
+
+    # 1) Redis
+    r = _get_redis()
+    if r:
+        try:
+            r.set(_REDIS_STATS_KEY, json_str)
+            saved = True
+        except Exception as e:
+            logger.error(f"Redis save_stats failed: {e}")
+
+    # 2) JSON file
     try:
         _ensure_dir()
-        # Convert sets to lists for JSON serialization
-        serializable = {}
-        for k, v in stats.items():
-            if isinstance(v, set):
-                serializable[k] = list(v)
-            else:
-                serializable[k] = v
         tmp = STATS_FILE.with_suffix(".tmp")
         with open(tmp, "w") as f:
-            json.dump(serializable, f, default=str)
+            f.write(json_str)
         tmp.replace(STATS_FILE)
-        return True
+        saved = True
     except Exception as e:
-        logger.error(f"Save stats failed: {e}")
-        return False
+        logger.error(f"JSON save_stats failed: {e}")
+
+    return saved
 
 
 def load_stats() -> dict | None:
-    """Load platform stats. Returns None if no file."""
+    """Load platform stats. Redis first, then JSON fallback."""
+    # 1) Try Redis
+    r = _get_redis()
+    if r:
+        try:
+            data = r.get(_REDIS_STATS_KEY)
+            if data:
+                parsed = json.loads(data)
+                if "active_traders_today" in parsed and isinstance(parsed["active_traders_today"], list):
+                    parsed["active_traders_today"] = set(parsed["active_traders_today"])
+                logger.info("Loaded platform stats from Redis")
+                return parsed
+        except Exception as e:
+            logger.error(f"Redis load_stats failed: {e}")
+
+    # 2) Fallback to JSON
     try:
         if not STATS_FILE.exists():
             return None
         with open(STATS_FILE) as f:
             data = json.load(f)
-        # Restore sets
         if "active_traders_today" in data and isinstance(data["active_traders_today"], list):
             data["active_traders_today"] = set(data["active_traders_today"])
         logger.info("Loaded platform stats from disk")
+        # Seed Redis
+        if r and data:
+            try:
+                r.set(_REDIS_STATS_KEY, json.dumps(_serialize_for_json(data), default=str))
+                logger.info("Seeded Redis with stats from disk")
+            except Exception:
+                pass
         return data
     except Exception as e:
         logger.error(f"Load stats failed: {e}")
@@ -97,31 +213,37 @@ def load_stats() -> dict | None:
 
 
 # ══════════════════════════════════════════════
-# TELEGRAM BACKUP (deploy resilience)
+# TELEGRAM BACKUP (tertiary safety net)
 # ══════════════════════════════════════════════
 
 def export_backup(users: dict, stats: dict) -> str:
     """Export all data as JSON string for Telegram backup."""
     data = {
         "users": {str(k): v for k, v in users.items()},
-        "stats": {},
+        "stats": _serialize_for_json(stats),
         "version": "1.0",
     }
-    # Serialize stats safely
-    for k, v in stats.items():
-        if isinstance(v, set):
-            data["stats"][k] = list(v)
-        else:
-            data["stats"][k] = v
     return json.dumps(data, indent=2, default=str)
 
 
 def import_backup(json_str: str) -> tuple[dict, dict]:
-    """Import backup from JSON string. Returns (users_dict, stats_dict)."""
+    """Import backup from JSON string. Returns (users_dict, stats_dict).
+    Also syncs to Redis if available."""
     data = json.loads(json_str)
     users_raw = data.get("users", {})
     users = {int(k): v for k, v in users_raw.items()}
     stats = data.get("stats", {})
     if "active_traders_today" in stats and isinstance(stats["active_traders_today"], list):
         stats["active_traders_today"] = set(stats["active_traders_today"])
+
+    # Sync restored data to Redis immediately
+    r = _get_redis()
+    if r:
+        try:
+            r.set(_REDIS_USERS_KEY, json.dumps({str(k): v for k, v in users.items()}, default=str))
+            r.set(_REDIS_STATS_KEY, json.dumps(_serialize_for_json(stats), default=str))
+            logger.info("Restored backup synced to Redis")
+        except Exception as e:
+            logger.warning(f"Redis sync after restore failed: {e}")
+
     return users, stats
