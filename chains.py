@@ -65,15 +65,15 @@ async def fetch_eth_whale_transfers() -> list[dict]:
     async with aiohttp.ClientSession() as session:
         for wallet, name in ETH_WHALE_WALLETS.items():
             try:
-                url = (
-                    f"https://api.etherscan.io/v2/api"
-                    f"?chainid=1&module=account&action=txlist"
-                    f"&address={wallet}"
-                    f"&startblock=0&endblock=99999999"
-                    f"&page=1&offset=5&sort=desc"
-                    f"&apikey={ETHERSCAN_API_KEY}"
-                )
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                url = "https://api.etherscan.io/v2/api"
+                params = {
+                    "chainid": "1", "module": "account", "action": "txlist",
+                    "address": wallet,
+                    "startblock": "0", "endblock": "99999999",
+                    "page": "1", "offset": "5", "sort": "desc",
+                    "apikey": ETHERSCAN_API_KEY,
+                }
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     data = await resp.json()
 
                 result = data.get("result")
@@ -116,11 +116,9 @@ async def fetch_sol_whale_transfers() -> list[dict]:
     async with aiohttp.ClientSession() as session:
         for wallet, name in SOL_WHALE_WALLETS.items():
             try:
-                url = (
-                    f"https://api.helius.xyz/v0/addresses/{wallet}"
-                    f"/transactions?api-key={HELIUS_API_KEY}&limit=5"
-                )
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                url = f"https://api.helius.xyz/v0/addresses/{wallet}/transactions"
+                params = {"api-key": HELIUS_API_KEY, "limit": "5"}
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     data = await resp.json()
 
                 if isinstance(data, list):

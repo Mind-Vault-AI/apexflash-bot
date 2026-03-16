@@ -156,13 +156,25 @@ async def execute_swap(keypair: Keypair, quote: dict) -> str | None:
 async def get_token_info(mint: str) -> dict | None:
     """Look up token metadata by mint address."""
     try:
-        url = f"https://tokens.jup.ag/token/{mint}"
+        url = "https://api.jup.ag/tokens/v2/search"
+        params = {"query": mint}
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                url, timeout=aiohttp.ClientTimeout(total=8),
+                url, params=params, headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=8),
             ) as resp:
                 if resp.status == 200:
-                    return await resp.json()
+                    results = await resp.json()
+                    for t in results:
+                        if t.get("id") == mint:
+                            return {
+                                "address": t["id"],
+                                "symbol": t.get("symbol", "???"),
+                                "name": t.get("name", "Unknown"),
+                                "decimals": t.get("decimals", 0),
+                                "logoURI": t.get("icon", ""),
+                            }
+                    return results[0] if results else None
                 return None
     except Exception as e:
         logger.error(f"Token info error: {e}")
@@ -172,11 +184,11 @@ async def get_token_info(mint: str) -> dict | None:
 async def search_token(query: str) -> list[dict]:
     """Search Jupiter token list by name or symbol."""
     try:
-        url = "https://tokens.jup.ag/tokens/search"
+        url = "https://api.jup.ag/tokens/v2/search"
         params = {"query": query}
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                url, params=params,
+                url, params=params, headers=_headers(),
                 timeout=aiohttp.ClientTimeout(total=8),
             ) as resp:
                 if resp.status == 200:

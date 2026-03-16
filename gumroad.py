@@ -104,8 +104,8 @@ async def get_products() -> list[dict]:
     url = f"{GUMROAD_API_BASE}/products"
     try:
         async with aiohttp.ClientSession() as session:
-            params = {"access_token": GUMROAD_ACCESS_TOKEN}
-            async with session.get(url, params=params) as resp:
+            headers = {"Authorization": f"Bearer {GUMROAD_ACCESS_TOKEN}"}
+            async with session.get(url, headers=headers) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("success"):
@@ -125,11 +125,9 @@ async def get_recent_sales(page: int = 1) -> list[dict]:
     url = f"{GUMROAD_API_BASE}/sales"
     try:
         async with aiohttp.ClientSession() as session:
-            params = {
-                "access_token": GUMROAD_ACCESS_TOKEN,
-                "page": page,
-            }
-            async with session.get(url, params=params) as resp:
+            headers = {"Authorization": f"Bearer {GUMROAD_ACCESS_TOKEN}"}
+            params = {"page": page}
+            async with session.get(url, headers=headers, params=params) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("success"):

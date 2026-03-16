@@ -29,7 +29,7 @@ MIZAR_REFERRAL_URL = os.getenv("MIZAR_REFERRAL_URL", "https://mizar.com/?ref=ape
 JUPITER_API_KEY = os.getenv("JUPITER_API_KEY", "")
 JUPITER_QUOTE_URL = "https://api.jup.ag/swap/v1/quote"
 JUPITER_SWAP_URL = "https://api.jup.ag/swap/v1/swap"
-HELIUS_RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
+HELIUS_RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}" if HELIUS_API_KEY else ""
 
 # === Trading Config ===
 PLATFORM_FEE_PCT = float(os.getenv("PLATFORM_FEE_PCT", "1.0"))  # 1% per trade
@@ -318,4 +318,4 @@ PRICE_IDS = {
     "BNB": "binancecoin",
     "ARB": "arbitrum",
 }
-FALLBACK_PRICES = {"ETH": 3500, "SOL": 180, "BTC": 95000, "BNB": 600, "ARB": 1.5}
+FALLBACK_PRICES = {"ETH": 2000, "SOL": 130, "BTC": 85000, "BNB": 550, "ARB": 0.35}

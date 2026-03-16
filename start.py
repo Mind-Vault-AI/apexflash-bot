@@ -15,6 +15,19 @@ logging.basicConfig(
 logger = logging.getLogger("ApexFlash.start")
 
 
+def _mask_secrets(text: str) -> str:
+    """Remove API keys, tokens, and secrets from error text before logging."""
+    import re
+    for env_key in ("BOT_TOKEN", "JUPITER_API_KEY", "HELIUS_API_KEY",
+                     "ETHERSCAN_API_KEY", "GUMROAD_ACCESS_TOKEN",
+                     "WALLET_ENCRYPTION_KEY", "OPENAI_API_KEY"):
+        val = os.getenv(env_key, "")
+        if val and len(val) > 6:
+            text = text.replace(val, f"{env_key}=***")
+    text = re.sub(r'api[_-]?key[=:]\s*[A-Za-z0-9_-]{8,}', 'api_key=***', text, flags=re.IGNORECASE)
+    return text
+
+
 def send_crash_report(msg: str):
     """Send crash report to admin via Telegram (sync, no dependencies beyond httpx)."""
     try:
@@ -22,9 +35,10 @@ def send_crash_report(msg: str):
         tok = os.getenv("BOT_TOKEN", "")
         admin = os.getenv("ADMIN_IDS", "").split(",")[0].strip()
         if tok and admin:
+            safe_msg = _mask_secrets(msg)
             httpx.post(
                 f"https://api.telegram.org/bot{tok}/sendMessage",
-                json={"chat_id": int(admin), "text": msg[:4000]},
+                json={"chat_id": int(admin), "text": safe_msg[:4000]},
                 timeout=10,
             )
             logger.info("Crash report sent to admin")
