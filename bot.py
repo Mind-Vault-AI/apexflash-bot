@@ -4655,16 +4655,8 @@ def main() -> None:
     # Document handler — admin can forward backup JSON to auto-restore
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
-    # Token address detection (Solana addresses pasted in chat)
-    # Also catch ALL text in group 1 as failsafe debug
-    app.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND, handle_token_address,
-    ))
-    # FAILSAFE: catch any text message that wasn't handled
-    async def _debug_text_catch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        txt = update.message.text[:30] if update.message and update.message.text else "?"
-        logger.warning(f"UNHANDLED TEXT: {txt} from user {update.effective_user.id}")
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _debug_text_catch), group=1)
+    # Token address detection — catch ALL non-command messages
+    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND & ~filters.Document.ALL, handle_token_address))
 
     # Whale scanner repeating job
     app.job_queue.run_repeating(
