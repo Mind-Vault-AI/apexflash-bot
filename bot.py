@@ -2877,10 +2877,16 @@ async def _cb_execute_sell(query, user, context, data):
 
 async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Detect Solana token addresses or license keys pasted in chat."""
+    # DEBUG: Log every text message received
+    raw_text = update.message.text if update.message else "NO_MSG"
+    uid = update.effective_user.id if update.effective_user else 0
+    logger.info(f"TEXT_HANDLER: user={uid} text={raw_text[:30]}...")
     try:
         await _handle_token_address_inner(update, context)
     except Exception as e:
         logger.error(f"handle_token_address CRASH: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         try:
             await update.message.reply_text(
                 f"⚠️ Error: {type(e).__name__}: {str(e)[:200]}",
@@ -4519,6 +4525,28 @@ async def cmd_backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
 
+async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: show debug info about handlers and state."""
+    if not is_admin(update.effective_user.id):
+        return
+    uid = update.effective_user.id
+    user = users.get(uid, {})
+    has_wallet = bool(user.get("wallet_pubkey"))
+    handlers = len(update.get_bot().application.handlers.get(0, []))
+    msg = (
+        f"🔧 Debug Info\n"
+        f"Users in memory: {len(users)}\n"
+        f"Your user exists: {uid in users}\n"
+        f"Your wallet: {has_wallet}\n"
+        f"Handlers registered: {handlers}\n"
+        f"Trading enabled: {trading_enabled}\n"
+        f"Redis URL set: {bool(os.getenv('UPSTASH_REDIS_URL', ''))}\n"
+        f"Helius key set: {bool(HELIUS_API_KEY)}\n"
+        f"Jupiter key set: {bool(JUPITER_API_KEY)}\n"
+    )
+    await update.message.reply_text(msg)
+
+
 async def cmd_restore(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin command: restore from backup file. Reply to a backup JSON file with /restore."""
     if not is_admin(update.effective_user.id):
@@ -4622,6 +4650,7 @@ def main() -> None:
     app.add_handler(CommandHandler("backup", cmd_backup))
     app.add_handler(CommandHandler("restore", cmd_restore))
     app.add_handler(CommandHandler("tweetstats", cmd_tweetstats))
+    app.add_handler(CommandHandler("debug", cmd_debug))
 
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))
@@ -4731,7 +4760,7 @@ def main() -> None:
                 logger.warning(f"Startup notification failed: {e}")
 
     app.post_init = post_init
-    app.run_polling(drop_pending_updates=True)
+    app.run_polling(drop_pending_updates=False)
 
 
 if __name__ == "__main__":
