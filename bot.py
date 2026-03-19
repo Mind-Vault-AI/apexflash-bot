@@ -2877,6 +2877,21 @@ async def _cb_execute_sell(query, user, context, data):
 
 async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Detect Solana token addresses or license keys pasted in chat."""
+    try:
+        await _handle_token_address_inner(update, context)
+    except Exception as e:
+        logger.error(f"handle_token_address CRASH: {type(e).__name__}: {e}")
+        try:
+            await update.message.reply_text(
+                f"⚠️ Error: {type(e).__name__}: {str(e)[:200]}",
+                parse_mode=None,
+            )
+        except Exception:
+            pass
+
+
+async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Inner handler — separated so crashes are caught and reported."""
     text = update.message.text.strip()
     user_id = update.effective_user.id
     user = get_user(user_id)
