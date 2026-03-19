@@ -2002,11 +2002,18 @@ async def _cb_trade_buy(query, user, context):
         "\n"
         "\U0001f4a1 *Popular tokens:*\n"
     )
-    for sym, info in list(COMMON_TOKENS.items())[:6]:
-        if sym != "SOL":
-            text += f"\u2022 {sym} \u2014 `{info['mint'][:20]}...`\n"
+    # Show top tokens (skip SOL — that's the input currency)
+    shown = 0
+    for sym, info in COMMON_TOKENS.items():
+        if sym == "SOL":
+            continue
+        text += f"\u2022 {sym} \u2014 `{info['mint'][:20]}...`\n"
+        shown += 1
+        if shown >= 10:
+            break
 
     text += (
+        f"\n\U0001f50d _+ any Solana token — just paste the mint address!_\n"
         "\n"
         "_Copy any mint address above and paste it_\n"
         "_in this chat to start buying!_\n"
