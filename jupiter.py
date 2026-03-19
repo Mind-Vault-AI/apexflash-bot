@@ -88,6 +88,10 @@ async def execute_swap(keypair: Keypair, quote: dict) -> tuple[str | None, str]:
     On success: (sig, "")
     On failure: (None, "human-readable reason")
     """
+    # Validate RPC URL
+    if not HELIUS_RPC_URL:
+        return None, "No HELIUS_RPC_URL configured"
+
     try:
         swap_body = {
             "userPublicKey": str(keypair.pubkey()),
@@ -104,53 +108,65 @@ async def execute_swap(keypair: Keypair, quote: dict) -> tuple[str | None, str]:
         }
 
         async with aiohttp.ClientSession() as session:
-            # 1) Get serialized transaction
-            async with session.post(
-                JUPITER_SWAP_URL, json=swap_body,
-                headers=_headers(),
-                timeout=aiohttp.ClientTimeout(total=20),
-            ) as resp:
-                if resp.status != 200:
-                    err = await resp.text()
-                    logger.error(f"Jupiter swap {resp.status}: {err}")
-                    return None, f"Jupiter API error {resp.status}: {err[:120]}"
-                swap_data = await resp.json()
+            # 1) Get serialized transaction from Jupiter
+            try:
+                async with session.post(
+                    JUPITER_SWAP_URL, json=swap_body,
+                    headers=_headers(),
+                    timeout=aiohttp.ClientTimeout(total=20),
+                ) as resp:
+                    if resp.status != 200:
+                        err = await resp.text()
+                        logger.error(f"Jupiter swap {resp.status}: {err}")
+                        return None, f"Jupiter API {resp.status}: {err[:120]}"
+                    swap_data = await resp.json()
+            except Exception as e:
+                logger.error(f"Jupiter swap request failed: {type(e).__name__}: {e}")
+                return None, f"Jupiter request failed: {type(e).__name__}: {str(e)[:100]}"
 
             # 2) Deserialize → sign
-            raw_tx = VersionedTransaction.from_bytes(
-                base64.b64decode(swap_data["swapTransaction"])
-            )
-            sig = keypair.sign_message(bytes(raw_tx.message))
-            signed_tx = VersionedTransaction.populate(raw_tx.message, [sig])
+            try:
+                raw_tx = VersionedTransaction.from_bytes(
+                    base64.b64decode(swap_data["swapTransaction"])
+                )
+                sig = keypair.sign_message(bytes(raw_tx.message))
+                signed_tx = VersionedTransaction.populate(raw_tx.message, [sig])
+                encoded = base64.b64encode(bytes(signed_tx)).decode()
+            except Exception as e:
+                logger.error(f"TX signing failed: {type(e).__name__}: {e}")
+                return None, f"Signing failed: {type(e).__name__}: {str(e)[:100]}"
 
             # 3) Send to Solana via Helius
-            encoded = base64.b64encode(bytes(signed_tx)).decode()
-            rpc_payload = {
-                "jsonrpc": "2.0", "id": 1,
-                "method": "sendTransaction",
-                "params": [encoded, {
-                    "encoding": "base64",
-                    "skipPreflight": True,
-                    "maxRetries": 3,
-                }],
-            }
-            async with session.post(
-                HELIUS_RPC_URL, json=rpc_payload,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
-                data = await resp.json()
-                if "result" in data:
-                    tx_sig = data["result"]
-                    logger.info(f"Swap OK: {tx_sig}")
-                    return tx_sig, ""
-                err = data.get("error", {})
-                err_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
-                logger.error(f"Swap send error: {err_msg}")
-                return None, f"RPC error: {err_msg[:150]}"
+            try:
+                rpc_payload = {
+                    "jsonrpc": "2.0", "id": 1,
+                    "method": "sendTransaction",
+                    "params": [encoded, {
+                        "encoding": "base64",
+                        "skipPreflight": True,
+                        "maxRetries": 3,
+                    }],
+                }
+                async with session.post(
+                    HELIUS_RPC_URL, json=rpc_payload,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    data = await resp.json()
+                    if "result" in data:
+                        tx_sig = data["result"]
+                        logger.info(f"Swap OK: {tx_sig}")
+                        return tx_sig, ""
+                    err = data.get("error", {})
+                    err_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                    logger.error(f"Swap send error: {err_msg}")
+                    return None, f"RPC: {err_msg[:150]}"
+            except Exception as e:
+                logger.error(f"RPC send failed: {type(e).__name__}: {e}")
+                return None, f"RPC send failed: {type(e).__name__}: {str(e)[:100]}"
 
     except Exception as e:
-        logger.error(f"Swap execution error: {e}")
-        return None, f"Exception: {str(e)[:150]}"
+        logger.error(f"Swap execution error: {type(e).__name__}: {e}")
+        return None, f"{type(e).__name__}: {str(e)[:120]}"
 
 
 # ══════════════════════════════════════════════
