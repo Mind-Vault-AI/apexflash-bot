@@ -2947,7 +2947,11 @@ async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Inner handler — separated so crashes are caught and reported."""
+    if not update.message or not update.message.text:
+        return
     text = update.message.text.strip()
+    if not text:
+        return
     user_id = update.effective_user.id
     user = get_user(user_id)
 
@@ -4844,7 +4848,7 @@ def main() -> None:
                 logger.warning(f"Startup notification failed: {e}")
 
     app.post_init = post_init
-    app.run_polling(drop_pending_updates=False)
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
