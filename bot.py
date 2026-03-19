@@ -2877,10 +2877,6 @@ async def _cb_execute_sell(query, user, context, data):
 
 async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Detect Solana token addresses or license keys pasted in chat."""
-    # DEBUG: Log every text message received
-    raw_text = update.message.text if update.message else "NO_MSG"
-    uid = update.effective_user.id if update.effective_user else 0
-    logger.info(f"TEXT_HANDLER: user={uid} text={raw_text[:30]}...")
     try:
         await _handle_token_address_inner(update, context)
     except Exception as e:
@@ -4526,23 +4522,24 @@ async def cmd_backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Admin: show debug info about handlers and state."""
-    if not is_admin(update.effective_user.id):
-        return
+    """Debug: show handler and state info. No admin check for debugging."""
     uid = update.effective_user.id
     user = users.get(uid, {})
     has_wallet = bool(user.get("wallet_pubkey"))
-    handlers = len(update.get_bot().application.handlers.get(0, []))
+    h_count = sum(len(v) for v in context.application.handlers.values())
     msg = (
         f"🔧 Debug Info\n"
         f"Users in memory: {len(users)}\n"
+        f"Your ID: {uid}\n"
         f"Your user exists: {uid in users}\n"
         f"Your wallet: {has_wallet}\n"
-        f"Handlers registered: {handlers}\n"
-        f"Trading enabled: {trading_enabled}\n"
-        f"Redis URL set: {bool(os.getenv('UPSTASH_REDIS_URL', ''))}\n"
-        f"Helius key set: {bool(HELIUS_API_KEY)}\n"
-        f"Jupiter key set: {bool(JUPITER_API_KEY)}\n"
+        f"Handlers: {h_count}\n"
+        f"Admin IDs: {ADMIN_IDS}\n"
+        f"Is admin: {uid in ADMIN_IDS}\n"
+        f"Trading: {trading_enabled}\n"
+        f"Redis: {bool(os.getenv('UPSTASH_REDIS_URL', ''))}\n"
+        f"Helius: {bool(HELIUS_API_KEY)}\n"
+        f"Jupiter: {bool(JUPITER_API_KEY)}\n"
     )
     await update.message.reply_text(msg)
 
@@ -4659,9 +4656,15 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
     # Token address detection (Solana addresses pasted in chat)
+    # Also catch ALL text in group 1 as failsafe debug
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND, handle_token_address,
     ))
+    # FAILSAFE: catch any text message that wasn't handled
+    async def _debug_text_catch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        txt = update.message.text[:30] if update.message and update.message.text else "?"
+        logger.warning(f"UNHANDLED TEXT: {txt} from user {update.effective_user.id}")
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _debug_text_catch), group=1)
 
     # Whale scanner repeating job
     app.job_queue.run_repeating(
