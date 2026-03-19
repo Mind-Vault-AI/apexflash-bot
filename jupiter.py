@@ -185,16 +185,23 @@ async def get_token_info(mint: str) -> dict | None:
             ) as resp:
                 if resp.status == 200:
                     results = await resp.json()
+                    # Find exact match first, then fallback to first result
+                    match = None
                     for t in results:
-                        if t.get("id") == mint:
-                            return {
-                                "address": t["id"],
-                                "symbol": t.get("symbol", "???"),
-                                "name": t.get("name", "Unknown"),
-                                "decimals": t.get("decimals", 0),
-                                "logoURI": t.get("icon", ""),
-                            }
-                    return results[0] if results else None
+                        if t.get("id") == mint or t.get("address") == mint:
+                            match = t
+                            break
+                    if not match and results:
+                        match = results[0]
+                    if match:
+                        return {
+                            "address": match.get("id") or match.get("address", mint),
+                            "symbol": match.get("symbol", "???"),
+                            "name": match.get("name", "Unknown"),
+                            "decimals": match.get("decimals", 0),
+                            "logoURI": match.get("icon", ""),
+                        }
+                    return None
                 return None
     except Exception as e:
         logger.error(f"Token info error: {e}")
