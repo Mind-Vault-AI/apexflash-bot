@@ -663,6 +663,52 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "positions":      _cb_positions,
     }
 
+    # Handle search result callbacks — user tapped a token from search
+    if data.startswith("search_"):
+        mint = data[7:]  # Remove "search_" prefix
+        # Look up full token info and show buy buttons directly
+        token_info = await get_token_info(mint)
+        if token_info and token_info.get("symbol"):
+            symbol = token_info.get("symbol", "???")
+            name = token_info.get("name", "Unknown")
+            decimals = token_info.get("decimals", 0)
+            context.user_data["target_mint"] = token_info.get("address", mint)
+            context.user_data["target_name"] = symbol
+            context.user_data["target_decimals"] = decimals
+            sol_bal = await get_sol_balance(user.get("wallet_pubkey", ""))
+            prices = await get_crypto_prices()
+            sol_price = prices.get("SOL", 0)
+            msg = (
+                f"\U0001f3af *{name}* ({symbol})\n"
+                "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+                f"\U0001f517 Mint: `{mint}`\n"
+                f"\U0001f522 Decimals: {decimals}\n\n"
+                f"\U0001f4bc Your SOL: *{sol_bal:.4f}*"
+            )
+            if sol_price:
+                msg += f" (${sol_bal * sol_price:,.2f})"
+            msg += (
+                f"\n\U0001f4b0 Fee: *{PLATFORM_FEE_PCT}%* per trade\n\n"
+                "\u2b07\ufe0f *Choose buy amount:*"
+            )
+            kb = [
+                [InlineKeyboardButton("0.1 SOL", callback_data="buy_01"),
+                 InlineKeyboardButton("0.5 SOL", callback_data="buy_05")],
+                [InlineKeyboardButton("1 SOL", callback_data="buy_1"),
+                 InlineKeyboardButton("5 SOL", callback_data="buy_5")],
+                [InlineKeyboardButton("\u270f\ufe0f Custom Amount", callback_data="buy_custom")],
+                [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+                [_back_main()[0]],
+            ]
+            await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        else:
+            await query.edit_message_text(
+                "\u26a0\ufe0f Token not found on Jupiter.",
+                reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+                parse_mode="Markdown",
+            )
+        return
+
     # Handle dynamic buy/sell amount callbacks (buy_01, buy_05, buy_1, buy_5, sell_25, sell_50, sell_100)
     # These now go through confirm step first (confirm_buy_X / confirm_sell_X)
     if data.startswith("confirm_buy_"):
@@ -3045,6 +3091,27 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
 
     # Check if it looks like a Solana address
     if not SOL_ADDR_RE.match(text):
+        # Not an address — try token search by name/symbol (e.g. "PEPE", "bonk")
+        if len(text) >= 2 and len(text) <= 20 and text.replace(" ", "").isalnum():
+            results = await search_token(text)
+            if results:
+                msg = f"\U0001f50d *Search: {text}*\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+                kb_rows = []
+                for t in results[:5]:
+                    sym = t.get("symbol", "???")
+                    name = t.get("name", "Unknown")
+                    mint = t.get("id") or t.get("address", "")
+                    msg += f"\u2022 *{sym}* — {name}\n  `{mint}`\n\n"
+                    kb_rows.append([InlineKeyboardButton(
+                        f"{sym} — {name[:20]}", callback_data=f"search_{mint[:40]}"
+                    )])
+                msg += "_Tap a token or paste the mint address to buy!_"
+                kb_rows.append([InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")])
+                await update.message.reply_text(
+                    msg, reply_markup=InlineKeyboardMarkup(kb_rows),
+                    parse_mode="Markdown",
+                )
+                return
         return
 
     if not user.get("wallet_pubkey"):
@@ -4317,6 +4384,21 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
 
                     # Add trade + affiliate buttons
                     alert_kb = []
+
+                    # If SOL token with known mint, add direct "Buy this token" button
+                    token_symbol = alert.get("symbol", "")
+                    token_mint = ""
+                    for sym, info in COMMON_TOKENS.items():
+                        if sym == token_symbol:
+                            token_mint = info["mint"]
+                            break
+                    if token_mint and token_mint != SOL_MINT:
+                        alert_kb.append([
+                            InlineKeyboardButton(
+                                f"\U0001f4b5 Buy {token_symbol}", callback_data=f"search_{token_mint[:40]}",
+                            )
+                        ])
+
                     featured = [
                         (k, v) for k, v in AFFILIATE_LINKS.items()
                         if v.get("featured")
@@ -4331,7 +4413,7 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                         ])
                     alert_kb.append([
                         InlineKeyboardButton(
-                            "\U0001f4b0 Trade Now", callback_data="trade",
+                            "\U0001f4b0 Trade Menu", callback_data="trade",
                         )
                     ])
 
