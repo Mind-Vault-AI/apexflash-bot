@@ -1912,7 +1912,7 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                 swap_lamports, fee_lamports = calculate_fee(out_lamports)
 
                 # Execute sell
-                tx_sig = await execute_swap(keypair, quote)
+                tx_sig, swap_err = await execute_swap(keypair, quote)
 
                 if tx_sig:
                     # Collect fee
@@ -2579,7 +2579,7 @@ async def _cb_execute_buy(query, user, context, data):
         )
         return
 
-    tx_sig = await execute_swap(keypair, quote)
+    tx_sig, swap_err = await execute_swap(keypair, quote)
 
     if tx_sig:
         user["total_trades"] = user.get("total_trades", 0) + 1
@@ -2684,14 +2684,10 @@ async def _cb_execute_buy(query, user, context, data):
         except Exception as sltp_err:
             logger.warning(f"SL/TP prompt failed (non-fatal): {sltp_err}")
     else:
+        reason = swap_err or "Unknown error"
         text = (
             "\u274c *Swap Failed*\n\n"
-            "Transaction could not be executed.\n"
-            "Possible reasons:\n"
-            "\u2022 Insufficient SOL balance\n"
-            "\u2022 Slippage too high\n"
-            "\u2022 Network congestion\n"
-            "\n"
+            f"Reason: `{reason}`\n\n"
             "Check your balance and try again."
         )
         kb = [
@@ -2699,6 +2695,7 @@ async def _cb_execute_buy(query, user, context, data):
             [InlineKeyboardButton("\U0001f504 Retry", callback_data=data)],
             [_back_main()[0]],
         ]
+        logger.error(f"BUY FAILED: user={query.from_user.id} amount={sol_amount} token={target_mint[:12]} reason={reason}")
 
     await query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(kb),
@@ -2783,7 +2780,7 @@ async def _cb_execute_sell(query, user, context, data):
         )
         return
 
-    tx_sig = await execute_swap(keypair, quote)
+    tx_sig, swap_err = await execute_swap(keypair, quote)
 
     if tx_sig:
         user["total_trades"] = user.get("total_trades", 0) + 1
@@ -2860,14 +2857,17 @@ async def _cb_execute_sell(query, user, context, data):
         except Exception:
             pass
     else:
+        reason = swap_err or "Unknown error"
         text = (
             "\u274c *Sell Failed*\n\n"
-            "Transaction failed. Try again."
+            f"Reason: `{reason}`\n\n"
+            "Try again or check your balance."
         )
         kb = [
             [InlineKeyboardButton("\U0001f504 Retry", callback_data=data)],
             [_back_main()[0]],
         ]
+        logger.error(f"SELL FAILED: user={query.from_user.id} reason={reason}")
 
     await query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(kb),

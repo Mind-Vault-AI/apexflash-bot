@@ -81,10 +81,12 @@ async def get_quote(
 # EXECUTE SWAP
 # ══════════════════════════════════════════════
 
-async def execute_swap(keypair: Keypair, quote: dict) -> str | None:
+async def execute_swap(keypair: Keypair, quote: dict) -> tuple[str | None, str]:
     """Execute a swap: get tx from Jupiter → sign → send to Solana.
 
-    Returns transaction signature or None.
+    Returns (transaction_signature, error_reason).
+    On success: (sig, "")
+    On failure: (None, "human-readable reason")
     """
     try:
         swap_body = {
@@ -111,7 +113,7 @@ async def execute_swap(keypair: Keypair, quote: dict) -> str | None:
                 if resp.status != 200:
                     err = await resp.text()
                     logger.error(f"Jupiter swap {resp.status}: {err}")
-                    return None
+                    return None, f"Jupiter API error {resp.status}: {err[:120]}"
                 swap_data = await resp.json()
 
             # 2) Deserialize → sign
@@ -140,13 +142,15 @@ async def execute_swap(keypair: Keypair, quote: dict) -> str | None:
                 if "result" in data:
                     tx_sig = data["result"]
                     logger.info(f"Swap OK: {tx_sig}")
-                    return tx_sig
-                logger.error(f"Swap send error: {data.get('error')}")
-                return None
+                    return tx_sig, ""
+                err = data.get("error", {})
+                err_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                logger.error(f"Swap send error: {err_msg}")
+                return None, f"RPC error: {err_msg[:150]}"
 
     except Exception as e:
         logger.error(f"Swap execution error: {e}")
-        return None
+        return None, f"Exception: {str(e)[:150]}"
 
 
 # ══════════════════════════════════════════════
