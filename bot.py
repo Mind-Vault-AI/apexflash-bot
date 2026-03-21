@@ -329,8 +329,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.args:
         arg = context.args[0]
 
+        # Format: hot (trending tokens deep link)
+        if arg == "hot":
+            # Show welcome first, then auto-trigger /hot after
+            context.user_data["_auto_hot"] = True
+
         # Format: buy_MINTADDRESS_ref_USERID (viral token link with referral)
-        if arg.startswith("buy_"):
+        elif arg.startswith("buy_"):
             parts = arg[4:]  # Remove "buy_"
             if "_ref_" in parts:
                 mint_part, ref_part = parts.rsplit("_ref_", 1)
@@ -485,6 +490,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 logger.info(f"Deep link buy: user={uid} token={symbol} mint={deep_link_mint[:12]}")
         except Exception as e:
             logger.warning(f"Deep link token lookup failed: {e}")
+
+    # ── Auto-trigger /hot if deep linked ──
+    if context.user_data.pop("_auto_hot", False):
+        try:
+            await cmd_hot(update, context)
+        except Exception as e:
+            logger.warning(f"Auto-hot trigger failed: {e}")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4702,13 +4714,30 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                 logger.debug(f"Discord notify error: {e}")
 
             try:
-                # Telegram public channel
+                # Telegram public channel — with tradeable deep links
                 channel_text = format_whale_alert(alert, prices)
-                channel_kb = InlineKeyboardMarkup([
-                    [InlineKeyboardButton(
-                        "\U0001f4b0 Trade Now", url="https://t.me/ApexFlashBot",
-                    )],
-                ])
+                token_symbol = alert.get("symbol", "")
+                token_mint = ""
+                for sym, info in COMMON_TOKENS.items():
+                    if sym == token_symbol:
+                        token_mint = info["mint"]
+                        break
+
+                ch_buttons = []
+                if token_mint and token_mint != SOL_MINT:
+                    # Deep link: opens bot with this token ready to buy
+                    ch_buttons.append([InlineKeyboardButton(
+                        f"💰 Buy {token_symbol} Now",
+                        url=f"https://t.me/ApexFlashBot?start=buy_{token_mint}",
+                    )])
+                ch_buttons.append([InlineKeyboardButton(
+                    "🔥 Trending Tokens", url="https://t.me/ApexFlashBot?start=hot",
+                )])
+                ch_buttons.append([InlineKeyboardButton(
+                    "⚡ Start Trading", url="https://t.me/ApexFlashBot",
+                )])
+
+                channel_kb = InlineKeyboardMarkup(ch_buttons)
                 await notify_telegram_channel(
                     context.bot, channel_text, channel_kb,
                 )
