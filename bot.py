@@ -794,6 +794,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # Handle /hot trending buy buttons — user tapped a trending token
     if data.startswith("hot_buy_"):
         mint = data[8:]  # Remove "hot_buy_" prefix
+        # Prefix match against COMMON_TOKENS if truncated
+        if not SOL_ADDR_RE.match(mint):
+            for sym, info in COMMON_TOKENS.items():
+                if info["mint"].startswith(mint):
+                    mint = info["mint"]
+                    break
         token_info = await get_token_info(mint)
         if token_info and token_info.get("symbol"):
             symbol = token_info.get("symbol", "???")
@@ -2232,7 +2238,7 @@ async def _cb_trade_buy(query, user, context):
             continue
         icon = TOKEN_ICONS.get(sym, "🪙")
         token_buttons.append(
-            InlineKeyboardButton(f"{icon} {sym}", callback_data=f"hot_buy_{info['mint'][:40]}")
+            InlineKeyboardButton(f"{icon} {sym}", callback_data=f"hot_buy_{info['mint']}")
         )
         shown += 1
         if shown >= 10:
@@ -5015,7 +5021,7 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             # Buy button for each token
             kb_rows.append([InlineKeyboardButton(
                 f"💰 Buy {t['symbol']}",
-                callback_data=f"hot_buy_{t['mint'][:40]}",
+                callback_data=f"hot_buy_{t['mint']}",
             )])
 
         msg += (
