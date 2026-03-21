@@ -2947,6 +2947,8 @@ async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Inner handler — separated so crashes are caught and reported."""
+    # DEBUG: log every call to confirm handler fires
+    logger.info(f"TEXT_HANDLER: msg={getattr(getattr(update, 'message', None), 'text', 'NO_TEXT')!r} user={getattr(update.effective_user, 'id', '?')}")
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip()
@@ -2954,6 +2956,13 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
         return
     user_id = update.effective_user.id
     user = get_user(user_id)
+
+    # DEBUG: admin-visible confirmation (remove after debugging)
+    if user_id == 7851853521 and SOL_ADDR_RE.match(text):
+        await update.message.reply_text(
+            f"[DEBUG] Handler fired. Text={text[:20]}... awaiting={user.get('awaiting_input','')} ctx_await={context.user_data.get('awaiting_input','')}",
+            parse_mode=None,
+        )
 
     # ── Handle license key input (when awaiting) ──
     if user.get("awaiting_input") == "license_key":
