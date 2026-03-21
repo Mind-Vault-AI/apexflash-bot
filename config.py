@@ -30,6 +30,9 @@ JUPITER_API_KEY = os.getenv("JUPITER_API_KEY", "")
 JUPITER_QUOTE_URL = "https://api.jup.ag/swap/v1/quote"
 JUPITER_SWAP_URL = "https://api.jup.ag/swap/v1/swap"
 HELIUS_RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}" if HELIUS_API_KEY else ""
+# Fallback RPC when Helius quota is exhausted
+FALLBACK_RPC_URL = os.getenv("FALLBACK_RPC_URL", "https://api.mainnet-beta.solana.com")
+RPC_URLS = [url for url in [HELIUS_RPC_URL, FALLBACK_RPC_URL] if url]
 
 # === Trading Config ===
 PLATFORM_FEE_PCT = float(os.getenv("PLATFORM_FEE_PCT", "1.0"))  # 1% per trade

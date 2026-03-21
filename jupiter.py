@@ -11,7 +11,7 @@ from solders.transaction import VersionedTransaction
 
 from config import (
     JUPITER_API_KEY, JUPITER_QUOTE_URL, JUPITER_SWAP_URL,
-    HELIUS_RPC_URL, PLATFORM_FEE_PCT,
+    HELIUS_RPC_URL, PLATFORM_FEE_PCT, RPC_URLS,
 )
 
 logger = logging.getLogger(__name__)
@@ -136,33 +136,43 @@ async def execute_swap(keypair: Keypair, quote: dict) -> tuple[str | None, str]:
                 logger.error(f"TX signing failed: {type(e).__name__}: {e}")
                 return None, f"Signing failed: {type(e).__name__}: {str(e)[:100]}"
 
-            # 3) Send to Solana via Helius
-            try:
-                rpc_payload = {
-                    "jsonrpc": "2.0", "id": 1,
-                    "method": "sendTransaction",
-                    "params": [encoded, {
-                        "encoding": "base64",
-                        "skipPreflight": True,
-                        "maxRetries": 3,
-                    }],
-                }
-                async with session.post(
-                    HELIUS_RPC_URL, json=rpc_payload,
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as resp:
-                    data = await resp.json()
-                    if "result" in data:
-                        tx_sig = data["result"]
-                        logger.info(f"Swap OK: {tx_sig}")
-                        return tx_sig, ""
-                    err = data.get("error", {})
-                    err_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
-                    logger.error(f"Swap send error: {err_msg}")
-                    return None, f"RPC: {err_msg[:150]}"
-            except Exception as e:
-                logger.error(f"RPC send failed: {type(e).__name__}: {e}")
-                return None, f"RPC send failed: {type(e).__name__}: {str(e)[:100]}"
+            # 3) Send to Solana via RPC (try all endpoints)
+            rpc_payload = {
+                "jsonrpc": "2.0", "id": 1,
+                "method": "sendTransaction",
+                "params": [encoded, {
+                    "encoding": "base64",
+                    "skipPreflight": True,
+                    "maxRetries": 3,
+                }],
+            }
+            last_err = "No RPC endpoints configured"
+            for rpc_url in RPC_URLS:
+                try:
+                    async with session.post(
+                        rpc_url, json=rpc_payload,
+                        timeout=aiohttp.ClientTimeout(total=30),
+                    ) as resp:
+                        data = await resp.json()
+                        if "result" in data:
+                            tx_sig = data["result"]
+                            rpc_name = "Helius" if "helius" in rpc_url else "fallback"
+                            logger.info(f"Swap OK via {rpc_name}: {tx_sig}")
+                            return tx_sig, ""
+                        err = data.get("error", {})
+                        err_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                        if "max usage" in err_msg.lower() or "rate" in err_msg.lower():
+                            logger.warning(f"RPC quota hit ({rpc_url[:30]}), trying next...")
+                            last_err = err_msg
+                            continue
+                        logger.error(f"Swap send error: {err_msg}")
+                        return None, f"RPC: {err_msg[:150]}"
+                except Exception as e:
+                    logger.warning(f"RPC {rpc_url[:30]} failed: {e}, trying next...")
+                    last_err = f"{type(e).__name__}: {str(e)[:100]}"
+                    continue
+            logger.error(f"All RPC endpoints failed: {last_err}")
+            return None, f"All RPCs failed: {last_err[:120]}"
 
     except Exception as e:
         logger.error(f"Swap execution error: {type(e).__name__}: {e}")
