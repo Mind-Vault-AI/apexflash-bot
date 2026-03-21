@@ -4,7 +4,10 @@ Solana token swaps via Jupiter V6 aggregator.
 Quote → Sign → Execute — with 1% platform fee.
 """
 import base64
+import json
 import logging
+import urllib.parse
+from datetime import datetime, timedelta, timezone
 import aiohttp
 from solders.keypair import Keypair
 from solders.transaction import VersionedTransaction
@@ -252,6 +255,111 @@ async def get_token_info(mint: str) -> dict | None:
         logger.error(f"DexPaprika fallback also failed: {e}")
 
     return None
+
+
+async def get_token_chart_url(mint: str, hours: int = 24) -> str | None:
+    """Generate a price chart image URL for a token using DexPaprika OHLCV + quickchart.io.
+    Returns a URL to a chart image, or None if data unavailable."""
+    try:
+        # 1) Find top pool for this token
+        pools_url = f"https://api.dexpaprika.com/networks/solana/tokens/{mint}/pools"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                pools_url, params={"order_by": "volume_usd", "limit": "1"},
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning(f"Chart: pools lookup failed ({resp.status})")
+                    return None
+                data = await resp.json()
+                # DexPaprika returns {"pools": [...]} or a list
+                pools = data.get("pools", data) if isinstance(data, dict) else data
+                if not pools or not isinstance(pools, list):
+                    return None
+                pool_addr = pools[0].get("id", "")
+                if not pool_addr:
+                    return None
+
+            # 2) Get OHLCV data
+            now = datetime.now(timezone.utc)
+            start = now - timedelta(hours=hours)
+            interval = "1h" if hours <= 48 else "4h"
+            ohlcv_url = f"https://api.dexpaprika.com/networks/solana/pools/{pool_addr}/ohlcv"
+            async with session.get(
+                ohlcv_url,
+                params={
+                    "start": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "interval": interval,
+                    "limit": "50",
+                },
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning(f"Chart: OHLCV failed ({resp.status})")
+                    return None
+                ohlcv = await resp.json()
+                if not ohlcv or len(ohlcv) < 3:
+                    return None
+
+        # 3) Build chart config for quickchart.io
+        labels = []
+        prices = []
+        for candle in ohlcv:
+            ts = candle.get("time_open", "")
+            close = candle.get("close", 0)
+            if ts and close:
+                # Format time label
+                try:
+                    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    labels.append(dt.strftime("%H:%M"))
+                except Exception:
+                    labels.append("")
+                prices.append(round(float(close), 8))
+
+        if len(prices) < 3:
+            return None
+
+        # Determine color: green if price went up, red if down
+        color = "#00ff88" if prices[-1] >= prices[0] else "#ff4444"
+        pct_change = ((prices[-1] - prices[0]) / prices[0] * 100) if prices[0] else 0
+
+        chart_config = {
+            "type": "line",
+            "data": {
+                "labels": labels,
+                "datasets": [{
+                    "label": f"{pct_change:+.1f}%",
+                    "data": prices,
+                    "borderColor": color,
+                    "backgroundColor": f"{color}20",
+                    "fill": True,
+                    "pointRadius": 0,
+                    "borderWidth": 2,
+                    "tension": 0.3,
+                }]
+            },
+            "options": {
+                "plugins": {
+                    "legend": {"display": True, "labels": {"color": "#ffffff", "font": {"size": 14}}},
+                },
+                "scales": {
+                    "x": {"ticks": {"color": "#888", "maxTicksLimit": 6}, "grid": {"color": "#333"}},
+                    "y": {"ticks": {"color": "#888"}, "grid": {"color": "#333"}},
+                },
+                "layout": {"padding": 10},
+            },
+        }
+
+        chart_json = json.dumps(chart_config, separators=(',', ':'))
+        encoded = urllib.parse.quote(chart_json)
+        url = f"https://quickchart.io/chart?c={encoded}&w=600&h=300&bkg=%23111111"
+
+        logger.info(f"Chart generated for {mint[:8]}... ({len(prices)} points, {pct_change:+.1f}%)")
+        return url
+
+    except Exception as e:
+        logger.warning(f"Chart generation failed: {e}")
+        return None
 
 
 async def search_token(query: str) -> list[dict]:

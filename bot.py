@@ -56,7 +56,7 @@ from wallet import (
 )
 from jupiter import (
     get_quote, execute_swap, calculate_fee,
-    get_token_info, search_token, COMMON_TOKENS,
+    get_token_info, search_token, get_token_chart_url, COMMON_TOKENS,
 )
 from notifications import (
     notify_discord_whale, notify_discord_trade,
@@ -3269,10 +3269,27 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
             [_back_main()[0]],
         ]
 
-        await update.message.reply_text(
-            msg, reply_markup=InlineKeyboardMarkup(kb),
-            parse_mode="Markdown",
-        )
+        # Try to send chart image first (non-blocking — if fails, just show text)
+        try:
+            chart_url = await get_token_chart_url(text, hours=24)
+            if chart_url:
+                await update.message.reply_photo(
+                    photo=chart_url,
+                    caption=msg,
+                    reply_markup=InlineKeyboardMarkup(kb),
+                    parse_mode="Markdown",
+                )
+            else:
+                await update.message.reply_text(
+                    msg, reply_markup=InlineKeyboardMarkup(kb),
+                    parse_mode="Markdown",
+                )
+        except Exception as chart_err:
+            logger.warning(f"Chart send failed: {chart_err}, falling back to text")
+            await update.message.reply_text(
+                msg, reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode="Markdown",
+            )
     else:
         # Also try to store it for selling (user might own this token)
         context.user_data["target_mint"] = text
