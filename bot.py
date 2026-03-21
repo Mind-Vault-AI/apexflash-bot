@@ -847,9 +847,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # Handle /hot refresh
     if data == "cmd_hot_refresh":
         await query.edit_message_text("🔥 *Refreshing...*", parse_mode="Markdown")
-        # Re-run the hot command via the message
         update.message = query.message
         await cmd_hot(update, context)
+        return
+
+    # Handle /market refresh
+    if data == "cmd_market_refresh":
+        await query.edit_message_text("📊 *Refreshing market...*", parse_mode="Markdown")
+        update.message = query.message
+        await cmd_market(update, context)
         return
 
     # Handle search result callbacks — user tapped a token from search
@@ -5098,6 +5104,104 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("⚠️ Error loading trending tokens. Try again.")
 
 
+async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """📊 Live market overview — gainers, losers, new tokens."""
+    await update.message.reply_text("📊 *Loading market data...*", parse_mode="Markdown")
+    update_last_active(update.effective_user.id)
+
+    try:
+        import aiohttp as _aiohttp
+        async with _aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://api.dexpaprika.com/networks/solana/pools",
+                params={"order_by": "volume_usd", "sort": "desc", "limit": "200"},
+                timeout=_aiohttp.ClientTimeout(total=12),
+            ) as resp:
+                if resp.status != 200:
+                    await update.message.reply_text("⚠️ Market data unavailable.")
+                    return
+                data = await resp.json()
+
+        SKIP_MINTS = {
+            "So11111111111111111111111111111111111111112",
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+            "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",
+            "7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj",
+        }
+
+        pools = data.get("pools", data) if isinstance(data, dict) else data
+        if not isinstance(pools, list):
+            await update.message.reply_text("⚠️ No market data.")
+            return
+
+        seen = set()
+        all_tokens = []
+        for pool in pools:
+            tokens = pool.get("tokens", [])
+            target = None
+            for tok in tokens:
+                if tok.get("id", "") not in SKIP_MINTS:
+                    target = tok
+                    break
+            if not target:
+                continue
+            mint = target.get("id", "")
+            if mint in seen:
+                continue
+            seen.add(mint)
+            pct = pool.get("last_price_change_usd_24h", 0) or 0
+            vol = pool.get("volume_usd", 0) or 0
+            all_tokens.append({
+                "symbol": target.get("symbol", "???"),
+                "mint": mint,
+                "pct": pct,
+                "volume": vol,
+            })
+
+        # Sort for categories
+        gainers = sorted([t for t in all_tokens if t["pct"] > 0], key=lambda x: -x["pct"])[:5]
+        losers = sorted([t for t in all_tokens if t["pct"] < 0], key=lambda x: x["pct"])[:5]
+        by_volume = sorted(all_tokens, key=lambda x: -x["volume"])[:5]
+
+        msg = "📊 *SOLANA MARKET*\n━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        msg += "🟢 *TOP GAINERS (24h)*\n"
+        for i, t in enumerate(gainers, 1):
+            msg += f"  {i}. *{t['symbol']}* +{t['pct']:.1f}%\n"
+
+        msg += "\n🔴 *TOP LOSERS (24h)*\n"
+        for i, t in enumerate(losers, 1):
+            msg += f"  {i}. *{t['symbol']}* {t['pct']:.1f}%\n"
+
+        msg += "\n💎 *HIGHEST VOLUME*\n"
+        for i, t in enumerate(by_volume, 1):
+            vol_str = f"${t['volume']:,.0f}" if t['volume'] >= 1 else "$0"
+            msg += f"  {i}. *{t['symbol']}* — {vol_str}\n"
+
+        msg += "\n━━━━━━━━━━━━━━━━━━━━━\n⚡ Tap to buy instantly"
+
+        kb = []
+        # Top 3 gainers as buy buttons
+        for t in gainers[:3]:
+            kb.append([InlineKeyboardButton(
+                f"🟢 Buy {t['symbol']} (+{t['pct']:.0f}%)",
+                callback_data=f"hot_buy_{t['mint']}",
+            )])
+        kb.append([InlineKeyboardButton("🔥 Hot Tokens", callback_data="cmd_hot_refresh")])
+        kb.append([InlineKeyboardButton("🔄 Refresh", callback_data="cmd_market_refresh")])
+        kb.append([_back_main()[0]])
+
+        await update.message.reply_text(
+            msg, reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown",
+        )
+
+    except Exception as e:
+        logger.error(f"cmd_market error: {e}")
+        await update.message.reply_text("⚠️ Error loading market data.")
+
+
 async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin: show funnel, popular tokens, affiliate stats."""
     if not is_admin(update.effective_user.id):
@@ -5261,6 +5365,7 @@ def main() -> None:
     app.add_handler(CommandHandler("restore", cmd_restore))
     app.add_handler(CommandHandler("hot", cmd_hot))
     app.add_handler(CommandHandler("trending", cmd_hot))
+    app.add_handler(CommandHandler("market", cmd_market))
     app.add_handler(CommandHandler("tweetstats", cmd_tweetstats))
     app.add_handler(CommandHandler("debug", cmd_debug))
     app.add_handler(CommandHandler("analytics", cmd_analytics))
