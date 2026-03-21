@@ -2210,41 +2210,37 @@ async def _cb_trade_buy(query, user, context):
         return
 
     text = (
-        "\U0001f4b5 *Buy Tokens*\n"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "💰 *Buy Tokens*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
         "\n"
-        "*Paste a Solana token address* in chat\n"
-        "and I'll show you the token info with\n"
-        "buy buttons!\n"
+        "Tap a token below to buy instantly!\n"
+        "Or paste any Solana mint address.\n"
         "\n"
-        "\U0001f4a1 *Popular tokens:*\n"
+        "🔥 *Popular tokens:*"
     )
-    # Show top tokens (skip SOL — that's the input currency)
+
+    # Build clickable token buttons — 1 tap = direct to buy screen
+    token_buttons = []
     shown = 0
     for sym, info in COMMON_TOKENS.items():
         if sym == "SOL":
             continue
-        text += f"\u2022 {sym} \u2014 `{info['mint'][:20]}...`\n"
+        token_buttons.append(
+            InlineKeyboardButton(f"💰 {sym}", callback_data=f"hot_buy_{info['mint'][:40]}")
+        )
         shown += 1
         if shown >= 10:
             break
 
-    text += (
-        f"\n\U0001f50d _+ any Solana token — just paste the mint address!_\n"
-        "\n"
-        "_Copy any mint address above and paste it_\n"
-        "_in this chat to start buying!_\n"
-        "\n"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-    )
+    # Arrange in rows of 3
+    kb = []
+    for i in range(0, len(token_buttons), 3):
+        kb.append(token_buttons[i:i+3])
 
-    kb = [
-        [InlineKeyboardButton("\U0001f4bc My Wallet", callback_data="trade_wallet")],
-        [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
-        [_back_main()[0]],
-    ]
+    kb.append([InlineKeyboardButton("🔥 Trending Tokens", callback_data="cmd_hot_refresh")])
+    kb.append([InlineKeyboardButton("💼 My Wallet", callback_data="trade_wallet")])
+    kb.append([InlineKeyboardButton("💰 Trade Menu", callback_data="trade")])
+    kb.append([_back_main()[0]])
 
     await query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
@@ -3212,10 +3208,22 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
     text = update.message.text.strip()
     if not text:
         return
+
+    # FIX: Strip trailing dots/ellipsis from truncated addresses (popular token list copies)
+    text = text.rstrip('.').rstrip(' ').rstrip('\u2026')  # Remove "..." and "…"
+
+    # FIX: If text looks like start of a known token address, expand to full address
+    if len(text) >= 10 and not SOL_ADDR_RE.match(text):
+        for sym, info in COMMON_TOKENS.items():
+            if info["mint"].startswith(text):
+                logger.info(f"Prefix match: {text[:15]}... -> {sym} ({info['mint'][:15]}...)")
+                text = info["mint"]
+                break
+
     user_id = update.effective_user.id
     user = get_user(user_id)
 
-    # Debug logging (admin-only, logs only — no user-facing message)
+    # Log entry for debugging
     if user_id == 7851853521 and SOL_ADDR_RE.match(text):
         logger.info(f"[ADMIN-DEBUG] Handler fired. Text={text[:20]}... awaiting={user.get('awaiting_input','')} ctx_await={context.user_data.get('awaiting_input','')}")
 
