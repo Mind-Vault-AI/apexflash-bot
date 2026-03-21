@@ -2219,23 +2219,29 @@ async def _cb_trade_buy(query, user, context):
         "🔥 *Popular tokens:*"
     )
 
-    # Build clickable token buttons — 1 tap = direct to buy screen
+    # Build clickable token buttons with fun icons — 1 tap = buy screen
+    TOKEN_ICONS = {
+        "USDC": "💵", "USDT": "💲", "JUP": "🪐", "BONK": "🐕",
+        "WIF": "🐶", "TRUMP": "🇺🇸", "RAY": "☀️", "ORCA": "🐋",
+        "PYTH": "🐍", "W": "🌀", "SOL": "◎",
+    }
     token_buttons = []
     shown = 0
     for sym, info in COMMON_TOKENS.items():
         if sym == "SOL":
             continue
+        icon = TOKEN_ICONS.get(sym, "🪙")
         token_buttons.append(
-            InlineKeyboardButton(f"💰 {sym}", callback_data=f"hot_buy_{info['mint'][:40]}")
+            InlineKeyboardButton(f"{icon} {sym}", callback_data=f"hot_buy_{info['mint'][:40]}")
         )
         shown += 1
         if shown >= 10:
             break
 
-    # Arrange in rows of 3
+    # Arrange in rows of 2 for better readability
     kb = []
-    for i in range(0, len(token_buttons), 3):
-        kb.append(token_buttons[i:i+3])
+    for i in range(0, len(token_buttons), 2):
+        kb.append(token_buttons[i:i+2])
 
     kb.append([InlineKeyboardButton("🔥 Trending Tokens", callback_data="cmd_hot_refresh")])
     kb.append([InlineKeyboardButton("💼 My Wallet", callback_data="trade_wallet")])
@@ -3185,7 +3191,7 @@ async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYP
             pass
 
     try:
-        await _handle_token_address_inner(update, context)
+        await _handle_token_address_inner(update, context, cleaned_text=text)
     except Exception as e:
         logger.error(f"handle_token_address CRASH: {type(e).__name__}: {e}")
         import traceback
@@ -3199,13 +3205,12 @@ async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYP
             pass
 
 
-async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, cleaned_text: str = "") -> None:
     """Inner handler — separated so crashes are caught and reported."""
-    # Lightweight logging (debug level only, not info)
-    logger.debug(f"TEXT_HANDLER: user={getattr(update.effective_user, 'id', '?')}")
-    if not update.message or not update.message.text:
+    if not update.message:
         return
-    text = update.message.text.strip()
+    # Use cleaned text from wrapper (prefix-matched, dots stripped) or fall back to raw
+    text = cleaned_text or (update.message.text or "").strip()
     if not text:
         return
 
