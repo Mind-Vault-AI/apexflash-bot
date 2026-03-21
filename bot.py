@@ -2706,11 +2706,36 @@ async def _cb_leaderboard(query, user, context):
         "_Trading crypto involves substantial risk of loss._"
     )
 
+    # User's own position
+    my_trades = user.get("total_trades", 0)
+    my_vol = user.get("total_volume_usd", 0)
+    my_refs = user.get("referral_count", 0)
+    my_earnings = user.get("referral_earnings", 0)
+    if my_trades > 0:
+        my_rank = sum(1 for t in traders if t["volume"] > my_vol) + 1
+        text += (
+            f"\n\n📊 *Your Stats:*\n"
+            f"• Rank: #{my_rank} of {len(traders)}\n"
+            f"• {my_trades} trades | ${my_vol:,.0f} volume\n"
+        )
+    if my_refs > 0:
+        text += f"• {my_refs} referrals | {my_earnings:.4f} SOL earned\n"
+
+    # Share link
+    try:
+        _bot_un = (await context.bot.get_me()).username
+        ref_link = f"https://t.me/{_bot_un}?start=ref_{query.from_user.id}"
+    except Exception:
+        ref_link = None
+
     kb = [
-        [InlineKeyboardButton("\U0001f4bc My Wallet", callback_data="trade_wallet")],
-        [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
-        [_back_main()[0]],
+        [InlineKeyboardButton("🔥 Hot Tokens", callback_data="cmd_hot_refresh")],
+        [InlineKeyboardButton("💼 My Wallet", callback_data="trade_wallet")],
+        [InlineKeyboardButton("💰 Trade Menu", callback_data="trade")],
     ]
+    if ref_link:
+        kb.insert(0, [InlineKeyboardButton("🤝 Invite & Earn 25%", url=f"https://t.me/share/url?url={ref_link}&text=Trade Solana tokens free on ApexFlash! 🚀")])
+    kb.append([_back_main()[0]])
 
     await query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
