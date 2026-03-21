@@ -3644,11 +3644,37 @@ async def _cb_portfolio(query, user, context):
         msg += "\n\U0001f4ad No tokens — all SOL\n"
 
     if positions:
-        msg += f"\n\U0001f6e1\ufe0f *Active SL/TP:* {len(positions)} positions\n"
+        msg += f"\n\U0001f6e1\ufe0f *Active Positions:* {len(positions)}\n"
         for p in positions[:5]:
             sl = p.get("sl_pct", 0)
             tp = p.get("tp_pct", 0)
-            msg += f"  \u2022 {p.get('token', '?')} | SL: -{sl}% | TP: +{tp}%\n"
+            entry = p.get("entry_sol", 0)
+            # Try to get live value
+            try:
+                raw_amt = int(p.get("token_amount_raw", 0))
+                if raw_amt > 0 and entry > 0:
+                    live_quote = await get_quote(
+                        input_mint=p.get("mint", ""),
+                        output_mint="So11111111111111111111111111111111111111112",
+                        amount_raw=raw_amt,
+                        slippage_bps=300,
+                    )
+                    if live_quote and live_quote.get("outAmount"):
+                        current_val = int(live_quote["outAmount"]) / 1_000_000_000
+                        pnl = current_val - entry
+                        pnl_pct = (pnl / entry * 100) if entry > 0 else 0
+                        emoji = "\U0001f7e2" if pnl >= 0 else "\U0001f534"
+                        pnl_sign = "+" if pnl >= 0 else ""
+                        msg += (
+                            f"  {emoji} *{p.get('token', '?')}*\n"
+                            f"     Entry: {entry:.4f} → Now: {current_val:.4f} SOL\n"
+                            f"     P/L: *{pnl_sign}{pnl:.4f} SOL ({pnl_sign}{pnl_pct:.1f}%)*\n"
+                            f"     SL: -{sl}% | TP: +{tp}%\n"
+                        )
+                        continue
+            except Exception:
+                pass
+            msg += f"  \u2022 {p.get('token', '?')} | Entry: {entry:.4f} SOL | SL: -{sl}% | TP: +{tp}%\n"
 
     msg += (
         f"\n\U0001f4ca *Stats:*\n"
