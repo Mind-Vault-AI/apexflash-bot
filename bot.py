@@ -2998,12 +2998,9 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
     user_id = update.effective_user.id
     user = get_user(user_id)
 
-    # DEBUG: admin-visible confirmation (remove after debugging)
+    # Debug logging (admin-only, logs only — no user-facing message)
     if user_id == 7851853521 and SOL_ADDR_RE.match(text):
-        await update.message.reply_text(
-            f"[DEBUG] Handler fired. Text={text[:20]}... awaiting={user.get('awaiting_input','')} ctx_await={context.user_data.get('awaiting_input','')}",
-            parse_mode=None,
-        )
+        logger.info(f"[ADMIN-DEBUG] Handler fired. Text={text[:20]}... awaiting={user.get('awaiting_input','')} ctx_await={context.user_data.get('awaiting_input','')}")
 
     # ── Handle license key input (when awaiting) ──
     if user.get("awaiting_input") == "license_key":
