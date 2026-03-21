@@ -178,8 +178,12 @@ async def notify_telegram_channel(bot, alert_text: str, alert_kb=None,
 
 async def notify_channel_trade(bot, action: str, sol_amount: float,
                                token_name: str, tx_sig: str,
-                               channel_id: str = "") -> bool:
-    """Post trade notification to Telegram channel (social proof)."""
+                               channel_id: str = "",
+                               token_mint: str = "",
+                               sol_price: float = 0,
+                               fee_sol: float = 0) -> bool:
+    """Post rich trade notification to Telegram channel (social proof).
+    Includes chart image when available for maximum engagement."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     from config import ALERT_CHANNEL_ID
 
@@ -187,37 +191,71 @@ async def notify_channel_trade(bot, action: str, sol_amount: float,
     if not target:
         return False
 
-    emoji = "💰" if action == "BUY" else "💸"
+    usd_value = f" (${sol_amount * sol_price:,.2f})" if sol_price else ""
+    action_emoji = "🟢" if action == "BUY" else "🔴"
+    action_word = "BOUGHT" if action == "BUY" else "SOLD"
+
     text = (
-        f"{emoji} *Trade Alert*\n"
+        f"{action_emoji} *{action_word} {token_name}*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "\n"
-        f"Someone just {'bought' if action == 'BUY' else 'sold'} "
-        f"*{token_name}* for *{sol_amount:.2f} SOL*\n"
+        f"💎 Token: *{token_name}*\n"
+        f"💰 Amount: *{sol_amount:.2f} SOL*{usd_value}\n"
+    )
+    if fee_sol:
+        text += f"💸 Fee: *{fee_sol:.4f} SOL* (1%)\n"
+    text += (
         "\n"
-        f"🔗 [View Transaction](https://solscan.io/tx/{tx_sig})\n"
+        f"🔗 [View on Solscan](https://solscan.io/tx/{tx_sig})\n"
         "\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "🤖 Trade any Solana token with 1% fee!\n"
-        "👉 Start now: @ApexFlashBot"
+        "⚡ *ApexFlash* — Trade any Solana token\n"
+        "🤖 Start now → @ApexFlashBot"
     )
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🤖 Start Trading", url="https://t.me/ApexFlashBot")],
+        [InlineKeyboardButton("⚡ Start Trading", url="https://t.me/ApexFlashBot")],
+        [InlineKeyboardButton("📊 Join Alerts", url="https://t.me/ApexFlashAlerts")],
     ])
 
     try:
-        await bot.send_message(
-            chat_id=target,
-            text=text,
-            reply_markup=kb,
-            parse_mode="Markdown",
-            disable_web_page_preview=True,
-        )
+        # Try sending with chart image for visual impact
+        chart_url = None
+        if token_mint:
+            try:
+                from jupiter import get_token_chart_url
+                chart_url = await get_token_chart_url(token_mint, hours=24)
+            except Exception:
+                pass
+
+        if chart_url:
+            await bot.send_photo(
+                chat_id=target,
+                photo=chart_url,
+                caption=text,
+                reply_markup=kb,
+                parse_mode="Markdown",
+            )
+        else:
+            await bot.send_message(
+                chat_id=target,
+                text=text,
+                reply_markup=kb,
+                parse_mode="Markdown",
+                disable_web_page_preview=True,
+            )
         return True
     except Exception as e:
         logger.error(f"Telegram channel trade post failed: {e}")
-        return False
+        # Fallback: try text-only
+        try:
+            await bot.send_message(
+                chat_id=target, text=text, reply_markup=kb,
+                parse_mode="Markdown", disable_web_page_preview=True,
+            )
+            return True
+        except Exception:
+            return False
 
 
 # ══════════════════════════════════════════════

@@ -2779,7 +2779,11 @@ async def _cb_execute_buy(query, user, context, data):
         try:
             uname = query.from_user.username or "Anon"
             await notify_discord_trade(uname, "BUY", f"{sol_amount} SOL", token_name, tx_sig, fee_sol)
-            await notify_channel_trade(context.bot, "BUY", sol_amount, token_name, tx_sig)
+            await notify_channel_trade(
+                context.bot, "BUY", sol_amount, token_name, tx_sig,
+                token_mint=target_mint, sol_price=sol_price,
+                fee_sol=fee_sol,
+            )
         except Exception:
             pass
 
