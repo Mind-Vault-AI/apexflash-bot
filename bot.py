@@ -320,6 +320,7 @@ def _back_main() -> list:
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Welcome message with main menu. Also handles referral deep links."""
     uid = update.effective_user.id
+    is_new_user = uid not in users
     user = get_user(uid)
     user["username"] = update.effective_user.username or ""
 
@@ -369,6 +370,46 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         parse_mode="Markdown",
         disable_web_page_preview=True,
     )
+
+    # ── New user onboarding: show exchange deals + referral link immediately ──
+    if is_new_user:
+        try:
+            bot_username = (await context.bot.get_me()).username
+            ref_link = f"https://t.me/{bot_username}?start=ref_{uid}"
+
+            featured = [
+                v for v in AFFILIATE_LINKS.values()
+                if v.get("featured") and v.get("url", "").find("YOUR_REF") == -1
+            ]
+
+            onboard_text = (
+                "\U0001f525 *Quick wins before you start:*\n\n"
+            )
+            for aff in featured:
+                onboard_text += f"✅ *{aff['name']}* — {aff['commission']} fee rebate\n"
+
+            onboard_text += (
+                "\n"
+                "Sign up via our links = save on every trade.\n\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🤝 *Your referral link:*\n`{ref_link}`\n\n"
+                "_Share it — earn 25% of every trade your friends make. Forever._"
+            )
+
+            kb = []
+            for aff in featured:
+                kb.append([InlineKeyboardButton(
+                    f"🔗 Open {aff['name']} ({aff['commission']} rebate)", url=aff["url"]
+                )])
+
+            await update.message.reply_text(
+                onboard_text,
+                reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode="Markdown",
+                disable_web_page_preview=True,
+            )
+        except Exception as e:
+            logger.warning(f"New user onboarding message failed: {e}")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4757,8 +4798,14 @@ def main() -> None:
     # Document handler — admin can forward backup JSON to auto-restore
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
-    # Token address detection — catch ALL non-command messages
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND & ~filters.Document.ALL, handle_token_address))
+    # Token address detection — TWO handlers for maximum compatibility
+    # Handler 1: explicit TEXT filter (standard text messages)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_token_address))
+    # Handler 2: catch messages with entities (URLs, etc.) that TEXT might miss
+    app.add_handler(MessageHandler(
+        filters.Entity("url") | filters.Entity("text_link") | filters.CaptionEntity("url"),
+        handle_token_address,
+    ))
 
     # Whale scanner repeating job
     app.job_queue.run_repeating(
