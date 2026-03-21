@@ -4771,10 +4771,10 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         import aiohttp as _aiohttp
         async with _aiohttp.ClientSession() as session:
-            # DexPaprika: top pools by volume on Solana
+            # DexPaprika: top pools by volume on Solana (fetch more for dedup)
             async with session.get(
                 "https://api.dexpaprika.com/networks/solana/pools",
-                params={"order_by": "volume_usd", "sort": "desc", "limit": "20"},
+                params={"order_by": "volume_usd", "sort": "desc", "limit": "100"},
                 timeout=_aiohttp.ClientTimeout(total=10),
             ) as resp:
                 if resp.status != 200:
@@ -4788,34 +4788,49 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text("⚠️ No trending data available.")
             return
 
+        # Skip stablecoins and base pairs
         SKIP_MINTS = {
-            "So11111111111111111111111111111111111111112",  # SOL
-            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
-            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
+            "So11111111111111111111111111111111111111112",   # SOL
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # USDC
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", # USDT
+            "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",  # mSOL
+            "7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj", # stSOL
         }
 
-        seen = set()
+        # Deduplicate: one entry per unique token (highest volume pool wins)
+        seen_symbols = set()
         trending = []
         for pool in pools:
             tokens = pool.get("tokens", [])
+            # Find the non-base token in this pool
+            target_tok = None
             for tok in tokens:
                 mint = tok.get("id", "")
-                if mint in SKIP_MINTS or mint in seen:
-                    continue
-                seen.add(mint)
-                pct_24h = pool.get("last_price_change_usd_24h", 0) or 0
-                volume = pool.get("volume_usd", 0) or 0
-                price = pool.get("price_usd", 0) or 0
-                trending.append({
-                    "symbol": tok.get("symbol", "???"),
-                    "name": tok.get("name", "Unknown"),
-                    "mint": mint,
-                    "pct_24h": pct_24h,
-                    "volume": volume,
-                    "price": price,
-                })
-                if len(trending) >= 10:
+                if mint not in SKIP_MINTS:
+                    target_tok = tok
                     break
+            if not target_tok:
+                continue
+
+            mint = target_tok.get("id", "")
+            symbol = target_tok.get("symbol", "???")
+            # Skip if we already have this token (by mint OR symbol)
+            dedup_key = mint
+            if dedup_key in seen_symbols:
+                continue
+            seen_symbols.add(dedup_key)
+
+            pct_24h = pool.get("last_price_change_usd_24h", 0) or 0
+            volume = pool.get("volume_usd", 0) or 0
+            price = pool.get("price_usd", 0) or 0
+            trending.append({
+                "symbol": symbol,
+                "name": target_tok.get("name", "Unknown"),
+                "mint": mint,
+                "pct_24h": pct_24h,
+                "volume": volume,
+                "price": price,
+            })
             if len(trending) >= 10:
                 break
 
