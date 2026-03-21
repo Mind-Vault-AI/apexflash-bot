@@ -3166,29 +3166,41 @@ async def _cb_execute_sell(query, user, context, data):
 
 async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Detect Solana token addresses or license keys pasted in chat.
-    GUARANTEE: user ALWAYS gets a response if text matches a SOL address."""
+    GUARANTEE: user ALWAYS gets a response if text looks like a SOL address."""
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip()
     if not text:
         return
-    # Only guarantee response for SOL addresses — don't spam on random text
+
+    # ALWAYS log for admin visibility
+    uid = getattr(update.effective_user, 'id', 0)
     is_sol_address = SOL_ADDR_RE.match(text)
+    logger.info(f"HANDLER_ENTRY: user={uid} len={len(text)} is_addr={bool(is_sol_address)} text={text[:25]}")
+
+    # Admin: send visible confirmation that handler fires
+    if uid == 7851853521 and (is_sol_address or len(text) > 20):
+        try:
+            await update.message.reply_text(
+                f"Processing `{text[:20]}...`",
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass
+
     try:
         await _handle_token_address_inner(update, context)
     except Exception as e:
         logger.error(f"handle_token_address CRASH: {type(e).__name__}: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        if is_sol_address:
-            try:
-                await update.message.reply_text(
-                    "⚠️ Something went wrong processing this token address.\n\n"
-                    "Please try again in a moment.",
-                    parse_mode=None,
-                )
-            except Exception:
-                pass
+        try:
+            await update.message.reply_text(
+                f"⚠️ Error processing: {type(e).__name__}\n\nPlease try again.",
+                parse_mode=None,
+            )
+        except Exception:
+            pass
 
 
 async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
