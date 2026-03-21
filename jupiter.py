@@ -189,12 +189,13 @@ async def execute_swap(keypair: Keypair, quote: dict) -> tuple[str | None, str]:
 async def get_token_info(mint: str) -> dict | None:
     """Look up token metadata by mint address.
     Order: COMMON_TOKENS (instant) → Jupiter → DexPaprika."""
-    # 0) Fast path: check COMMON_TOKENS dict (no API call needed)
+    # 0) Fast path: check COMMON_TOKENS dict (exact match OR prefix match)
     for sym, info in COMMON_TOKENS.items():
-        if info["mint"] == mint:
-            logger.info(f"COMMON_TOKENS hit: {sym}")
+        if info["mint"] == mint or (len(mint) >= 10 and info["mint"].startswith(mint)):
+            full_mint = info["mint"]
+            logger.info(f"COMMON_TOKENS {'hit' if info['mint'] == mint else 'prefix'}: {sym}")
             return {
-                "address": mint,
+                "address": full_mint,
                 "symbol": sym,
                 "name": info["name"],
                 "decimals": info["decimals"],
