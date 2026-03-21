@@ -278,7 +278,6 @@ async def search_token(query: str) -> list[dict]:
         logger.error(f"DexPaprika search also failed: {e}")
 
     return []
-        return []
 
 
 # ══════════════════════════════════════════════
