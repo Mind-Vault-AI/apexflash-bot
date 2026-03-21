@@ -2152,7 +2152,16 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                         positions.pop(pos_index)
 
                     entry = pos.get("entry_sol", 0)
-                    pnl_sol = current_sol - entry
+
+                    # Use actual SOL received from sell (after fee)
+                    sold_sol = swap_lamports / 1_000_000_000  # net SOL after fee deduction
+
+                    # Sanity check: sold amount should be in reasonable range of entry
+                    # If wildly off (>100x entry), use the pre-sell quote value instead
+                    if entry > 0 and sold_sol > entry * 100:
+                        sold_sol = current_sol  # fall back to quote estimate
+
+                    pnl_sol = sold_sol - entry
                     pnl_pct = (pnl_sol / entry * 100) if entry > 0 else 0
                     pnl_emoji = "🟢" if pnl_sol >= 0 else "🔴"
 
@@ -2161,7 +2170,7 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                     # Record trade
                     _record_trade(
                         chat_id, user, "SELL", pos["token"], pos["mint"],
-                        current_sol, 0, tx_sig,
+                        sold_sol, 0, tx_sig,
                     )
 
                     _persist()
@@ -2174,7 +2183,7 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                             "━━━━━━━━━━━━━━━━━━━━━\n\n"
                             f"🎯 {pos['token']}\n"
                             f"📥 Entry: *{entry:.4f} SOL*\n"
-                            f"📤 Sold: *{current_sol:.4f} SOL*\n"
+                            f"📤 Sold: *{sold_sol:.4f} SOL*\n"
                             f"{pnl_emoji} P/L: *{pnl_sol:+.4f} SOL* ({pnl_pct:+.1f}%)\n\n"
                             f"🔗 [View on Solscan](https://solscan.io/tx/{tx_sig})"
                         ),
@@ -2494,9 +2503,28 @@ async def _cb_preview_buy(query, user, context, data):
             f"Balance: *{balance:.4f} SOL*\n"
             f"Needed: *{sol_amount} SOL* + {MIN_SOL_RESERVE} reserve\n"
             f"= *{needed:.4f} SOL*\n\n"
-            f"Deposit more SOL to your wallet first.",
+            f"Deposit more SOL to your wallet first.\n\n"
+            f"\U0001f4b3 *Buy SOL on an exchange:*",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("\U0001f4bc My Wallet", callback_data="trade_wallet")],
+                [
+                    InlineKeyboardButton(
+                        "\U0001f525 Buy on MEXC (70% fee back)",
+                        url=AFFILIATE_LINKS["mexc"]["url"],
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "\U0001f525 Buy on Bitunix (50%)",
+                        url=AFFILIATE_LINKS["bitunix"]["url"],
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "\U0001f525 Buy on Gate.io (30%)",
+                        url=AFFILIATE_LINKS.get("gate", {}).get("url", "https://www.gate.com/signup/VFFHXVFDUG?ref_type=103"),
+                    ),
+                ],
                 [_back_main()[0]],
             ]),
             parse_mode="Markdown",
@@ -3932,6 +3960,10 @@ async def _process_sol_payment(query, user, context, tier: str, price_sol: float
         _gum_url = GUMROAD_PRO_URL if tier == "pro" else GUMROAD_ELITE_URL
         if _gum_url and "gumroad.com/l/" in _gum_url and not _gum_url.endswith("/l/"):
             kb_rows.append([InlineKeyboardButton("\U0001f4b3 Pay with Card", url=_gum_url)])
+        kb_rows.append([InlineKeyboardButton(
+            "\U0001f525 Buy SOL on MEXC (70% fee back)",
+            url=AFFILIATE_LINKS["mexc"]["url"],
+        )])
         kb_rows.append([_back_main()[0]])
         kb = InlineKeyboardMarkup(kb_rows)
         await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
