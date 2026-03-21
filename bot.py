@@ -2335,8 +2335,19 @@ async def _cb_preview_buy(query, user, context, data):
         )
         return
 
-    # Balance check
+    # Balance check (None = RPC unreachable)
     balance = await get_sol_balance(user["wallet_pubkey"])
+    if balance is None:
+        await query.edit_message_text(
+            "⚠️ *RPC Temporarily Unavailable*\n\n"
+            "Could not check your balance. Please try again in a moment.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Retry", callback_data=query.data)],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
     needed = sol_amount + MIN_SOL_RESERVE
     if balance < needed:
         await query.edit_message_text(
@@ -2379,8 +2390,11 @@ async def _cb_preview_buy(query, user, context, data):
         )
         return
 
-    # Store quote for execution
+    # Store quote for execution (with timestamp for freshness check)
+    import time as _time
     context.user_data["pending_quote"] = quote
+    context.user_data["pending_quote_ts"] = _time.time()
+    context.user_data["pending_quote_mint"] = target_mint
     context.user_data["pending_buy_data"] = data
 
     # Extract info for confirmation
@@ -2639,13 +2653,22 @@ async def _cb_execute_buy(query, user, context, data):
     total_lamports = int(sol_amount * 1_000_000_000)
     swap_lamports, fee_lamports = calculate_fee(total_lamports)
 
-    # Get quote
-    quote = await get_quote(
-        input_mint=SOL_MINT,
-        output_mint=target_mint,
-        amount_raw=swap_lamports,
-        slippage_bps=DEFAULT_SLIPPAGE_BPS,
-    )
+    # Get quote (reuse cached if fresh enough — within 30 seconds)
+    import time as _time
+    cached_quote = context.user_data.get("pending_quote")
+    cached_ts = context.user_data.get("pending_quote_ts", 0)
+    cached_mint = context.user_data.get("pending_quote_mint")
+    if (cached_quote and cached_mint == target_mint
+            and (_time.time() - cached_ts) < 30):
+        quote = cached_quote
+        logger.info("Reusing cached quote (< 30s old)")
+    else:
+        quote = await get_quote(
+            input_mint=SOL_MINT,
+            output_mint=target_mint,
+            amount_raw=swap_lamports,
+            slippage_bps=DEFAULT_SLIPPAGE_BPS,
+        )
 
     if not quote:
         await query.edit_message_text(
@@ -2970,26 +2993,36 @@ async def _cb_execute_sell(query, user, context, data):
 
 
 async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Detect Solana token addresses or license keys pasted in chat."""
+    """Detect Solana token addresses or license keys pasted in chat.
+    GUARANTEE: user ALWAYS gets a response if text matches a SOL address."""
+    if not update.message or not update.message.text:
+        return
+    text = update.message.text.strip()
+    if not text:
+        return
+    # Only guarantee response for SOL addresses — don't spam on random text
+    is_sol_address = SOL_ADDR_RE.match(text)
     try:
         await _handle_token_address_inner(update, context)
     except Exception as e:
         logger.error(f"handle_token_address CRASH: {type(e).__name__}: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        try:
-            await update.message.reply_text(
-                f"⚠️ Error: {type(e).__name__}: {str(e)[:200]}",
-                parse_mode=None,
-            )
-        except Exception:
-            pass
+        if is_sol_address:
+            try:
+                await update.message.reply_text(
+                    "⚠️ Something went wrong processing this token address.\n\n"
+                    "Please try again in a moment.",
+                    parse_mode=None,
+                )
+            except Exception:
+                pass
 
 
 async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Inner handler — separated so crashes are caught and reported."""
-    # DEBUG: log every call to confirm handler fires
-    logger.info(f"TEXT_HANDLER: msg={getattr(getattr(update, 'message', None), 'text', 'NO_TEXT')!r} user={getattr(update.effective_user, 'id', '?')}")
+    # Lightweight logging (debug level only, not info)
+    logger.debug(f"TEXT_HANDLER: user={getattr(update.effective_user, 'id', '?')}")
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip()
@@ -3194,10 +3227,17 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
         context.user_data["target_name"] = symbol
         context.user_data["target_decimals"] = decimals
 
-        # Get SOL balance for display
+        # Get SOL balance for display (None = RPC down)
         sol_bal = await get_sol_balance(user["wallet_pubkey"])
-        prices = await get_crypto_prices()
-        sol_price = prices.get("SOL", 0)
+        if sol_bal is None:
+            sol_bal = 0.0
+            bal_display = "⚠️ RPC busy — balance unavailable"
+        else:
+            prices = await get_crypto_prices()
+            sol_price = prices.get("SOL", 0)
+            bal_display = f"💼 Your SOL: *{sol_bal:.4f}*"
+            if sol_price:
+                bal_display += f" (${sol_bal * sol_price:,.2f})"
 
         msg = (
             f"\U0001f3af *{name}* ({symbol})\n"
@@ -3207,10 +3247,8 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
             f"\U0001f517 Mint: `{text}`\n"
             f"\U0001f522 Decimals: {decimals}\n"
             "\n"
-            f"\U0001f4bc Your SOL: *{sol_bal:.4f}*"
+            f"{bal_display}"
         )
-        if sol_price:
-            msg += f" (${sol_bal * sol_price:,.2f})"
         msg += (
             f"\n\U0001f4b0 Fee: *{PLATFORM_FEE_PCT}%* per trade\n"
             "\n"

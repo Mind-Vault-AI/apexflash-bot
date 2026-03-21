@@ -184,7 +184,20 @@ async def execute_swap(keypair: Keypair, quote: dict) -> tuple[str | None, str]:
 # ══════════════════════════════════════════════
 
 async def get_token_info(mint: str) -> dict | None:
-    """Look up token metadata by mint address. Jupiter first, DexPaprika fallback."""
+    """Look up token metadata by mint address.
+    Order: COMMON_TOKENS (instant) → Jupiter → DexPaprika."""
+    # 0) Fast path: check COMMON_TOKENS dict (no API call needed)
+    for sym, info in COMMON_TOKENS.items():
+        if info["mint"] == mint:
+            logger.info(f"COMMON_TOKENS hit: {sym}")
+            return {
+                "address": mint,
+                "symbol": sym,
+                "name": info["name"],
+                "decimals": info["decimals"],
+                "logoURI": "",
+            }
+
     # 1) Try Jupiter
     try:
         url = "https://api.jup.ag/tokens/v2/search"

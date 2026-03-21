@@ -99,17 +99,21 @@ async def _rpc(method: str, params: list) -> dict:
     return {"error": "all RPC endpoints unreachable"}
 
 
-async def get_sol_balance(pubkey: str) -> float:
-    """Get SOL balance in human-readable units."""
+async def get_sol_balance(pubkey: str) -> float | None:
+    """Get SOL balance in human-readable units.
+    Returns None if ALL RPC endpoints fail (caller should show error, not 0.0)."""
     try:
         data = await _rpc("getBalance", [pubkey])
+        if "error" in data and data["error"] == "all RPC endpoints unreachable":
+            logger.error(f"Balance UNREACHABLE for {pubkey[:8]}... — all RPCs down")
+            return None
         lamports = data.get("result", {}).get("value", 0)
         sol = lamports / 1_000_000_000
         logger.info(f"Balance for {pubkey[:8]}...: {sol} SOL ({lamports} lamports)")
         return sol
     except Exception as e:
         logger.error(f"Balance error for {pubkey[:8]}...: {e}")
-        return 0.0
+        return None
 
 
 async def get_token_balances(pubkey: str) -> list[dict]:
