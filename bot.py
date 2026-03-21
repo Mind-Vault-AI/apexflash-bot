@@ -292,6 +292,10 @@ def main_menu_kb(user_id: int = 0) -> InlineKeyboardMarkup:
             "\U0001f4b0 Trade (Solana)", callback_data="trade",
         )],
         [
+            InlineKeyboardButton("\U0001f4ca Market", callback_data="cmd_market_refresh"),
+            InlineKeyboardButton("\U0001f4bc Portfolio", callback_data="portfolio"),
+        ],
+        [
             InlineKeyboardButton("\U0001f4c8 Copy Trade", callback_data="copy_trade"),
             InlineKeyboardButton("\U0001f916 DCA Bot", callback_data="dca_bot"),
         ],
@@ -765,6 +769,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "trade_sell":    _cb_trade_sell,
         "trade_refresh": _cb_trade_refresh_balance,
         # Copy / DCA
+        "portfolio":     _cb_portfolio,
         "copy_trade":    _cb_copy_trade,
         "dca_bot":       _cb_dca_bot,
         "exchanges":     _cb_exchanges,
@@ -856,6 +861,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await query.edit_message_text("📊 *Refreshing market...*", parse_mode="Markdown")
         update.message = query.message
         await cmd_market(update, context)
+        return
+
+    # Handle portfolio
+    if data == "portfolio":
+        await _cb_portfolio(query, user, context)
         return
 
     # Handle search result callbacks — user tapped a token from search
@@ -3570,6 +3580,106 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
 # TRADE SECTION (Copy Trade + DCA via MIZAR)
 # ══════════════════════════════════════════════
 
+async def _cb_portfolio(query, user, context):
+    """Show portfolio: SOL balance + token holdings + trade stats."""
+    update_last_active(query.from_user.id)
+
+    if not user.get("wallet_pubkey"):
+        await query.edit_message_text(
+            "\U0001f4bc *Portfolio*\n\n"
+            "Create a wallet first to start tracking your trades!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    await query.edit_message_text("\U0001f4bc *Loading portfolio...*", parse_mode="Markdown")
+
+    # Get SOL balance
+    sol_bal = await get_sol_balance(user["wallet_pubkey"])
+    if sol_bal is None:
+        sol_bal = 0.0
+    prices = await get_crypto_prices()
+    sol_price = prices.get("SOL", 0)
+    sol_usd = sol_bal * sol_price
+
+    # Get token holdings
+    tokens = await get_token_balances(user["wallet_pubkey"])
+
+    # Trade stats
+    total_trades = user.get("total_trades", 0)
+    total_vol = user.get("total_volume_usd", 0)
+    referral_earnings = user.get("referral_earnings", 0)
+
+    # Active positions (SL/TP)
+    positions = user.get("active_positions", [])
+
+    # Build message
+    msg = (
+        "\U0001f4bc *Your Portfolio*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        f"\u25ce SOL: *{sol_bal:.4f}*"
+    )
+    if sol_usd > 0:
+        msg += f" (${sol_usd:,.2f})"
+    msg += "\n"
+
+    if tokens:
+        msg += "\n\U0001f4b0 *Token Holdings:*\n"
+        for t in tokens[:10]:
+            # Try to find symbol
+            symbol = "?"
+            for sym, info in COMMON_TOKENS.items():
+                if info["mint"] == t["mint"]:
+                    symbol = sym
+                    break
+            if symbol == "?":
+                symbol = f"{t['mint'][:6]}..."
+            msg += f"  \u2022 *{symbol}:* {t['amount']:,.4f}\n"
+    else:
+        msg += "\n\U0001f4ad No tokens — all SOL\n"
+
+    if positions:
+        msg += f"\n\U0001f6e1\ufe0f *Active SL/TP:* {len(positions)} positions\n"
+        for p in positions[:5]:
+            sl = p.get("sl_pct", 0)
+            tp = p.get("tp_pct", 0)
+            msg += f"  \u2022 {p.get('token', '?')} | SL: -{sl}% | TP: +{tp}%\n"
+
+    msg += (
+        f"\n\U0001f4ca *Stats:*\n"
+        f"  \u2022 Trades: *{total_trades}*\n"
+        f"  \u2022 Volume: *${total_vol:,.2f}*\n"
+    )
+    if referral_earnings > 0:
+        msg += f"  \u2022 Referral earnings: *{referral_earnings:.4f} SOL*\n"
+
+    msg += (
+        f"  \u2022 Tier: *{user.get('tier', 'free').title()}*\n"
+        "\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    kb = [
+        [
+            InlineKeyboardButton("\U0001f4b5 Buy", callback_data="trade_buy"),
+            InlineKeyboardButton("\U0001f4b8 Sell", callback_data="trade_sell"),
+        ],
+        [InlineKeyboardButton("\U0001f6e1\ufe0f Positions (SL/TP)", callback_data="positions")],
+        [InlineKeyboardButton("\U0001f504 Refresh", callback_data="portfolio")],
+        [_back_main()[0]],
+    ]
+
+    await query.edit_message_text(
+        msg, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+
+
 async def _cb_copy_trade(query, user, context):
     """Copy trading via MIZAR."""
     tier = TIERS.get(user["tier"], TIERS["free"])
@@ -5104,6 +5214,55 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("⚠️ Error loading trending tokens. Try again.")
 
 
+async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show portfolio — wrapper for /portfolio command."""
+    uid = update.effective_user.id
+    user = get_user(uid)
+    # Fake a query-like object to reuse _cb_portfolio
+    class FakeQuery:
+        from_user = update.effective_user
+        message = update.message
+        async def edit_message_text(self, *a, **kw):
+            await update.message.reply_text(*a, **kw)
+    await _cb_portfolio(FakeQuery(), user, context)
+
+
+async def cmd_policy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show no-risk policy."""
+    text = (
+        "\U0001f6e1\ufe0f *ApexFlash — No Risk Policy*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        "*5-Point Protection:*\n\n"
+        "1\ufe0f\u20e3 *You Control Everything*\n"
+        "Your wallet, your keys. We never hold your funds.\n\n"
+        "2\ufe0f\u20e3 *Built-In Safety Net*\n"
+        "Stop Loss default ON. Max trade 10 SOL.\n\n"
+        "3\ufe0f\u20e3 *Transparent Fees*\n"
+        "1% per trade. No hidden charges. Ever.\n\n"
+        "4\ufe0f\u20e3 *Rug Pull Protection*\n"
+        "AI token scanning. Liquidity monitoring.\n\n"
+        "5\ufe0f\u20e3 *No Pressure*\n"
+        "No fake urgency. Real data, real trades.\n\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\u26a0\ufe0f *Disclaimer:* Trading crypto involves risk. "
+        "Only trade with funds you can afford to lose. "
+        "ApexFlash provides tools, not financial advice.\n\n"
+        "\U0001f4e7 support@apexflash.pro"
+    )
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("\U0001f310 Website", url="https://www.apexflash.pro")],
+            [InlineKeyboardButton("\U0001f4ac Support", url="https://t.me/ApexFlashSupport")],
+            [_back_main()[0]],
+        ]),
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+    )
+
+
 async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """📊 Live market overview — gainers, losers, new tokens."""
     await update.message.reply_text("📊 *Loading market data...*", parse_mode="Markdown")
@@ -5366,6 +5525,8 @@ def main() -> None:
     app.add_handler(CommandHandler("hot", cmd_hot))
     app.add_handler(CommandHandler("trending", cmd_hot))
     app.add_handler(CommandHandler("market", cmd_market))
+    app.add_handler(CommandHandler("portfolio", cmd_portfolio))
+    app.add_handler(CommandHandler("policy", cmd_policy))
     app.add_handler(CommandHandler("tweetstats", cmd_tweetstats))
     app.add_handler(CommandHandler("debug", cmd_debug))
     app.add_handler(CommandHandler("analytics", cmd_analytics))
