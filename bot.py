@@ -64,7 +64,11 @@ from notifications import (
     notify_discord_digest, notify_channel_digest,
 )
 from gumroad import verify_license, get_subscriber_count
-from persistence import save_users, load_users, save_stats, load_stats, export_backup, import_backup
+from persistence import (
+    save_users, load_users, save_stats, load_stats, export_backup, import_backup,
+    track_funnel, track_token_lookup, track_token_trade, track_affiliate_click,
+    update_last_active, get_popular_tokens, get_funnel_stats, get_affiliate_stats,
+)
 from marketing import post_to_channel as marketing_post
 from twitter_poster import post_tweet as twitter_post, get_stats_text as twitter_stats_text
 
@@ -323,6 +327,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     is_new_user = uid not in users
     user = get_user(uid)
     user["username"] = update.effective_user.username or ""
+    user["language_code"] = getattr(update.effective_user, "language_code", "") or ""
+
+    # Analytics
+    track_funnel("start")
+    update_last_active(uid)
+    if is_new_user:
+        track_funnel("new_user")
 
     # ── Handle deep links: /start ref_123456 OR /start buy_MINT_ref_123456 ──
     deep_link_mint = None  # Token to show after welcome
@@ -1399,6 +1410,7 @@ async def _cb_trade_create_wallet(query, user, context):
             parse_mode="Markdown",
         )
         logger.info(f"Wallet created for user {query.from_user.id}: {wallet_data['pubkey']}")
+        track_funnel("wallet_created")
         # CRITICAL: Instant backup — wallet = money, can't lose this
         try:
             await _send_backup_to_admin(
@@ -2939,6 +2951,12 @@ async def _cb_execute_buy(query, user, context, data):
 
         logger.info(f"TRADE OK: user={query.from_user.id} buy={sol_amount}SOL token={target_mint[:12]} tx={tx_sig}")
 
+        # Analytics: track trade + funnel
+        track_token_trade(target_mint, sol_amount)
+        update_last_active(query.from_user.id)
+        if user.get("total_trades", 0) == 1:
+            track_funnel("first_trade")
+
         # CRITICAL: Instant backup after trade (wallet balances changed)
         try:
             await _send_backup_to_admin(
@@ -3452,6 +3470,10 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
         name = token_info.get("name", "Unknown")
         symbol = token_info.get("symbol", "???")
         decimals = token_info.get("decimals", 0)
+
+        # Analytics: track token lookup
+        track_token_lookup(text, symbol)
+        update_last_active(user_id)
 
         # Store target mint for buy callbacks
         context.user_data["target_mint"] = text
@@ -5076,6 +5098,42 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("⚠️ Error loading trending tokens. Try again.")
 
 
+async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: show funnel, popular tokens, affiliate stats."""
+    if not is_admin(update.effective_user.id):
+        return
+
+    funnel = get_funnel_stats()
+    popular = get_popular_tokens("alltime", 5)
+    affiliates = get_affiliate_stats()
+
+    funnel_text = (
+        "\U0001f4ca *Funnel (today)*\n"
+        f"\u2022 /start: {funnel.get('start', 0)}\n"
+        f"\u2022 New users: {funnel.get('new_user', 0)}\n"
+        f"\u2022 Wallets created: {funnel.get('wallet_created', 0)}\n"
+        f"\u2022 First trade: {funnel.get('first_trade', 0)}\n"
+        f"\u2022 Upgrades: {funnel.get('upgrade', 0)}\n"
+    )
+
+    popular_text = "\U0001f525 *Popular Tokens (all-time)*\n"
+    for i, t in enumerate(popular, 1):
+        popular_text += f"{i}. {t['symbol']} — {t['lookups']} lookups\n"
+    if not popular:
+        popular_text += "No data yet\n"
+
+    aff_text = "\U0001f4b0 *Affiliate Clicks*\n"
+    for ex, count in affiliates.items():
+        aff_text += f"\u2022 {ex.upper()}: {count}\n"
+    if not affiliates or all(v == 0 for v in affiliates.values()):
+        aff_text += "No clicks yet\n"
+
+    await update.message.reply_text(
+        f"{funnel_text}\n{popular_text}\n{aff_text}",
+        parse_mode="Markdown",
+    )
+
+
 async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Debug: show handler and state info. No admin check for debugging."""
     uid = update.effective_user.id
@@ -5205,6 +5263,7 @@ def main() -> None:
     app.add_handler(CommandHandler("trending", cmd_hot))
     app.add_handler(CommandHandler("tweetstats", cmd_tweetstats))
     app.add_handler(CommandHandler("debug", cmd_debug))
+    app.add_handler(CommandHandler("analytics", cmd_analytics))
 
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))

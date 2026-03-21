@@ -226,6 +226,140 @@ def export_backup(users: dict, stats: dict) -> str:
     return json.dumps(data, indent=2, default=str)
 
 
+# ══════════════════════════════════════════════
+# ANALYTICS (funnel, token popularity, affiliate)
+# ══════════════════════════════════════════════
+
+def track_funnel(step: str):
+    """Track funnel step: start, wallet_created, funded, first_trade, upgrade."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        from datetime import date
+        today = date.today().isoformat()
+        r.incr(f"funnel:{step}:{today}")
+    except Exception as e:
+        logger.debug(f"Funnel track failed: {e}")
+
+
+def track_token_lookup(token_mint: str, token_symbol: str = ""):
+    """Track token lookup for popularity analytics."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        from datetime import date
+        today = date.today().isoformat()
+        r.zincrby("token:lookups:alltime", 1, token_mint)
+        r.zincrby(f"token:lookups:{today}", 1, token_mint)
+        if token_symbol:
+            r.hset("token:symbols", token_mint, token_symbol)
+    except Exception as e:
+        logger.debug(f"Token tracking failed: {e}")
+
+
+def track_token_trade(token_mint: str, amount_sol: float):
+    """Track token trade for volume analytics."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        from datetime import date
+        today = date.today().isoformat()
+        r.zincrby("token:trades:alltime", 1, token_mint)
+        r.zincrby(f"token:trades:{today}", 1, token_mint)
+        r.incrbyfloat(f"token:volume:{today}", amount_sol)
+        r.incrbyfloat("token:volume:alltime", amount_sol)
+    except Exception as e:
+        logger.debug(f"Trade tracking failed: {e}")
+
+
+def track_affiliate_click(user_id: int, exchange: str):
+    """Track affiliate link click."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        import json as _json
+        from datetime import datetime
+        r.lpush(f"affiliate:clicks:{exchange}", _json.dumps({
+            "user_id": user_id,
+            "timestamp": datetime.utcnow().isoformat(),
+        }))
+        r.ltrim(f"affiliate:clicks:{exchange}", 0, 999)  # keep last 1000
+        r.incr(f"affiliate:clicks:count:{exchange}")
+    except Exception as e:
+        logger.debug(f"Affiliate tracking failed: {e}")
+
+
+def update_last_active(user_id: int):
+    """Update last_active timestamp for churn detection."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        from datetime import datetime
+        r.hset(f"user:activity:{user_id}", "last_active", datetime.utcnow().isoformat())
+    except Exception as e:
+        logger.debug(f"Last active update failed: {e}")
+
+
+def get_popular_tokens(timeframe: str = "alltime", top_n: int = 10) -> list:
+    """Get top N most looked-up tokens."""
+    r = _get_redis()
+    if not r:
+        return []
+    try:
+        key = f"token:lookups:{timeframe}"
+        results = r.zrevrange(key, 0, top_n - 1, withscores=True)
+        tokens = []
+        for mint, score in results:
+            symbol = r.hget("token:symbols", mint) or "?"
+            tokens.append({"mint": mint, "symbol": symbol, "lookups": int(score)})
+        return tokens
+    except Exception as e:
+        logger.debug(f"Get popular tokens failed: {e}")
+        return []
+
+
+def get_funnel_stats(date_str: str = None) -> dict:
+    """Get funnel metrics for a given date (default today)."""
+    r = _get_redis()
+    if not r:
+        return {}
+    try:
+        if not date_str:
+            from datetime import date
+            date_str = date.today().isoformat()
+        steps = ["start", "wallet_created", "funded", "first_trade", "upgrade"]
+        stats = {}
+        for step in steps:
+            val = r.get(f"funnel:{step}:{date_str}")
+            stats[step] = int(val) if val else 0
+        return stats
+    except Exception as e:
+        logger.debug(f"Get funnel stats failed: {e}")
+        return {}
+
+
+def get_affiliate_stats() -> dict:
+    """Get affiliate click counts per exchange."""
+    r = _get_redis()
+    if not r:
+        return {}
+    try:
+        exchanges = ["mexc", "bitunix", "blofin", "gate"]
+        stats = {}
+        for ex in exchanges:
+            val = r.get(f"affiliate:clicks:count:{ex}")
+            stats[ex] = int(val) if val else 0
+        return stats
+    except Exception as e:
+        logger.debug(f"Get affiliate stats failed: {e}")
+        return {}
+
+
 def import_backup(json_str: str) -> tuple[dict, dict]:
     """Import backup from JSON string. Returns (users_dict, stats_dict).
     Also syncs to Redis if available."""
