@@ -5224,11 +5224,11 @@ def main() -> None:
         sl_tp_monitor_job, interval=30, first=60, name="sl_tp_monitor",
     )
 
-    # Marketing auto-poster — 3x daily to Telegram + Twitter (08:00, 14:00, 20:00 UTC)
-    for post_time in [dt_time(8, 0), dt_time(14, 0), dt_time(20, 0)]:
-        app.job_queue.run_daily(
-            marketing_job, time=post_time, name=f"marketing_{post_time.hour:02d}",
-        )
+    # Marketing auto-poster — repeating every 4 hours (survives restarts!)
+    # run_daily loses schedule on restart; run_repeating always fires
+    app.job_queue.run_repeating(
+        marketing_job, interval=4 * 3600, first=300, name="marketing_auto",
+    )
 
     logger.info("\u26a1 ApexFlash MEGA BOT v3.9.1 starting (auto-restore + 30min backup)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
