@@ -324,21 +324,40 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = get_user(uid)
     user["username"] = update.effective_user.username or ""
 
-    # ── Handle referral deep link: /start ref_123456 ──
-    if context.args and context.args[0].startswith("ref_"):
-        try:
-            referrer_id = int(context.args[0][4:])
-            # Don't self-refer, don't overwrite existing referrer
-            if referrer_id != uid and not user.get("referred_by"):
-                user["referred_by"] = referrer_id
-                # Make sure referrer exists in store
-                referrer = get_user(referrer_id)
-                if "referral_count" not in referrer:
-                    referrer["referral_count"] = 0
-                referrer["referral_count"] = referrer.get("referral_count", 0) + 1
-                logger.info(f"Referral: user {uid} referred by {referrer_id}")
-        except (ValueError, IndexError):
-            pass
+    # ── Handle deep links: /start ref_123456 OR /start buy_MINT_ref_123456 ──
+    deep_link_mint = None  # Token to show after welcome
+    if context.args:
+        arg = context.args[0]
+
+        # Format: buy_MINTADDRESS_ref_USERID (viral token link with referral)
+        if arg.startswith("buy_"):
+            parts = arg[4:]  # Remove "buy_"
+            if "_ref_" in parts:
+                mint_part, ref_part = parts.rsplit("_ref_", 1)
+                deep_link_mint = mint_part
+                try:
+                    referrer_id = int(ref_part)
+                    if referrer_id != uid and not user.get("referred_by"):
+                        user["referred_by"] = referrer_id
+                        referrer = get_user(referrer_id)
+                        referrer["referral_count"] = referrer.get("referral_count", 0) + 1
+                        logger.info(f"Referral+Token: user {uid} referred by {referrer_id}, token={mint_part[:12]}")
+                except (ValueError, IndexError):
+                    pass
+            else:
+                deep_link_mint = parts  # Just buy_MINT without referral
+
+        # Format: ref_USERID (simple referral)
+        elif arg.startswith("ref_"):
+            try:
+                referrer_id = int(arg[4:])
+                if referrer_id != uid and not user.get("referred_by"):
+                    user["referred_by"] = referrer_id
+                    referrer = get_user(referrer_id)
+                    referrer["referral_count"] = referrer.get("referral_count", 0) + 1
+                    logger.info(f"Referral: user {uid} referred by {referrer_id}")
+            except (ValueError, IndexError):
+                pass
 
     text = (
         "\u26a1 *ApexFlash MEGA BOT*\n"
@@ -410,6 +429,62 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         except Exception as e:
             logger.warning(f"New user onboarding message failed: {e}")
+
+    # ── Deep link: auto-show token buy screen if mint was in the link ──
+    if deep_link_mint and SOL_ADDR_RE.match(deep_link_mint):
+        try:
+            token_info = await get_token_info(deep_link_mint)
+            if token_info and token_info.get("symbol"):
+                symbol = token_info.get("symbol", "???")
+                name = token_info.get("name", "Unknown")
+                decimals = token_info.get("decimals", 0)
+                context.user_data["target_mint"] = deep_link_mint
+                context.user_data["target_name"] = symbol
+                context.user_data["target_decimals"] = decimals
+
+                sol_bal = await get_sol_balance(user.get("wallet_pubkey", ""))
+                bal_str = f"{sol_bal:.4f}" if sol_bal is not None else "N/A"
+
+                msg = (
+                    f"🔥 *{name}* ({symbol})\n"
+                    "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"🔗 `{deep_link_mint}`\n"
+                    f"💼 Your SOL: *{bal_str}*\n"
+                    f"💰 Fee: *{PLATFORM_FEE_PCT}%*\n\n"
+                    "⬇️ *Choose buy amount:*"
+                )
+
+                kb = [
+                    [InlineKeyboardButton("0.1 SOL", callback_data="buy_01"),
+                     InlineKeyboardButton("0.5 SOL", callback_data="buy_05")],
+                    [InlineKeyboardButton("1 SOL", callback_data="buy_1"),
+                     InlineKeyboardButton("5 SOL", callback_data="buy_5")],
+                    [InlineKeyboardButton("✏️ Custom", callback_data="buy_custom")],
+                    [_back_main()[0]],
+                ]
+
+                # Try with chart
+                try:
+                    chart_url = await get_token_chart_url(deep_link_mint, hours=24)
+                    if chart_url:
+                        await update.message.reply_photo(
+                            photo=chart_url, caption=msg,
+                            reply_markup=InlineKeyboardMarkup(kb),
+                            parse_mode="Markdown",
+                        )
+                    else:
+                        await update.message.reply_text(
+                            msg, reply_markup=InlineKeyboardMarkup(kb),
+                            parse_mode="Markdown",
+                        )
+                except Exception:
+                    await update.message.reply_text(
+                        msg, reply_markup=InlineKeyboardMarkup(kb),
+                        parse_mode="Markdown",
+                    )
+                logger.info(f"Deep link buy: user={uid} token={symbol} mint={deep_link_mint[:12]}")
+        except Exception as e:
+            logger.warning(f"Deep link token lookup failed: {e}")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2772,11 +2847,23 @@ async def _cb_execute_buy(query, user, context, data):
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         )
+        # Generate viral share link: t.me/ApexFlashBot?start=buy_MINT_ref_USERID
+        try:
+            _bot_un = (await context.bot.get_me()).username
+            share_link = f"https://t.me/{_bot_un}?start=buy_{target_mint}_ref_{query.from_user.id}"
+            share_text = f"I just bought ${token_name} on Solana via @{_bot_un}! 🚀 Trade it too:"
+            share_url = f"https://t.me/share/url?url={share_link}&text={share_text}"
+        except Exception:
+            share_url = None
+
         kb = [
-            [InlineKeyboardButton("\U0001f4bc View Wallet", callback_data="trade_wallet")],
-            [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
-            [_back_main()[0]],
+            [InlineKeyboardButton("💼 View Wallet", callback_data="trade_wallet")],
+            [InlineKeyboardButton("💰 Trade Menu", callback_data="trade")],
         ]
+        if share_url:
+            kb.insert(0, [InlineKeyboardButton("🔗 Share & Earn 25%", url=share_url)])
+        kb.append([_back_main()[0]])
+
         logger.info(f"TRADE OK: user={query.from_user.id} buy={sol_amount}SOL token={target_mint[:12]} tx={tx_sig}")
 
         # CRITICAL: Instant backup after trade (wallet balances changed)
