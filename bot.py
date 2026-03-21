@@ -4727,7 +4727,7 @@ def main() -> None:
         logger.error("BOT_TOKEN not set! Add it to .env or environment variables.")
         return
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
 
     # Commands
     app.add_handler(CommandHandler("start", cmd_start))
@@ -4848,7 +4848,10 @@ def main() -> None:
                 logger.warning(f"Startup notification failed: {e}")
 
     app.post_init = post_init
-    app.run_polling(drop_pending_updates=True)
+    app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=["message", "callback_query"],
+    )
 
 
 if __name__ == "__main__":
