@@ -704,6 +704,50 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "positions":      _cb_positions,
     }
 
+    # Handle /hot trending buy buttons — user tapped a trending token
+    if data.startswith("hot_buy_"):
+        mint = data[8:]  # Remove "hot_buy_" prefix
+        token_info = await get_token_info(mint)
+        if token_info and token_info.get("symbol"):
+            symbol = token_info.get("symbol", "???")
+            context.user_data["target_mint"] = token_info.get("address", mint)
+            context.user_data["target_name"] = symbol
+            context.user_data["target_decimals"] = token_info.get("decimals", 0)
+            sol_bal = await get_sol_balance(user.get("wallet_pubkey", ""))
+            bal_str = f"{sol_bal:.4f}" if sol_bal is not None else "N/A"
+            await query.edit_message_text(
+                f"🔥 *{token_info.get('name', symbol)}* ({symbol})\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"🔗 `{mint}`\n"
+                f"💼 Your SOL: *{bal_str}*\n"
+                f"💰 Fee: *{PLATFORM_FEE_PCT}%*\n\n"
+                "⬇️ *Choose buy amount:*",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("0.1 SOL", callback_data="buy_01"),
+                     InlineKeyboardButton("0.5 SOL", callback_data="buy_05")],
+                    [InlineKeyboardButton("1 SOL", callback_data="buy_1"),
+                     InlineKeyboardButton("5 SOL", callback_data="buy_5")],
+                    [InlineKeyboardButton("✏️ Custom", callback_data="buy_custom")],
+                    [_back_main()[0]],
+                ]),
+                parse_mode="Markdown",
+            )
+        else:
+            await query.edit_message_text(
+                f"⚠️ Could not load token info for `{mint[:20]}...`",
+                reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+                parse_mode="Markdown",
+            )
+        return
+
+    # Handle /hot refresh
+    if data == "cmd_hot_refresh":
+        await query.edit_message_text("🔥 *Refreshing...*", parse_mode="Markdown")
+        # Re-run the hot command via the message
+        update.message = query.message
+        await cmd_hot(update, context)
+        return
+
     # Handle search result callbacks — user tapped a token from search
     if data.startswith("search_"):
         mint = data[7:]  # Remove "search_" prefix
@@ -4720,6 +4764,99 @@ async def cmd_backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
 
+async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """🔥 Show trending Solana tokens by volume — drives trades."""
+    await update.message.reply_text("🔥 *Loading trending tokens...*", parse_mode="Markdown")
+
+    try:
+        import aiohttp as _aiohttp
+        async with _aiohttp.ClientSession() as session:
+            # DexPaprika: top pools by volume on Solana
+            async with session.get(
+                "https://api.dexpaprika.com/networks/solana/pools",
+                params={"order_by": "volume_usd", "sort": "desc", "limit": "20"},
+                timeout=_aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status != 200:
+                    await update.message.reply_text("⚠️ Could not fetch trending data. Try again later.")
+                    return
+                data = await resp.json()
+
+        # Parse: extract unique tokens (skip SOL/USDC/USDT base pairs)
+        pools = data.get("pools", data) if isinstance(data, dict) else data
+        if not isinstance(pools, list) or not pools:
+            await update.message.reply_text("⚠️ No trending data available.")
+            return
+
+        SKIP_MINTS = {
+            "So11111111111111111111111111111111111111112",  # SOL
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
+        }
+
+        seen = set()
+        trending = []
+        for pool in pools:
+            tokens = pool.get("tokens", [])
+            for tok in tokens:
+                mint = tok.get("id", "")
+                if mint in SKIP_MINTS or mint in seen:
+                    continue
+                seen.add(mint)
+                pct_24h = pool.get("last_price_change_usd_24h", 0) or 0
+                volume = pool.get("volume_usd", 0) or 0
+                price = pool.get("price_usd", 0) or 0
+                trending.append({
+                    "symbol": tok.get("symbol", "???"),
+                    "name": tok.get("name", "Unknown"),
+                    "mint": mint,
+                    "pct_24h": pct_24h,
+                    "volume": volume,
+                    "price": price,
+                })
+                if len(trending) >= 10:
+                    break
+            if len(trending) >= 10:
+                break
+
+        if not trending:
+            await update.message.reply_text("⚠️ No trending tokens found.")
+            return
+
+        # Build message
+        msg = "🔥 *HOT TOKENS — Solana*\n━━━━━━━━━━━━━━━━━━━━━\n\n"
+        kb_rows = []
+        for i, t in enumerate(trending, 1):
+            arrow = "📈" if t["pct_24h"] >= 0 else "📉"
+            pct = f"+{t['pct_24h']:.1f}%" if t["pct_24h"] >= 0 else f"{t['pct_24h']:.1f}%"
+            vol_str = f"${t['volume']:,.0f}" if t["volume"] >= 1 else "$0"
+            msg += f"{i}. {arrow} *{t['symbol']}* — {pct} | Vol: {vol_str}\n"
+            # Buy button for each token
+            kb_rows.append([InlineKeyboardButton(
+                f"💰 Buy {t['symbol']}",
+                callback_data=f"hot_buy_{t['mint'][:40]}",
+            )])
+
+        msg += (
+            "\n━━━━━━━━━━━━━━━━━━━━━\n"
+            "👆 Tap to buy | Paste any mint to trade\n"
+            "⚡ Powered by ApexFlash"
+        )
+
+        kb_rows.append([InlineKeyboardButton("🔄 Refresh", callback_data="cmd_hot_refresh")])
+        kb_rows.append([_back_main()[0]])
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=InlineKeyboardMarkup(kb_rows),
+            parse_mode="Markdown",
+        )
+
+    except Exception as e:
+        logger.error(f"cmd_hot error: {e}")
+        await update.message.reply_text("⚠️ Error loading trending tokens. Try again.")
+
+
 async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Debug: show handler and state info. No admin check for debugging."""
     uid = update.effective_user.id
@@ -4845,6 +4982,8 @@ def main() -> None:
     app.add_handler(CommandHandler("killswitch", cmd_killswitch))
     app.add_handler(CommandHandler("backup", cmd_backup))
     app.add_handler(CommandHandler("restore", cmd_restore))
+    app.add_handler(CommandHandler("hot", cmd_hot))
+    app.add_handler(CommandHandler("trending", cmd_hot))
     app.add_handler(CommandHandler("tweetstats", cmd_tweetstats))
     app.add_handler(CommandHandler("debug", cmd_debug))
 
