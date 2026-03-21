@@ -174,7 +174,8 @@ async def execute_swap(keypair: Keypair, quote: dict) -> tuple[str | None, str]:
 # ══════════════════════════════════════════════
 
 async def get_token_info(mint: str) -> dict | None:
-    """Look up token metadata by mint address."""
+    """Look up token metadata by mint address. Jupiter first, DexPaprika fallback."""
+    # 1) Try Jupiter
     try:
         url = "https://api.jup.ag/tokens/v2/search"
         params = {"query": mint}
@@ -185,31 +186,54 @@ async def get_token_info(mint: str) -> dict | None:
             ) as resp:
                 if resp.status == 200:
                     results = await resp.json()
-                    # Find exact match first, then fallback to first result
-                    match = None
-                    for t in results:
-                        if t.get("id") == mint or t.get("address") == mint:
-                            match = t
-                            break
-                    if not match and results:
-                        match = results[0]
-                    if match:
-                        return {
-                            "address": match.get("id") or match.get("address", mint),
-                            "symbol": match.get("symbol", "???"),
-                            "name": match.get("name", "Unknown"),
-                            "decimals": match.get("decimals", 0),
-                            "logoURI": match.get("icon", ""),
-                        }
-                    return None
-                return None
+                    if isinstance(results, list):
+                        match = None
+                        for t in results:
+                            if t.get("id") == mint or t.get("address") == mint:
+                                match = t
+                                break
+                        if not match and results:
+                            match = results[0]
+                        if match:
+                            return {
+                                "address": match.get("id") or match.get("address", mint),
+                                "symbol": match.get("symbol", "???"),
+                                "name": match.get("name", "Unknown"),
+                                "decimals": match.get("decimals", 0),
+                                "logoURI": match.get("icon", ""),
+                            }
+                else:
+                    logger.warning(f"Jupiter search returned {resp.status}, trying DexPaprika")
     except Exception as e:
-        logger.error(f"Token info error: {e}")
-        return None
+        logger.warning(f"Jupiter token info failed: {e}, trying DexPaprika")
+
+    # 2) Fallback: DexPaprika (free, no API key needed)
+    try:
+        dex_url = f"https://api.dexpaprika.com/networks/solana/tokens/{mint}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                dex_url, timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("symbol"):
+                        logger.info(f"DexPaprika fallback: found {data['symbol']}")
+                        return {
+                            "address": data.get("id", mint),
+                            "symbol": data.get("symbol", "???"),
+                            "name": data.get("name", "Unknown"),
+                            "decimals": data.get("decimals", 0),
+                            "logoURI": "",
+                        }
+    except Exception as e:
+        logger.error(f"DexPaprika fallback also failed: {e}")
+
+    return None
 
 
 async def search_token(query: str) -> list[dict]:
-    """Search Jupiter token list by name or symbol."""
+    """Search token by name or symbol. Jupiter first, DexPaprika fallback."""
+    # 1) Try Jupiter
     try:
         url = "https://api.jup.ag/tokens/v2/search"
         params = {"query": query}
@@ -219,10 +243,41 @@ async def search_token(query: str) -> list[dict]:
                 timeout=aiohttp.ClientTimeout(total=8),
             ) as resp:
                 if resp.status == 200:
-                    return await resp.json()
-                return []
+                    results = await resp.json()
+                    if isinstance(results, list) and results:
+                        return results
+                else:
+                    logger.warning(f"Jupiter search returned {resp.status}")
     except Exception as e:
-        logger.error(f"Token search error: {e}")
+        logger.warning(f"Jupiter search failed: {e}")
+
+    # 2) Fallback: DexPaprika search
+    try:
+        dex_url = "https://api.dexpaprika.com/search"
+        params = {"q": query}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                dex_url, params=params, timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    tokens = data.get("tokens", [])
+                    results = []
+                    for t in tokens[:5]:
+                        if t.get("network") == "solana":
+                            results.append({
+                                "id": t.get("address", ""),
+                                "address": t.get("address", ""),
+                                "symbol": t.get("symbol", "???"),
+                                "name": t.get("name", "Unknown"),
+                            })
+                    if results:
+                        logger.info(f"DexPaprika search fallback: {len(results)} results")
+                        return results
+    except Exception as e:
+        logger.error(f"DexPaprika search also failed: {e}")
+
+    return []
         return []
 
 
