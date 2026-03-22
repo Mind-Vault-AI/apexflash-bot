@@ -19,7 +19,7 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.9.0 (MEGA BOT + SL/TP + WITHDRAW + HARDENED BACKUP + 24/7 HEARTBEAT + AUTO-MARKETING)
+Version: 3.10.0 (+ AI SENTIMENT ANALYSIS via CryptoBERT + WHALE INTELLIGENCE LAYER)
 """
 import logging
 import re
@@ -50,6 +50,7 @@ from config import (
     TWITTER_ENABLED, ALERT_CHANNEL_ID,
 )
 from chains import fetch_eth_whale_transfers, fetch_sol_whale_transfers, get_crypto_prices
+from sentiment import get_whale_alert_sentiment, format_sentiment_line
 from wallet import (
     create_wallet, load_keypair, get_sol_balance,
     get_token_balances, collect_fee, transfer_sol,
@@ -4795,8 +4796,8 @@ async def _send_admin_panel(chat_id: int, context: ContextTypes.DEFAULT_TYPE) ->
 # WHALE ALERT FORMATTER
 # ══════════════════════════════════════════════
 
-def format_whale_alert(alert: dict, prices: dict) -> str:
-    """Format a whale alert message with affiliate CTA."""
+def format_whale_alert(alert: dict, prices: dict, sentiment: dict = None) -> str:
+    """Format a whale alert message with affiliate CTA and AI sentiment."""
     chain = alert["chain"]
     value = alert["value"]
     symbol = alert["symbol"]
@@ -4822,6 +4823,9 @@ def format_whale_alert(alert: dict, prices: dict) -> str:
     else:
         explorer = ""
 
+    # AI Sentiment line (CryptoBERT)
+    sentiment_line = format_sentiment_line(sentiment)
+
     text = (
         f"{emoji} *WHALE ALERT* \u2502 {chain}\n"
         f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
@@ -4831,6 +4835,9 @@ def format_whale_alert(alert: dict, prices: dict) -> str:
         f"\U0001f4e4 From: `{alert['from_label']}`\n"
         f"\U0001f4e5 To: `{alert['to_label']}`\n"
     )
+
+    if sentiment_line:
+        text += f"\n\U0001f9e0 *AI Analysis*\n{sentiment_line}"
 
     if explorer:
         text += f"\n\U0001f517 [View Transaction]({explorer})\n"
@@ -4872,6 +4879,14 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
         if len(seen_tx_hashes) > 10000:
             seen_tx_hashes = set(list(seen_tx_hashes)[-5000:])
 
+        # AI Sentiment analysis per alert (1 call per alert, not per user)
+        for alert in new_alerts:
+            try:
+                sentiment = await get_whale_alert_sentiment(alert)
+                alert["_sentiment"] = sentiment
+            except Exception:
+                alert["_sentiment"] = None
+
         # Broadcast to subscribers
         for user_id, user_data in list(users.items()):
             if not user_data.get("alerts_on"):
@@ -4885,7 +4900,9 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                     continue
 
                 try:
-                    text = format_whale_alert(alert, prices)
+                    # AI sentiment analysis (non-blocking — if HF fails, alert still sends)
+                    sentiment = alert.get("_sentiment")
+                    text = format_whale_alert(alert, prices, sentiment=sentiment)
 
                     # Add trade + affiliate buttons
                     alert_kb = []
@@ -4941,8 +4958,8 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                 logger.debug(f"Discord notify error: {e}")
 
             try:
-                # Telegram public channel — with tradeable deep links
-                channel_text = format_whale_alert(alert, prices)
+                # Telegram public channel — with tradeable deep links + AI sentiment
+                channel_text = format_whale_alert(alert, prices, sentiment=alert.get("_sentiment"))
                 token_symbol = alert.get("symbol", "")
                 token_mint = ""
                 for sym, info in COMMON_TOKENS.items():
