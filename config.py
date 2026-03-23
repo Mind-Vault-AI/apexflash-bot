@@ -43,8 +43,22 @@ FEE_COLLECT_WALLET = os.getenv(
     "FEE_COLLECT_WALLET",
     "4LKQGKyjhCpVm7TAnDRtR5dPNExEhSADNCumvZjiuYWi",  # ApexFlash Hot wallet
 )
-# Referral config — referrers earn a share of fees from referred users
-REFERRAL_FEE_SHARE_PCT = float(os.getenv("REFERRAL_FEE_SHARE_PCT", "25.0"))  # 25%
+# Referral config — tiered: more referrals = higher commission (BonkBot model)
+REFERRAL_FEE_SHARE_PCT = float(os.getenv("REFERRAL_FEE_SHARE_PCT", "25.0"))  # base fallback
+
+# Tiered referral: reward power users who drive growth
+REFERRAL_TIERS = [
+    (20, 35.0),   # 20+ referrals → 35% share
+    (5,  30.0),   # 5-19 referrals → 30% share
+    (0,  25.0),   # 0-4 referrals → 25% share (default)
+]
+
+def get_referral_pct(referral_count: int) -> float:
+    """Return referral fee share % based on tiered referral count."""
+    for threshold, pct in REFERRAL_TIERS:
+        if referral_count >= threshold:
+            return pct
+    return REFERRAL_FEE_SHARE_PCT
 
 # === Risk Management ===
 TRADING_ENABLED = os.getenv("TRADING_ENABLED", "true").lower() == "true"  # Global kill switch

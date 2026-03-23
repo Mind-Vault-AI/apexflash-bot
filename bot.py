@@ -2644,6 +2644,61 @@ async def _cb_preview_buy(query, user, context, data):
             f"You may receive significantly less than expected!\n"
         )
 
+    # ── Token Safety Check (DexPaprika — free, no key) ──
+    safety_text = ""
+    try:
+        import aiohttp as _aio_safety
+        async with _aio_safety.ClientSession() as _ss:
+            async with _ss.get(
+                f"https://api.dexpaprika.com/networks/solana/tokens/{target_mint}/pools",
+                params={"limit": "5"},
+                timeout=_aio_safety.ClientTimeout(total=5),
+            ) as _sr:
+                if _sr.status == 200:
+                    _pools = await _sr.json()
+                    _pool_list = _pools.get("pools", _pools) if isinstance(_pools, dict) else _pools
+                    if isinstance(_pool_list, list) and _pool_list:
+                        _top = _pool_list[0]
+                        _liq = _top.get("liquidity_usd", 0) or 0
+                        _vol = _top.get("volume_usd", 0) or 0
+                        _age_str = _top.get("created_at", "")
+
+                        # Liquidity grade
+                        if _liq >= 100_000:
+                            _grade = "\U0001f7e2 HIGH"
+                        elif _liq >= 10_000:
+                            _grade = "\U0001f7e1 MEDIUM"
+                        else:
+                            _grade = "\U0001f534 LOW \u26a0\ufe0f"
+
+                        # Pool age
+                        _age_label = ""
+                        if _age_str:
+                            from datetime import datetime, timezone
+                            try:
+                                _created = datetime.fromisoformat(_age_str.replace("Z", "+00:00"))
+                                _days = (datetime.now(timezone.utc) - _created).days
+                                _age_label = f"{_days}d" if _days >= 1 else "<1d \u26a0\ufe0f"
+                            except Exception:
+                                _age_label = "?"
+
+                        safety_text = (
+                            f"\n\U0001f6e1 *Safety Check*\n"
+                            f"Liquidity: {_grade} (${_liq:,.0f})\n"
+                            f"24h Volume: ${_vol:,.0f}\n"
+                        )
+                        if _age_label:
+                            safety_text += f"Pool Age: {_age_label}\n"
+
+                        if _liq < 5_000:
+                            safety_text += "\u26a0\ufe0f _Very low liquidity — high rug risk!_\n"
+                        elif _liq < 10_000:
+                            safety_text += "\u26a0\ufe0f _Low liquidity — trade with caution_\n"
+                    else:
+                        safety_text = "\n\U0001f6e1 _No pool data found — unknown token, trade carefully!_\n"
+    except Exception:
+        pass  # Safety check is optional — never block a trade
+
     text = (
         "\U0001f4cb *Trade Confirmation*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
@@ -2654,6 +2709,7 @@ async def _cb_preview_buy(query, user, context, data):
         f"\U0001f4b0 Fee: *{fee_sol:.4f} SOL* ({PLATFORM_FEE_PCT}%)\n"
         f"\U0001f3af Slippage: max {DEFAULT_SLIPPAGE_BPS/100:.1f}%\n"
         f"\U0001f4bc Balance: *{balance:.4f} SOL*\n"
+        f"{safety_text}"
         f"{impact_warn}\n"
         f"\u26a0\ufe0f _This trade is irreversible once confirmed._\n"
         "\n"
@@ -3034,7 +3090,9 @@ async def _cb_execute_buy(query, user, context, data):
                 referrer_id = user.get("referred_by", 0)
                 if referrer_id and referrer_id in users:
                     referrer = users[referrer_id]
-                    referral_share = int(fee_lamports * REFERRAL_FEE_SHARE_PCT / 100)
+                    from config import get_referral_pct
+                    ref_pct = get_referral_pct(referrer.get("referral_count", 0))
+                    referral_share = int(fee_lamports * ref_pct / 100)
                     platform_share = fee_lamports - referral_share
 
                     # Platform fee
@@ -3044,7 +3102,7 @@ async def _cb_execute_buy(query, user, context, data):
                         ref_kp = keypair  # fee comes from trader's wallet
                         await transfer_sol(ref_kp, referrer["wallet_pubkey"], referral_share)
                         referrer["referral_earnings"] = referrer.get("referral_earnings", 0) + referral_share / 1e9
-                        logger.info(f"Referral fee: {referral_share} lamports -> user {referrer_id}")
+                        logger.info(f"Referral fee ({ref_pct}%): {referral_share} lamports -> user {referrer_id}")
                 else:
                     # No referrer — full fee to platform
                     await collect_fee(keypair, fee_lamports, FEE_COLLECT_WALLET)
@@ -3235,7 +3293,9 @@ async def _cb_execute_sell(query, user, context, data):
                 referrer_id = user.get("referred_by", 0)
                 if referrer_id and referrer_id in users:
                     referrer = users[referrer_id]
-                    ref_share_sol = int(sol_fee_lamports * REFERRAL_FEE_SHARE_PCT / 100)
+                    from config import get_referral_pct
+                    _ref_pct = get_referral_pct(referrer.get("referral_count", 0))
+                    ref_share_sol = int(sol_fee_lamports * _ref_pct / 100)
                     platform_sol = sol_fee_lamports - ref_share_sol
                     await collect_fee(keypair, platform_sol, FEE_COLLECT_WALLET)
                     if referrer.get("wallet_pubkey") and ref_share_sol > 5000:
@@ -4436,6 +4496,7 @@ async def _cb_referral_link(query, user, context):
 
 async def _cb_referral_stats(query, user, context):
     """Detailed referral statistics."""
+    from config import get_referral_pct
     uid = query.from_user.id
     ref_count = sum(1 for u in users.values() if u.get("referred_by") == uid)
     user["referral_count"] = ref_count
@@ -4470,7 +4531,16 @@ async def _cb_referral_stats(query, user, context):
     if earnings_usd > 0.01:
         text += f" (${earnings_usd:,.2f})"
     text += (
-        f"\n\u2022 Fee share: *{REFERRAL_FEE_SHARE_PCT}%* of 1% trade fee\n"
+        f"\n\u2022 Fee share: *{get_referral_pct(ref_count)}%* of 1% trade fee\n"
+    )
+    # Show tier progression
+    if ref_count < 5:
+        text += f"\U0001f4c8 _Get {5 - ref_count} more refs for 30% share!_\n"
+    elif ref_count < 20:
+        text += f"\U0001f4c8 _Get {20 - ref_count} more refs for 35% share!_\n"
+    else:
+        text += "\U0001f451 _MAX TIER — 35% share!_\n"
+    text += (
         "\n"
         "\U0001f4a1 _Earnings are automatically sent_\n"
         "_to your bot wallet after each trade!_\n"
