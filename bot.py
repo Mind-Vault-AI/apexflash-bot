@@ -4808,8 +4808,64 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict = None) -> str
     chain = alert["chain"]
     value = alert["value"]
     symbol = alert["symbol"]
-    direction = alert["direction"]
+    direction = alert.get("direction", "IN")
+    alert_type = alert.get("type", "TRANSFER")
 
+    # SWAP alerts = most actionable (whale buying a specific token)
+    if alert_type == "SWAP":
+        emoji = "\U0001f6a8"  # 🚨
+        amount = alert.get("amount", 0)
+        amount_str = f"{amount:,.0f}" if amount >= 100 else f"{amount:,.2f}"
+        wallet = alert.get("wallet_name", "Unknown Whale")
+
+        price = prices.get(symbol, 0)
+        usd_value = value * price if value > 0 else 0
+        usd_str = f"(~${usd_value:,.0f})" if usd_value > 0 else ""
+
+        # Special SWAP format — actionable
+        text = (
+            f"{emoji} *WHALE BUY DETECTED* \u2502 {chain}\n"
+            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            f"\n"
+            f"\U0001f4b0 *{wallet}* just bought:\n"
+            f"\U0001f3af *{amount_str} {symbol}* {usd_str}\n"
+            f"\U0001f6a8 This is a LIVE swap — whale is accumulating!\n"
+        )
+
+        # Signal quality
+        from sentiment import format_signal_quality
+        sq = alert.get("_signal_quality")
+        if sq:
+            text += f"\n{format_signal_quality(sq)}"
+
+        # Sentiment
+        sentiment_line = format_sentiment_line(sentiment)
+        if sentiment_line:
+            text += f"\n\U0001f9e0 *AI Sentiment*\n{sentiment_line}"
+
+        explorer = f"https://solscan.io/tx/{alert['tx_hash']}"
+        text += f"\n\U0001f517 [View Swap on Solscan]({explorer})\n"
+
+        # Exchange promo
+        featured = [k for k, v in AFFILIATE_LINKS.items() if v.get("featured")]
+        aff_key = random.choice(featured) if featured else list(AFFILIATE_LINKS.keys())[0]
+        aff = AFFILIATE_LINKS[aff_key]
+        promo = aff.get("promo", "")
+
+        text += (
+            f"\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        )
+        if promo:
+            text += f"\U0001f381 *{promo}*\n"
+        text += (
+            f"\U0001f525 [{aff['name']} \u2014 {aff['commission']}]({aff['url']})\n"
+            f"\U0001f48e /deals for all exchange bonuses"
+        )
+        return text
+
+    # Regular TRANSFER alert (existing format)
     emoji = "\U0001f534" if direction == "OUT" else "\U0001f7e2"
     value_str = f"{value:,.0f}" if value >= 100 else f"{value:,.2f}"
 
@@ -4891,7 +4947,16 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
         prices = await get_crypto_prices()
         eth_alerts = await fetch_eth_whale_transfers()
         sol_alerts = await fetch_sol_whale_transfers()
-        all_alerts = eth_alerts + sol_alerts
+
+        # NEW: Detect what tokens whales are BUYING (the real signal)
+        try:
+            from chains import fetch_sol_whale_token_swaps
+            swap_alerts = await fetch_sol_whale_token_swaps()
+        except Exception as swap_err:
+            logger.debug(f"Swap tracker: {swap_err}")
+            swap_alerts = []
+
+        all_alerts = eth_alerts + sol_alerts + swap_alerts
 
         new_alerts = [a for a in all_alerts if a["tx_hash"] not in seen_tx_hashes]
 
@@ -4950,13 +5015,15 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                     # Add trade + affiliate buttons
                     alert_kb = []
 
-                    # If SOL token with known mint, add direct "Buy this token" button
+                    # Direct "Buy this token" button
                     token_symbol = alert.get("symbol", "")
-                    token_mint = ""
-                    for sym, info in COMMON_TOKENS.items():
-                        if sym == token_symbol:
-                            token_mint = info["mint"]
-                            break
+                    # Swap alerts already have mint address (most actionable!)
+                    token_mint = alert.get("mint", "")
+                    if not token_mint:
+                        for sym, info in COMMON_TOKENS.items():
+                            if sym == token_symbol:
+                                token_mint = info["mint"]
+                                break
                     if token_mint and token_mint != SOL_MINT:
                         alert_kb.append([
                             InlineKeyboardButton(

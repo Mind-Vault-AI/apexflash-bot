@@ -148,6 +148,125 @@ async def fetch_sol_whale_transfers() -> list[dict]:
 
 
 # ══════════════════════════════════════════════
+# WHALE TOKEN SWAP TRACKER (Helius Enhanced)
+# ══════════════════════════════════════════════
+# Tracks WHAT TOKENS whales are buying/selling — not just SOL transfers.
+# This detects Jupiter/Raydium swaps and surfaces the actual tokens.
+
+# Top whale/smart-money wallets on Solana known for early entries
+SMART_MONEY_WALLETS = {
+    # DEX traders & known smart money (public addresses from on-chain analysis)
+    "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4": "Jupiter Aggregator",
+    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8": "Raydium AMM",
+}
+
+# Minimum USD value for token swap alert
+SWAP_ALERT_MIN_USD = 50_000
+
+
+async def fetch_sol_whale_token_swaps() -> list[dict]:
+    """
+    Fetch recent token swaps by whale wallets via Helius parsed transactions.
+
+    Returns actionable alerts like:
+    "Whale X bought 500K BONK via Jupiter" — with mint address for 1-tap buy.
+    """
+    if not HELIUS_API_KEY:
+        return []
+
+    alerts = []
+    async with aiohttp.ClientSession() as session:
+        # Check both whale wallets AND smart money wallets
+        all_wallets = {**SOL_WHALE_WALLETS, **SMART_MONEY_WALLETS}
+
+        for wallet, name in all_wallets.items():
+            try:
+                url = f"https://api.helius.xyz/v0/addresses/{wallet}/transactions"
+                params = {"api-key": HELIUS_API_KEY, "limit": "5", "type": "SWAP"}
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+
+                if not isinstance(data, list):
+                    continue
+
+                for tx in data:
+                    # Parse token transfers from swap
+                    token_transfers = tx.get("tokenTransfers", [])
+                    if not token_transfers:
+                        continue
+
+                    # Find what token was RECEIVED (= bought)
+                    for transfer in token_transfers:
+                        to_account = transfer.get("toUserAccount", "")
+                        from_account = transfer.get("fromUserAccount", "")
+                        mint = transfer.get("mint", "")
+                        amount = transfer.get("tokenAmount", 0)
+                        token_standard = transfer.get("tokenStandard", "")
+
+                        # Skip SOL-wrapped or USDC/USDT (not interesting)
+                        skip_mints = {
+                            "So11111111111111111111111111111111111111112",  # wSOL
+                            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+                            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
+                        }
+                        if mint in skip_mints or not mint:
+                            continue
+
+                        # Determine if whale BOUGHT or SOLD this token
+                        if to_account == wallet:
+                            direction = "BUY"
+                        elif from_account == wallet:
+                            direction = "SELL"
+                        else:
+                            continue
+
+                        # Only care about buys (that's the signal)
+                        if direction != "BUY":
+                            continue
+
+                        if amount <= 0:
+                            continue
+
+                        alerts.append({
+                            "chain": "SOL",
+                            "type": "SWAP",
+                            "direction": direction,
+                            "symbol": _get_token_symbol(mint),
+                            "mint": mint,
+                            "amount": amount,
+                            "value": 0,  # Will be enriched with price later
+                            "wallet_name": name,
+                            "from_label": name,
+                            "to_label": name,
+                            "tx_hash": tx.get("signature", ""),
+                            "timestamp": tx.get("timestamp", 0),
+                            "tradeable": True,  # Can be bought via Jupiter
+                        })
+
+            except Exception as e:
+                logger.error(f"Helius swap tracker error [{name}]: {e}")
+
+    return _dedupe_and_sort(alerts)
+
+
+def _get_token_symbol(mint: str) -> str:
+    """Get token symbol from mint address (uses known tokens first)."""
+    known = {
+        "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": "BONK",
+        "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm": "WIF",
+        "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN": "TRUMP",
+        "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": "JUP",
+        "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R": "RAY",
+        "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3": "PYTH",
+        "hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux": "HNT",
+        "rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof": "RENDER",
+    }
+    return known.get(mint, mint[:6] + "...")
+
+
+# ══════════════════════════════════════════════
 # HELPERS
 # ══════════════════════════════════════════════
 
