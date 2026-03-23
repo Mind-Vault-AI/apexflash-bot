@@ -5810,6 +5810,90 @@ async def cmd_deals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ══════════════════════════════════════════════
+# LEADERBOARD COMMAND
+# ══════════════════════════════════════════════
+
+async def cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show top traders by win rate and P/L — public social proof."""
+    from persistence import get_win_rate
+
+    platform = get_win_rate()
+
+    text = (
+        "\U0001f3c6 *ApexFlash Leaderboard*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+    )
+
+    # Build leaderboard from user trade histories
+    traders = []
+    for uid, udata in users.items():
+        history = udata.get("trade_history", [])
+        if not history:
+            continue
+
+        buys = [t for t in history if t.get("side") == "BUY"]
+        sells = [t for t in history if t.get("side") == "SELL"]
+        total_trades = len(history)
+
+        # Calculate rough P/L from trade history
+        total_buy_sol = sum(t.get("sol_amount", 0) for t in buys)
+        total_sell_sol = sum(t.get("sol_amount", 0) for t in sells)
+
+        if total_trades >= 2 and total_buy_sol > 0:
+            pnl_sol = total_sell_sol - total_buy_sol
+            pnl_pct = (pnl_sol / total_buy_sol * 100) if total_buy_sol > 0 else 0
+
+            # Anonymize: show first 4 chars of user ID
+            display_name = f"Trader #{str(uid)[-4:]}"
+            traders.append({
+                "name": display_name,
+                "trades": total_trades,
+                "pnl_sol": pnl_sol,
+                "pnl_pct": pnl_pct,
+            })
+
+    # Sort by P/L percentage (best first)
+    traders.sort(key=lambda x: x["pnl_pct"], reverse=True)
+
+    if traders:
+        for i, t in enumerate(traders[:10], 1):
+            pnl_emoji = "\U0001f7e2" if t["pnl_pct"] >= 0 else "\U0001f534"
+            medal = ["\U0001f947", "\U0001f948", "\U0001f949"][i-1] if i <= 3 else f"{i}."
+            text += (
+                f"{medal} *{t['name']}*\n"
+                f"   {pnl_emoji} P/L: {t['pnl_sol']:+.4f} SOL ({t['pnl_pct']:+.1f}%)\n"
+                f"   \U0001f4ca Trades: {t['trades']}\n\n"
+            )
+    else:
+        text += (
+            "\U0001f4ad No trades recorded yet.\n"
+            "Be the first on the leaderboard!\n\n"
+        )
+
+    # Platform stats
+    text += (
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"\U0001f4ca *Platform Stats*\n"
+        f"Total Trades: {platform['total']} | "
+        f"Win Rate: {platform['win_rate']}%\n"
+        f"Total P/L: {platform['total_pnl_sol']:+.4f} SOL"
+    )
+
+    kb = [
+        [InlineKeyboardButton("\U0001f4b0 Start Trading", callback_data="trade")],
+        [InlineKeyboardButton("\U0001f381 Exchange Deals", callback_data="deals_menu")],
+    ]
+
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+
+
+# ══════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════
 
@@ -5841,6 +5925,8 @@ def main() -> None:
     app.add_handler(CommandHandler("winrate", cmd_winrate))
     app.add_handler(CommandHandler("deals", cmd_deals))
     app.add_handler(CommandHandler("promos", cmd_deals))  # alias
+    app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
+    app.add_handler(CommandHandler("top", cmd_leaderboard))  # alias
 
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))
