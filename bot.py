@@ -2232,6 +2232,36 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                         f"token={pos['token']} entry={entry:.4f} exit={current_sol:.4f} "
                         f"pnl={pnl_pct:+.1f}% tx={tx_sig}"
                     )
+
+                    # Social proof: post trade result to channel (anonymous)
+                    if ALERT_CHANNEL_ID and pnl_sol != 0:
+                        try:
+                            win_streak = ""
+                            from persistence import get_win_rate
+                            wr = get_win_rate()
+                            if wr and wr.get("total", 0) >= 5:
+                                win_streak = f"\n📊 Platform Win Rate: *{wr.get('win_rate', 0)}%* ({wr.get('total', 0)} trades)"
+
+                            channel_text = (
+                                f"{'🟢 WIN' if pnl_sol > 0 else '🔴 LOSS'} — *{pos['token']}*\n"
+                                "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                                f"📥 Entry: {entry:.4f} SOL\n"
+                                f"📤 Exit: {sold_sol:.4f} SOL\n"
+                                f"{pnl_emoji} *P/L: {pnl_sol:+.4f} SOL ({pnl_pct:+.1f}%)*\n"
+                                f"⏱ Trigger: {trigger_label}\n"
+                                f"{win_streak}\n\n"
+                                f"🔗 [Verify on Solscan](https://solscan.io/tx/{tx_sig})\n\n"
+                                "💡 _Get these signals free → @ApexFlashBot_\n"
+                                "🔥 _Copy top traders → apexflash.pro_"
+                            )
+                            await context.bot.send_message(
+                                chat_id=ALERT_CHANNEL_ID,
+                                text=channel_text,
+                                parse_mode="Markdown",
+                                disable_web_page_preview=True,
+                            )
+                        except Exception as ch_err:
+                            logger.warning(f"Channel trade post failed: {ch_err}")
                 else:
                     logger.warning(f"SL/TP sell failed for {pos['token']} user={chat_id}")
 
@@ -3219,8 +3249,12 @@ async def _cb_execute_sell(query, user, context, data):
         # ── Social proof notifications (Discord + Telegram channel) ──
         try:
             uname = query.from_user.username or "Anon"
-            await notify_discord_trade(uname, "SELL", f"{pct_label}", "Token", tx_sig, sol_received * PLATFORM_FEE_PCT / 100)
-            await notify_channel_trade(context.bot, "SELL", sol_received, "Token", tx_sig)
+            await notify_discord_trade(uname, "SELL", f"{pct_label}", sell_token_name, tx_sig, sol_received * PLATFORM_FEE_PCT / 100)
+            await notify_channel_trade(
+                context.bot, "SELL", sol_received, sell_token_name, tx_sig,
+                token_mint=sell_mint, sol_price=sol_price,
+                fee_sol=sol_received * PLATFORM_FEE_PCT / 100,
+            )
         except Exception:
             pass
     else:
