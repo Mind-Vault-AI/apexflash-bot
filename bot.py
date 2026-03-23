@@ -5588,6 +5588,116 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 # ══════════════════════════════════════════════
+# WIN RATE + DEALS COMMANDS
+# ══════════════════════════════════════════════
+
+async def cmd_winrate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show platform and user win rate stats."""
+    from persistence import get_win_rate, get_user_win_rate
+
+    uid = update.effective_user.id
+    platform = get_win_rate()
+    user_wr = get_user_win_rate(uid)
+
+    p_rate = platform["win_rate"]
+    p_total = platform["total"]
+    p_wins = platform["wins"]
+    p_losses = platform["losses"]
+    p_pnl = platform["total_pnl_sol"]
+
+    u_rate = user_wr["win_rate"]
+    u_total = user_wr["total"]
+    u_wins = user_wr["wins"]
+
+    # Platform emoji
+    if p_rate >= 65:
+        rate_emoji = "\U0001f525"  # fire
+    elif p_rate >= 50:
+        rate_emoji = "\U0001f7e2"  # green
+    else:
+        rate_emoji = "\U0001f7e1"  # yellow
+
+    text = (
+        "\U0001f3af *ApexFlash Win Rate*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        f"{rate_emoji} *Platform Win Rate:* {p_rate}%\n"
+        f"\U0001f4ca Total Trades: {p_total}\n"
+        f"\u2705 Wins: {p_wins} | \u274c Losses: {p_losses}\n"
+        f"\U0001f4b0 Total P/L: {p_pnl:+.4f} SOL\n\n"
+    )
+
+    if u_total > 0:
+        text += (
+            "\U0001f464 *Your Stats:*\n"
+            f"Win Rate: {u_rate}% ({u_wins}/{u_total})\n\n"
+        )
+
+    if p_total < 10:
+        text += "_Building track record... More trades = more data._\n"
+
+    text += (
+        "\n\U0001f4a1 *Tip:* Our AI Signal Filter only sends Grade A-C alerts.\n"
+        "Grade D signals are automatically suppressed."
+    )
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def cmd_deals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show current exchange deals and promo bonuses."""
+    text = (
+        "\U0001f381 *Exclusive Exchange Deals*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+    )
+
+    deals = [
+        (k, v) for k, v in AFFILIATE_LINKS.items()
+        if v.get("promo")
+    ]
+
+    for i, (key, aff) in enumerate(deals, 1):
+        text += (
+            f"*{i}. {aff['name']}*\n"
+            f"\U0001f381 {aff['promo']}\n"
+            f"\U0001f4b8 Commission: {aff['commission']} fee rebate\n"
+            f"\u2192 [Sign Up Now]({aff['url']})\n\n"
+        )
+
+    # Non-promo featured exchanges
+    others = [
+        (k, v) for k, v in AFFILIATE_LINKS.items()
+        if not v.get("promo") and v.get("featured")
+    ]
+    if others:
+        for key, aff in others:
+            text += f"\u2022 [{aff['name']}]({aff['url']}) \u2014 {aff['commission']}\n"
+
+    text += (
+        "\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\U0001f4a1 Sign up via our links and you support ApexFlash!\n"
+        "All bonuses are verified and exclusive."
+    )
+
+    kb = []
+    for key, aff in deals[:4]:
+        kb.append([InlineKeyboardButton(
+            f"\U0001f525 {aff['name']} \u2014 {aff.get('promo', '')[:30]}",
+            url=aff["url"],
+        )])
+    kb.append([InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")])
+
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+    )
+
+
+# ══════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════
 
@@ -5616,6 +5726,9 @@ def main() -> None:
     app.add_handler(CommandHandler("tweetstats", cmd_tweetstats))
     app.add_handler(CommandHandler("debug", cmd_debug))
     app.add_handler(CommandHandler("analytics", cmd_analytics))
+    app.add_handler(CommandHandler("winrate", cmd_winrate))
+    app.add_handler(CommandHandler("deals", cmd_deals))
+    app.add_handler(CommandHandler("promos", cmd_deals))  # alias
 
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))
