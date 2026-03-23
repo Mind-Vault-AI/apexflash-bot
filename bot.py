@@ -2699,6 +2699,32 @@ async def _cb_preview_buy(query, user, context, data):
     except Exception:
         pass  # Safety check is optional — never block a trade
 
+    # ── RugCheck Safety Score (Solana-specific, free) ──
+    try:
+        import aiohttp as _aio_rug
+        async with _aio_rug.ClientSession() as _rs:
+            async with _rs.get(
+                f"https://api.rugcheck.xyz/v1/tokens/{target_mint}/report/summary",
+                timeout=_aio_rug.ClientTimeout(total=4),
+            ) as _rr:
+                if _rr.status == 200:
+                    _rug = await _rr.json()
+                    _risk = _rug.get("score", 0)
+                    _risks = _rug.get("risks", [])
+                    if _risk > 0:
+                        if _risk >= 800:
+                            _rug_grade = "\U0001f7e2 SAFE"
+                        elif _risk >= 500:
+                            _rug_grade = "\U0001f7e1 CAUTION"
+                        else:
+                            _rug_grade = "\U0001f534 RISKY \u26a0\ufe0f"
+                        safety_text += f"RugCheck: {_rug_grade} ({_risk}/1000)\n"
+                        if _risks:
+                            top_risks = [r.get("name", "?") for r in _risks[:3]]
+                            safety_text += f"Flags: {', '.join(top_risks)}\n"
+    except Exception:
+        pass  # RugCheck is bonus — never block a trade
+
     text = (
         "\U0001f4cb *Trade Confirmation*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
@@ -5418,13 +5444,35 @@ async def cmd_backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """🔥 Show trending Solana tokens by volume — drives trades."""
+    """🔥 Show trending Solana tokens by volume — DexScreener + DexPaprika."""
     await update.message.reply_text("🔥 *Loading trending tokens...*", parse_mode="Markdown")
 
     try:
         import aiohttp as _aiohttp
         async with _aiohttp.ClientSession() as session:
-            # DexPaprika: top pools by volume on Solana (fetch more for dedup)
+            # Try DexScreener first (boosted tokens = paid promotions = high interest)
+            dexscreener_tokens = []
+            try:
+                async with session.get(
+                    "https://api.dexscreener.com/token-boosts/top/v1",
+                    timeout=_aiohttp.ClientTimeout(total=5),
+                ) as ds_resp:
+                    if ds_resp.status == 200:
+                        ds_data = await ds_resp.json()
+                        for item in (ds_data if isinstance(ds_data, list) else []):
+                            if item.get("chainId") == "solana" and item.get("tokenAddress"):
+                                dexscreener_tokens.append({
+                                    "mint": item["tokenAddress"],
+                                    "symbol": item.get("description", item.get("url", ""))[:10] or "???",
+                                    "source": "dexscreener",
+                                    "link": item.get("url", ""),
+                                })
+                            if len(dexscreener_tokens) >= 3:
+                                break
+            except Exception:
+                pass  # DexScreener is bonus, not critical
+
+            # DexPaprika: top pools by volume on Solana
             async with session.get(
                 "https://api.dexpaprika.com/networks/solana/pools",
                 params={"order_by": "volume_usd", "sort": "desc", "limit": "100"},
@@ -5492,23 +5540,37 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
 
         # Build message
-        msg = "🔥 *HOT TOKENS — Solana*\n━━━━━━━━━━━━━━━━━━━━━\n\n"
+        msg = "\U0001f525 *HOT TOKENS \u2014 Solana*\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
         kb_rows = []
+
+        # DexScreener boosted tokens first (if any)
+        if dexscreener_tokens:
+            msg += "\U0001f680 *BOOSTED (DexScreener):*\n"
+            for ds in dexscreener_tokens:
+                short_mint = f"{ds['mint'][:6]}...{ds['mint'][-4:]}"
+                msg += f"\u26a1 `{short_mint}`\n"
+                kb_rows.append([InlineKeyboardButton(
+                    f"\U0001f680 Buy Boosted {short_mint}",
+                    callback_data=f"hot_buy_{ds['mint']}",
+                )])
+            msg += "\n"
+
+        # DexPaprika volume leaders
+        msg += "\U0001f4ca *TOP BY VOLUME:*\n"
         for i, t in enumerate(trending, 1):
-            arrow = "📈" if t["pct_24h"] >= 0 else "📉"
+            arrow = "\U0001f4c8" if t["pct_24h"] >= 0 else "\U0001f4c9"
             pct = f"+{t['pct_24h']:.1f}%" if t["pct_24h"] >= 0 else f"{t['pct_24h']:.1f}%"
             vol_str = f"${t['volume']:,.0f}" if t["volume"] >= 1 else "$0"
-            msg += f"{i}. {arrow} *{t['symbol']}* — {pct} | Vol: {vol_str}\n"
-            # Buy button for each token
+            msg += f"{i}. {arrow} *{t['symbol']}* \u2014 {pct} | Vol: {vol_str}\n"
             kb_rows.append([InlineKeyboardButton(
-                f"💰 Buy {t['symbol']}",
+                f"\U0001f4b0 Buy {t['symbol']}",
                 callback_data=f"hot_buy_{t['mint']}",
             )])
 
         msg += (
-            "\n━━━━━━━━━━━━━━━━━━━━━\n"
-            "👆 Tap to buy | Paste any mint to trade\n"
-            "⚡ Powered by ApexFlash"
+            "\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            "\U0001f446 Tap to buy | Paste any mint to trade\n"
+            "\u26a1 Powered by ApexFlash + DexScreener"
         )
 
         kb_rows.append([InlineKeyboardButton("🔄 Refresh", callback_data="cmd_hot_refresh")])
