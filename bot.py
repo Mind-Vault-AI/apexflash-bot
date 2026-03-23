@@ -392,7 +392,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "\U0001f4c8 *Copy Trade* \u2014 Follow top traders\n"
         "\U0001f916 *DCA Bot* \u2014 Automate your strategy\n"
         "\U0001f4b1 *Partners & Tools* \u2014 Exchanges + crypto tools\n"
-        "\U0001f91d *Referral* \u2014 Earn 25% of friends' fees\n"
+        "\U0001f91d *Referral* \u2014 Earn up to 35% of friends' fees\n"
         "\n"
         "\u26a0\ufe0f _Trading involves risk. Only trade with funds_\n"
         "_you can afford to lose._\n"
