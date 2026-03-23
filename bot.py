@@ -5345,13 +5345,22 @@ async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         hours = int(uptime.total_seconds() // 3600)
         mins = int((uptime.total_seconds() % 3600) // 60)
         wallets = sum(1 for u in users.values() if u.get("wallet_pubkey"))
+        # Env var health check in heartbeat
+        import os as _hb_os
+        _crit = {"HELIUS": _hb_os.getenv("HELIUS_API_KEY",""), "ETHERSCAN": _hb_os.getenv("ETHERSCAN_API_KEY",""),
+                 "REDIS": _hb_os.getenv("UPSTASH_REDIS_URL",""), "FEE_WALLET": _hb_os.getenv("FEE_COLLECT_WALLET",""),
+                 "JUPITER": _hb_os.getenv("JUPITER_API_KEY",""), "ALERT_CH": _hb_os.getenv("ALERT_CHANNEL_ID","")}
+        _miss = [k for k,v in _crit.items() if not v]
+        _env_status = "\U0001f534 MISSING: " + ",".join(_miss) if _miss else "\U0001f7e2 All env OK"
+
         msg = (
             f"\U0001f49a *Heartbeat OK*\n"
             f"Uptime: {hours}h {mins}m\n"
             f"Users: {len(users)} | Wallets: {wallets}\n"
             f"Trades today: {platform_stats.get('trades_today', 0)} | "
             f"Total: {platform_stats.get('trades_total', 0)}\n"
-            f"v3.9.1"
+            f"{_env_status}\n"
+            f"v3.11.1"
         )
         for admin_id in ADMIN_IDS:
             try:
@@ -6001,10 +6010,37 @@ async def cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # MAIN
 # ══════════════════════════════════════════════
 
+def _check_critical_env():
+    """Verify all critical env vars are present at startup. Alert admin if missing."""
+    import os
+    CRITICAL = {
+        "BOT_TOKEN": BOT_TOKEN,
+        "HELIUS_API_KEY": os.getenv("HELIUS_API_KEY", ""),
+        "ETHERSCAN_API_KEY": os.getenv("ETHERSCAN_API_KEY", ""),
+        "WALLET_ENCRYPTION_KEY": os.getenv("WALLET_ENCRYPTION_KEY", ""),
+        "UPSTASH_REDIS_URL": os.getenv("UPSTASH_REDIS_URL", ""),
+        "FEE_COLLECT_WALLET": os.getenv("FEE_COLLECT_WALLET", ""),
+        "ALERT_CHANNEL_ID": os.getenv("ALERT_CHANNEL_ID", ""),
+        "JUPITER_API_KEY": os.getenv("JUPITER_API_KEY", ""),
+    }
+    missing = [k for k, v in CRITICAL.items() if not v]
+    if missing:
+        logger.critical(f"MISSING ENV VARS: {missing} — bot may malfunction!")
+        # Will alert admin via Telegram after bot starts (startup_alert job)
+        return missing
+    logger.info(f"Env check OK: {len(CRITICAL)} critical vars present")
+    return []
+
+
 def main() -> None:
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN not set! Add it to .env or environment variables.")
         return
+
+    # Check all critical env vars before starting
+    missing_env = _check_critical_env()
+    if missing_env:
+        logger.critical(f"STARTUP WARNING: Missing {missing_env}")
 
     app = Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
 
