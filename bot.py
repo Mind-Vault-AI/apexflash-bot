@@ -3715,55 +3715,100 @@ async def _cb_portfolio(query, user, context):
 
 
 async def _cb_copy_trade(query, user, context):
-    """Copy trading via MIZAR."""
+    """Copy trading via MIZAR — with LIVE marketplace data."""
     tier = TIERS.get(user["tier"], TIERS["free"])
 
     if not tier.get("copy_trade"):
-        # Upsell
+        # Show top traders as teaser (free users see stats but can't copy)
+        from mizar import get_marketplace_bots
+        top_bots = await get_marketplace_bots(limit=5)
+
         text = (
-            "\U0001f4c8 *Copy Trading*\n"
+            "\U0001f4c8 *Copy Trading \u2014 Live Leaderboard*\n"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-            "\n"
-            "\U0001f512 *Pro Feature*\n"
-            "\n"
-            "Copy the exact trades of profitable\n"
-            "traders automatically. Set your risk,\n"
-            "and let the pros trade for you.\n"
-            "\n"
-            "\u2705 Auto-copy whale traders\n"
-            "\u2705 Adjustable position sizing\n"
-            "\u2705 Stop-loss protection\n"
-            "\u2705 Multiple traders at once\n"
-            "\n"
-            "Unlock with Pro or Elite:"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        )
+
+        if top_bots:
+            for i, bot in enumerate(top_bots[:5], 1):
+                name = bot.get("name", f"Bot #{i}")[:20]
+                pnl = bot.get("pnl_30d", bot.get("pnl", 0))
+                win_rate = bot.get("win_rate", 0)
+                trades = bot.get("total_trades", 0)
+
+                pnl_val = float(pnl) if pnl else 0
+                wr_val = float(win_rate) if win_rate else 0
+                pnl_emoji = "\U0001f7e2" if pnl_val > 0 else "\U0001f534"
+
+                text += (
+                    f"{i}. *{name}*\n"
+                    f"   {pnl_emoji} P/L 30d: {pnl_val:+.1f}% | "
+                    f"WR: {wr_val:.0f}% | "
+                    f"Trades: {trades}\n\n"
+                )
+        else:
+            text += (
+                "\U0001f3c6 *Top performers copy their trades*\n"
+                "\U0001f4ca Verified P/L and win rates\n"
+                "\U0001f6e1 Auto stop-loss protection\n\n"
+            )
+
+        text += (
+            "\U0001f512 *Unlock Copy Trading with Pro:*\n"
+            "\u2022 Auto-copy top traders\n"
+            "\u2022 Set your own risk limits\n"
+            "\u2022 Stop-loss protection included"
         )
         kb = [
             [InlineKeyboardButton(f"\U0001f680 Pro \u2014 {PRO_PRICE_SOL} SOL", callback_data="pay_sol_pro")],
             [InlineKeyboardButton(f"\U0001f451 Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite")],
+            [InlineKeyboardButton("\U0001f517 Preview MIZAR", url=MIZAR_REFERRAL_URL)],
             [_back_main()[0]],
         ]
     else:
+        # Pro/Elite users — live leaderboard + direct copy link
+        from mizar import get_marketplace_bots
+        top_bots = await get_marketplace_bots(limit=5)
+
         text = (
-            "\U0001f4c8 *Copy Trading*\n"
+            "\U0001f4c8 *Copy Trading \u2014 Live Leaderboard*\n"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-            "\n"
-            "Copy profitable traders automatically.\n"
-            "Powered by MIZAR.\n"
-            "\n"
-            "\U0001f3c6 *How it works:*\n"
-            "1\ufe0f\u20e3 Browse top-performing traders\n"
-            "2\ufe0f\u20e3 Connect your exchange API\n"
-            "3\ufe0f\u20e3 Set your risk & position size\n"
-            "4\ufe0f\u20e3 Trades are copied automatically\n"
-            "\n"
-            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-            "Open MIZAR to start copying:"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
         )
+
+        if top_bots:
+            for i, bot in enumerate(top_bots[:5], 1):
+                name = bot.get("name", f"Bot #{i}")[:20]
+                pnl = bot.get("pnl_30d", bot.get("pnl", 0))
+                win_rate = bot.get("win_rate", 0)
+                trades = bot.get("total_trades", 0)
+                copiers = bot.get("copiers", bot.get("followers", 0))
+
+                pnl_val = float(pnl) if pnl else 0
+                wr_val = float(win_rate) if win_rate else 0
+                pnl_emoji = "\U0001f7e2" if pnl_val > 0 else "\U0001f534"
+
+                text += (
+                    f"{i}. *{name}*\n"
+                    f"   {pnl_emoji} P/L 30d: {pnl_val:+.1f}% | "
+                    f"WR: {wr_val:.0f}% | "
+                    f"Copiers: {copiers}\n\n"
+                )
+
+            text += "\U0001f4a1 Click below to start copying the best traders:"
+        else:
+            text += (
+                "Copy profitable traders automatically.\n"
+                "Powered by MIZAR.\n\n"
+                "\U0001f3c6 *How it works:*\n"
+                "1\ufe0f\u20e3 Browse top-performing traders\n"
+                "2\ufe0f\u20e3 Connect your exchange API\n"
+                "3\ufe0f\u20e3 Set your risk & position size\n"
+                "4\ufe0f\u20e3 Trades are copied automatically"
+            )
+
         kb = [
-            [InlineKeyboardButton("\U0001f517 Open MIZAR Platform", url=MIZAR_REFERRAL_URL)],
+            [InlineKeyboardButton("\U0001f680 Start Copying Top Traders", url=MIZAR_REFERRAL_URL)],
             [InlineKeyboardButton("\U0001f4d6 How It Works", callback_data="help_copy")],
             [_back_main()[0]],
         ]
