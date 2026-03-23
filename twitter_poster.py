@@ -192,12 +192,12 @@ TWEETS = [
     {
         "cat": "cta",
         "text": (
-            "Pro traders upgrade for $19/mo:\n\n"
-            "\u2022 50 trades/day\n"
+            "Flash Pro — $9.99/mo:\n\n"
+            "\u2022 Unlimited trades\n"
             "\u2022 Instant whale alerts\n"
-            "\u2022 Multi-chain tracking\n"
-            "\u2022 Priority execution\n"
-            "\u2022 Referral earnings (25%)\n\n"
+            "\u2022 Copy trading\n"
+            "\u2022 DCA bot\n"
+            "\u2022 Earn up to 35% referral fees\n\n"
             "@ApexFlashBot \u2192 /upgrade\n\n"
             "#Solana #CryptoTrading"
         ),
@@ -207,7 +207,7 @@ TWEETS = [
         "cat": "referral",
         "text": (
             "Earn from every trade your friends make.\n\n"
-            "Share your referral link \u2192 friends trade \u2192 you earn 25% of fees.\n\n"
+            "Share your referral link \u2192 friends trade \u2192 you earn up to 35% of fees.\n\n"
             "No limits. Lifetime earnings.\n\n"
             "@ApexFlashBot \u2192 /referral\n\n"
             "#PassiveIncome #Crypto #Solana"
@@ -246,10 +246,11 @@ TWEETS = [
         "cat": "exchange",
         "text": (
             "Need a CEX? We got you.\n\n"
-            "\u2022 Bitunix \u2014 50% fee rebate\n"
+            "\u2022 Bitunix \u2014 50% fee rebate + $8K bonus\n"
             "\u2022 MEXC \u2014 70% rebate, zero spot fees\n"
-            "\u2022 BloFin \u2014 Copy trading built-in\n\n"
-            "Check /exchanges in @ApexFlashBot\n\n"
+            "\u2022 BloFin \u2014 Copy trading built-in\n"
+            "\u2022 Gate.io \u2014 40% rebate + $6.6K bonus\n\n"
+            "All deals: apexflash.pro\n\n"
             "#Crypto #Exchange #Trading"
         ),
     },
@@ -381,11 +382,75 @@ def _recalculate_category_scores():
 # SMART CONTENT SELECTION
 # ══════════════════════════════════════════════
 
+def _get_live_stats() -> dict:
+    """Fetch live stats from Redis for data-driven tweets."""
+    try:
+        from persistence import get_win_rate
+        wr = get_win_rate()
+        if wr and wr.get("total", 0) > 0:
+            return wr
+    except Exception:
+        pass
+    return {}
+
+
+def _make_live_tweet(stats: dict) -> tuple[str, str] | None:
+    """Generate a tweet with real platform data. Returns (text, cat) or None."""
+    if not stats or stats.get("total", 0) < 3:
+        return None
+
+    total = stats["total"]
+    win_rate = stats.get("win_rate", 0)
+    pnl = stats.get("total_pnl_sol", 0)
+    wins = stats.get("wins", 0)
+
+    templates = [
+        (
+            f"\U0001f4ca ApexFlash Stats Update\n\n"
+            f"\u2022 {total} trades executed\n"
+            f"\u2022 {win_rate}% win rate\n"
+            f"\u2022 {wins} winning trades\n\n"
+            f"AI-graded whale signals. Free on Telegram.\n\n"
+            f"\U0001f449 @ApexFlashBot\n"
+            f"apexflash.pro\n\n"
+            f"#Solana #WhaleAlert #CryptoTrading"
+        ),
+        (
+            f"{win_rate}% win rate across {total} trades.\n\n"
+            f"We don't predict. We follow the whales.\n\n"
+            f"\u2022 Real-time ETH + SOL whale tracking\n"
+            f"\u2022 AI signal grading (A-D)\n"
+            f"\u2022 1-tap copy trading\n\n"
+            f"Free: @ApexFlashBot\n\n"
+            f"#Crypto #WhaleTracking #Solana"
+        ),
+        (
+            f"Whales moved. We alerted. Traders profited.\n\n"
+            f"\U0001f40b {total} signals tracked\n"
+            f"\U0001f3af {win_rate}% accuracy\n"
+            f"\U0001f4b0 {pnl:+.2f} SOL total P/L\n\n"
+            f"See for yourself \U0001f449 @ApexFlashBot\n\n"
+            f"#WhaleAlert #Solana #DeFi"
+        ),
+    ]
+
+    text = random.choice(templates)
+    return text, "live_stats"
+
+
 def get_scheduled_tweet(hour_utc: int) -> tuple[str, str]:
     """Pick a tweet based on time of day + engagement scores.
+    Prioritizes live data tweets when stats are available.
 
     Returns: (text, category)
     """
+    # 40% chance of live stats tweet (if data available)
+    if random.random() < 0.4:
+        stats = _get_live_stats()
+        live = _make_live_tweet(stats)
+        if live:
+            return live
+
     if 6 <= hour_utc < 12:
         cats = ["tip", "whale", "trust"]
     elif 12 <= hour_utc < 18:
