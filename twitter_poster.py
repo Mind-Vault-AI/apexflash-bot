@@ -572,3 +572,55 @@ async def post_tweet(api_key: str, api_secret: str,
     except Exception as e:
         logger.error(f"Twitter post error: {e}")
         return False
+
+
+async def post_thread(api_key: str, api_secret: str,
+                      access_token: str, access_secret: str,
+                      tweets: list[str]) -> bool:
+    """Post a Twitter thread (chain of reply tweets).
+
+    Args:
+        tweets: List of tweet texts in order. First becomes the root tweet.
+
+    Returns:
+        True if full thread posted successfully.
+    """
+    if not TWEEPY_AVAILABLE or not tweets:
+        return False
+
+    if not all([api_key, api_secret, access_token, access_secret]):
+        logger.warning("Twitter API keys not configured — skipping thread")
+        return False
+
+    try:
+        client = _get_client(api_key, api_secret, access_token, access_secret)
+        if not client:
+            return False
+
+        previous_id = None
+        posted_count = 0
+
+        for i, text in enumerate(tweets):
+            kwargs = {"text": text}
+            if previous_id:
+                kwargs["in_reply_to_tweet_id"] = previous_id
+
+            response = client.create_tweet(**kwargs)
+
+            if response and response.data:
+                previous_id = str(response.data.get("id", ""))
+                posted_count += 1
+                logger.info(f"Thread [{i + 1}/{len(tweets)}] posted: {previous_id}")
+            else:
+                logger.error(f"Thread tweet {i + 1} failed — stopping thread")
+                break
+
+        logger.info(f"Thread complete: {posted_count}/{len(tweets)} tweets posted")
+        return posted_count == len(tweets)
+
+    except tweepy.TooManyRequests:
+        logger.warning("Twitter rate limit hit during thread — partial thread posted")
+        return False
+    except Exception as e:
+        logger.error(f"Thread post error: {e}")
+        return False

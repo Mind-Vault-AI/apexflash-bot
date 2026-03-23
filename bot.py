@@ -71,7 +71,7 @@ from persistence import (
     update_last_active, get_popular_tokens, get_funnel_stats, get_affiliate_stats,
 )
 from marketing import post_to_channel as marketing_post
-from twitter_poster import post_tweet as twitter_post, get_stats_text as twitter_stats_text
+from twitter_poster import post_tweet as twitter_post, post_thread as twitter_post_thread, get_stats_text as twitter_stats_text
 
 # ══════════════════════════════════════════════
 # LOGGING
