@@ -137,3 +137,143 @@ async def get_whale_alert_sentiment(alert: dict) -> Optional[dict]:
         text = f"Whale selling alert: {value:,.0f} {symbol} withdrawn from exchange. Potential {chain} dump incoming."
 
     return await analyze_crypto_sentiment(text)
+
+
+# ══════════════════════════════════════════════
+# SIGNAL QUALITY SCORING — filters bad signals
+# ══════════════════════════════════════════════
+
+# Minimum quality score to send alert (0-100). Below this = suppressed.
+MIN_SIGNAL_QUALITY = 40
+
+# Wallets with historically better signals get bonus points
+HIGH_QUALITY_WALLETS = {
+    "Binance Hot", "Binance Cold", "Coinbase Prime", "Kraken Hot",
+    "OKX Reserve", "Bitfinex Cold",
+}
+LOW_QUALITY_WALLETS = {
+    "Unknown",
+}
+
+
+def score_whale_signal(alert: dict, sentiment: Optional[dict] = None) -> dict:
+    """
+    Score a whale alert on signal quality (0-100).
+
+    Factors:
+    - Direction (IN to exchange = sell pressure = bearish, OUT = accumulation = bullish)
+    - Amount relative to threshold (bigger = stronger signal)
+    - Wallet reputation (known exchange vs unknown)
+    - AI sentiment alignment (CryptoBERT agrees with direction?)
+    - Chain (SOL = more volatile = higher opportunity)
+
+    Returns:
+        {"quality": 72, "grade": "B", "action": "BUY", "reason": "Strong accumulation..."}
+    """
+    score = 50  # Base score
+    reasons = []
+
+    direction = alert.get("direction", "")
+    value = alert.get("value", 0)
+    chain = alert.get("chain", "")
+    from_wallet = alert.get("from_label", alert.get("from", "Unknown"))
+    to_wallet = alert.get("to_label", alert.get("to", "Unknown"))
+
+    # === Direction Analysis ===
+    # OUT from exchange = whale withdrawing = accumulating = BULLISH
+    # IN to exchange = whale depositing = likely selling = BEARISH
+    if direction == "OUT":
+        score += 15
+        action = "BUY"
+        reasons.append("Whale withdrawing from exchange (accumulation)")
+    else:
+        score -= 10
+        action = "CAUTION"
+        reasons.append("Whale depositing to exchange (potential sell)")
+
+    # === Size Factor ===
+    # Bigger transfers = stronger conviction
+    if chain == "ETH":
+        threshold = 100  # ETH_ALERT_THRESHOLD
+        if value >= threshold * 10:
+            score += 15
+            reasons.append(f"Massive transfer: {value:,.0f} ETH")
+        elif value >= threshold * 3:
+            score += 8
+            reasons.append(f"Large transfer: {value:,.0f} ETH")
+    elif chain == "SOL":
+        threshold = 10000  # SOL_ALERT_THRESHOLD
+        if value >= threshold * 5:
+            score += 15
+            reasons.append(f"Massive transfer: {value:,.0f} SOL")
+        elif value >= threshold * 2:
+            score += 8
+            reasons.append(f"Large transfer: {value:,.0f} SOL")
+
+    # === Wallet Reputation ===
+    wallet_label = to_wallet if direction == "IN" else from_wallet
+    if wallet_label in HIGH_QUALITY_WALLETS:
+        score += 10
+        reasons.append(f"Known wallet: {wallet_label}")
+    elif wallet_label in LOW_QUALITY_WALLETS:
+        score -= 15
+        reasons.append("Unknown wallet (higher risk)")
+
+    # === AI Sentiment Alignment ===
+    if sentiment:
+        sent_label = sentiment.get("label", "Neutral")
+        sent_score = sentiment.get("score", 0)
+
+        if action == "BUY" and sent_label == "Bullish" and sent_score > 0.7:
+            score += 15
+            reasons.append(f"AI confirms: Bullish ({int(sent_score * 100)}%)")
+        elif action == "BUY" and sent_label == "Bearish" and sent_score > 0.7:
+            score -= 20
+            reasons.append(f"AI warns: Bearish ({int(sent_score * 100)}%)")
+        elif action == "CAUTION" and sent_label == "Bearish":
+            score -= 10
+            reasons.append("AI confirms sell pressure")
+
+    # === Chain Bonus ===
+    if chain == "SOL":
+        score += 5  # More volatile = more opportunity
+
+    # Clamp 0-100
+    score = max(0, min(100, score))
+
+    # Grade
+    if score >= 80:
+        grade = "A"
+    elif score >= 60:
+        grade = "B"
+    elif score >= 40:
+        grade = "C"
+    else:
+        grade = "D"
+
+    return {
+        "quality": score,
+        "grade": grade,
+        "action": action,
+        "reasons": reasons,
+        "pass": score >= MIN_SIGNAL_QUALITY,
+    }
+
+
+def format_signal_quality(sq: dict) -> str:
+    """Format signal quality as lines for whale alert message."""
+    grade = sq["grade"]
+    quality = sq["quality"]
+    action = sq["action"]
+
+    grade_emoji = {"A": "\U0001f525", "B": "\U0001f7e2", "C": "\U0001f7e1", "D": "\U0001f534"}
+    action_emoji = {"BUY": "\U0001f4b0", "CAUTION": "\u26a0\ufe0f"}
+
+    lines = f"{grade_emoji.get(grade, '')} *Signal Grade:* {grade} ({quality}/100)\n"
+    lines += f"{action_emoji.get(action, '')} *Action:* {action}\n"
+
+    # Top reason only (keep it clean)
+    if sq["reasons"]:
+        lines += f"\U0001f4a1 {sq['reasons'][0]}\n"
+
+    return lines

@@ -360,6 +360,105 @@ def get_affiliate_stats() -> dict:
         return {}
 
 
+# ══════════════════════════════════════════════
+# WIN RATE TRACKING
+# ══════════════════════════════════════════════
+
+def record_trade_result(user_id: int, token: str, pnl_pct: float, pnl_sol: float):
+    """Record a closed trade result for win rate tracking.
+
+    Args:
+        user_id: Telegram user ID
+        token: Token symbol
+        pnl_pct: Profit/loss percentage (positive = win, negative = loss)
+        pnl_sol: Profit/loss in SOL
+    """
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        from datetime import datetime, date
+        today = date.today().isoformat()
+
+        # Global win rate counters
+        r.incr("winrate:total_trades")
+        if pnl_pct > 0:
+            r.incr("winrate:wins")
+        else:
+            r.incr("winrate:losses")
+
+        # Daily counters
+        r.incr(f"winrate:total:{today}")
+        if pnl_pct > 0:
+            r.incr(f"winrate:wins:{today}")
+
+        # Per-user counters
+        r.incr(f"winrate:user:{user_id}:total")
+        if pnl_pct > 0:
+            r.incr(f"winrate:user:{user_id}:wins")
+
+        # Running P/L total
+        r.incrbyfloat("winrate:total_pnl_sol", pnl_sol)
+
+        # Recent results (for display — last 50)
+        import json as _json
+        r.lpush("winrate:recent", _json.dumps({
+            "user_id": user_id,
+            "token": token,
+            "pnl_pct": round(pnl_pct, 2),
+            "pnl_sol": round(pnl_sol, 4),
+            "win": pnl_pct > 0,
+            "ts": datetime.utcnow().isoformat(),
+        }))
+        r.ltrim("winrate:recent", 0, 49)
+
+        logger.info(f"Trade result recorded: {token} {'WIN' if pnl_pct > 0 else 'LOSS'} {pnl_pct:+.1f}%")
+    except Exception as e:
+        logger.debug(f"Win rate tracking failed: {e}")
+
+
+def get_win_rate() -> dict:
+    """Get platform-wide win rate stats.
+
+    Returns:
+        {"total": 150, "wins": 98, "losses": 52, "win_rate": 65.3, "total_pnl_sol": 12.5}
+    """
+    r = _get_redis()
+    if not r:
+        return {"total": 0, "wins": 0, "losses": 0, "win_rate": 0, "total_pnl_sol": 0}
+    try:
+        total = int(r.get("winrate:total_trades") or 0)
+        wins = int(r.get("winrate:wins") or 0)
+        losses = int(r.get("winrate:losses") or 0)
+        pnl = float(r.get("winrate:total_pnl_sol") or 0)
+        rate = (wins / total * 100) if total > 0 else 0
+        return {
+            "total": total,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round(rate, 1),
+            "total_pnl_sol": round(pnl, 4),
+        }
+    except Exception as e:
+        logger.debug(f"Get win rate failed: {e}")
+        return {"total": 0, "wins": 0, "losses": 0, "win_rate": 0, "total_pnl_sol": 0}
+
+
+def get_user_win_rate(user_id: int) -> dict:
+    """Get win rate for a specific user."""
+    r = _get_redis()
+    if not r:
+        return {"total": 0, "wins": 0, "win_rate": 0}
+    try:
+        total = int(r.get(f"winrate:user:{user_id}:total") or 0)
+        wins = int(r.get(f"winrate:user:{user_id}:wins") or 0)
+        rate = (wins / total * 100) if total > 0 else 0
+        return {"total": total, "wins": wins, "win_rate": round(rate, 1)}
+    except Exception as e:
+        logger.debug(f"Get user win rate failed: {e}")
+        return {"total": 0, "wins": 0, "win_rate": 0}
+
+
 def import_backup(json_str: str) -> tuple[dict, dict]:
     """Import backup from JSON string. Returns (users_dict, stats_dict).
     Also syncs to Redis if available."""

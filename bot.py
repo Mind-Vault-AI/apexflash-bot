@@ -2202,6 +2202,13 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                         sold_sol, 0, tx_sig,
                     )
 
+                    # Track win rate (critical for marketing + trust)
+                    try:
+                        from persistence import record_trade_result
+                        record_trade_result(chat_id, pos["token"], pnl_pct, pnl_sol)
+                    except Exception:
+                        pass
+
                     _persist()
 
                     # Notify user
@@ -4797,7 +4804,7 @@ async def _send_admin_panel(chat_id: int, context: ContextTypes.DEFAULT_TYPE) ->
 # ══════════════════════════════════════════════
 
 def format_whale_alert(alert: dict, prices: dict, sentiment: dict = None) -> str:
-    """Format a whale alert message with affiliate CTA and AI sentiment."""
+    """Format a whale alert message with signal quality, affiliate CTA and AI sentiment."""
     chain = alert["chain"]
     value = alert["value"]
     symbol = alert["symbol"]
@@ -4810,7 +4817,7 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict = None) -> str
     usd_value = value * price
     usd_str = f"(~${usd_value:,.0f})" if usd_value > 0 else ""
 
-    # Random featured affiliate
+    # Random featured affiliate with promo bonus
     featured = [k for k, v in AFFILIATE_LINKS.items() if v.get("featured")]
     aff_key = random.choice(featured) if featured else list(AFFILIATE_LINKS.keys())[0]
     aff = AFFILIATE_LINKS[aff_key]
@@ -4826,6 +4833,11 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict = None) -> str
     # AI Sentiment line (CryptoBERT)
     sentiment_line = format_sentiment_line(sentiment)
 
+    # Signal quality line
+    from sentiment import format_signal_quality
+    sq = alert.get("_signal_quality")
+    sq_line = format_signal_quality(sq) if sq else ""
+
     text = (
         f"{emoji} *WHALE ALERT* \u2502 {chain}\n"
         f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
@@ -4836,18 +4848,33 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict = None) -> str
         f"\U0001f4e5 To: `{alert['to_label']}`\n"
     )
 
+    # Signal quality (new — shows grade + action)
+    if sq_line:
+        text += f"\n\U0001f3af *Signal Analysis*\n{sq_line}"
+
     if sentiment_line:
-        text += f"\n\U0001f9e0 *AI Analysis*\n{sentiment_line}"
+        text += f"\n\U0001f9e0 *AI Sentiment*\n{sentiment_line}"
 
     if explorer:
         text += f"\n\U0001f517 [View Transaction]({explorer})\n"
 
-    text += (
-        f"\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-        f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-        f"\U0001f525 [{aff['name']} \u2014 {aff['commission']} fee rebate]({aff['url']})\n"
-        f"\U0001f48e Instant alerts + more chains \u2192 /premium"
-    )
+    # Exchange promo with bonus (rotates)
+    promo_line = aff.get("promo", "")
+    if promo_line:
+        text += (
+            f"\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            f"\U0001f381 *{promo_line}*\n"
+            f"\U0001f525 [{aff['name']} \u2014 {aff['commission']} fee rebate]({aff['url']})\n"
+            f"\U0001f48e Instant alerts + more chains \u2192 /premium"
+        )
+    else:
+        text += (
+            f"\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            f"\U0001f525 [{aff['name']} \u2014 {aff['commission']} fee rebate]({aff['url']})\n"
+            f"\U0001f48e Instant alerts + more chains \u2192 /premium"
+        )
 
     return text
 
@@ -4879,13 +4906,29 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
         if len(seen_tx_hashes) > 10000:
             seen_tx_hashes = set(list(seen_tx_hashes)[-5000:])
 
-        # AI Sentiment analysis per alert (1 call per alert, not per user)
+        # AI Sentiment + Signal Quality scoring per alert
         for alert in new_alerts:
             try:
                 sentiment = await get_whale_alert_sentiment(alert)
                 alert["_sentiment"] = sentiment
             except Exception:
                 alert["_sentiment"] = None
+
+            # Score signal quality (filters bad trades)
+            from sentiment import score_whale_signal, format_signal_quality
+            sq = score_whale_signal(alert, alert.get("_sentiment"))
+            alert["_signal_quality"] = sq
+            if not sq["pass"]:
+                logger.info(
+                    f"Signal filtered: {alert.get('symbol')} grade={sq['grade']} "
+                    f"score={sq['quality']} — below threshold, not sending"
+                )
+
+        # Remove low-quality signals (grade D = likely bad trade)
+        new_alerts = [a for a in new_alerts if a.get("_signal_quality", {}).get("pass", True)]
+
+        if not new_alerts:
+            return
 
         # Broadcast to subscribers
         for user_id, user_data in list(users.items()):

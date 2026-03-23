@@ -67,6 +67,7 @@ AFFILIATE_LINKS = {
         "featured": True,
         "category": "exchange",
         "description": "Low fees, high leverage, fast execution",
+        "promo": "$8,000+ Welcome Bonus — Sign up now!",
     },
     "mexc": {
         "name": "MEXC",
@@ -75,6 +76,7 @@ AFFILIATE_LINKS = {
         "featured": True,
         "category": "exchange",
         "description": "70% fee rebate, 2000+ trading pairs",
+        "promo": "70% Fee Rebate + $1,000 New User Bonus",
     },
     "blofin": {
         "name": "BloFin",
@@ -83,6 +85,16 @@ AFFILIATE_LINKS = {
         "featured": True,
         "category": "exchange",
         "description": "Copy trading built-in, deep liquidity",
+        "promo": "50% Fee Rebate + Copy Trading Free Trial",
+    },
+    "gate": {
+        "name": "Gate.io",
+        "url": f"https://www.gate.io/signup/{os.getenv('GATE_REF', 'VFFHXVFDUG')}",
+        "commission": "up to 40%",
+        "featured": True,
+        "category": "exchange",
+        "description": "1400+ trading pairs, margin trading",
+        "promo": "$6,666 Welcome Bonus + 40% Fee Rebate",
     },
     "binance": {
         "name": "Binance",
@@ -115,14 +127,6 @@ AFFILIATE_LINKS = {
         "featured": False,
         "category": "exchange",
         "description": "Top copy trading exchange",
-    },
-    "gate": {
-        "name": "Gate.io",
-        "url": f"https://www.gate.io/signup/{os.getenv('GATE_REF', '')}",
-        "commission": "up to 40%",
-        "featured": False,
-        "category": "exchange",
-        "description": "1400+ trading pairs, margin trading",
     },
     "kucoin": {
         "name": "KuCoin",
