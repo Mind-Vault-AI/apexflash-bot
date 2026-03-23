@@ -9,13 +9,13 @@ Features:
   - Copy trading via MIZAR marketplace
   - DCA bot automation via MIZAR
   - Exchange affiliate hub (50-70% fee rebates)
-  - Premium tiers ($19/mo Pro, $49/mo Elite)
+  - Premium tiers ($9.99/mo Pro, $29.99/mo Elite)
   - Admin dashboard with stats & broadcast
 
 Revenue model:
   1. 1% fee on every Solana token swap (Jupiter V6)
   2. Affiliate commissions (every whale alert + exchange hub)
-  3. Premium subscriptions via Gumroad (Pro $19, Elite $49)
+  3. Premium subscriptions via Gumroad (Pro $9.99, Elite $29.99)
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
@@ -526,7 +526,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "\U0001f4c8 *Copy Trade* \u2014 Copy top traders (Pro+)\n"
         "\U0001f916 *DCA Bot* \u2014 Automated buying (Pro+)\n"
         "\U0001f4b1 *Exchanges* \u2014 Fee rebates up to 70%\n"
-        "\U0001f48e *Premium* \u2014 From $19/mo\n"
+        "\U0001f48e *Premium* \u2014 From $9.99/mo\n"
         "\n"
         "Use /start for the main menu."
     )
@@ -4044,14 +4044,14 @@ async def _cb_premium(query, user, context):
         "\u2022 3 tracked wallets\n"
         "\u2022 Exchange affiliate deals\n"
         "\n"
-        "\U0001f680 *Pro \u2014 $19/mo*\n"
+        "\U0001f680 *Pro \u2014 $9.99/mo*\n"
         "\u2022 ETH + SOL alerts (instant)\n"
         "\u2022 20 tracked wallets\n"
         "\u2022 Copy Trading access\n"
         "\u2022 DCA Bot access\n"
         "\u2022 Priority support\n"
         "\n"
-        "\U0001f451 *Elite \u2014 $49/mo*\n"
+        "\U0001f451 *Elite \u2014 $29.99/mo*\n"
         "\u2022 All chains (ETH, SOL, BSC, ARB)\n"
         "\u2022 100 tracked wallets\n"
         "\u2022 AI-powered signals\n"
@@ -4083,15 +4083,15 @@ async def _cb_premium(query, user, context):
         ])
         if _gumroad_ready:
             kb.append([
-                InlineKeyboardButton("\U0001f4b3 Pro $19 (Card)", url=GUMROAD_PRO_URL),
-                InlineKeyboardButton("\U0001f4b3 Elite $49 (Card)", url=GUMROAD_ELITE_URL),
+                InlineKeyboardButton("\U0001f4b3 Pro $9.99 (Card)", url=GUMROAD_PRO_URL),
+                InlineKeyboardButton("\U0001f4b3 Elite $29.99 (Card)", url=GUMROAD_ELITE_URL),
             ])
         kb.append([InlineKeyboardButton("\U0001f511 Activate License Key", callback_data="activate_license")])
     elif current == "pro":
         kb.append([InlineKeyboardButton(
             f"\U0001f451 Upgrade Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite")])
         if _gumroad_ready:
-            kb.append([InlineKeyboardButton("\U0001f4b3 Elite $49 (Card)", url=GUMROAD_ELITE_URL)])
+            kb.append([InlineKeyboardButton("\U0001f4b3 Elite $29.99 (Card)", url=GUMROAD_ELITE_URL)])
         kb.append([InlineKeyboardButton("\U0001f511 Activate License Key", callback_data="activate_license")])
 
     # Show expiry for premium users
@@ -4526,7 +4526,7 @@ async def _cb_help(query, user, context):
         "   up to 70% fee rebates\n"
         "\n"
         "\U0001f48e *Premium* \u2014 Unlock all features\n"
-        "   starting at $19/mo\n"
+        "   starting at $9.99/mo\n"
         "\n"
         "*Commands:*\n"
         "/start \u2014 Main menu\n"
@@ -4737,8 +4737,8 @@ async def _cb_admin_stats(query, user, context):
         f"\U0001f4b0 *Revenue*\n"
         f"\u2022 Trade fees ({PLATFORM_FEE_PCT}%): *~${trade_fees_est:,.2f}*\n"
         f"\u2022 MRR (subs): *${mrr}/mo*\n"
-        f"\u2022 Pro: {pro_c} \u00d7 $19 = ${pro_c * 19}\n"
-        f"\u2022 Elite: {elite_c} \u00d7 $49 = ${elite_c * 49}\n"
+        f"\u2022 Pro: {pro_c} \u00d7 $9.99 = ${pro_c * 9.99:.2f}\n"
+        f"\u2022 Elite: {elite_c} \u00d7 $29.99 = ${elite_c * 29.99:.2f}\n"
         f"\u2022 Affiliate: _check exchange dashboards_\n"
         f"\n"
         f"\U0001f4c8 *Trading*\n"

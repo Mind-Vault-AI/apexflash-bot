@@ -299,7 +299,7 @@ TIERS = {
         "ai_signals": False,
         "copy_trade": True,
         "dca_bot": True,
-        "price": 19,
+        "price": 9.99,
         "gumroad_url": GUMROAD_PRO_URL,
     },
     "elite": {
@@ -311,7 +311,7 @@ TIERS = {
         "ai_signals": True,
         "copy_trade": True,
         "dca_bot": True,
-        "price": 49,
+        "price": 29.99,
         "gumroad_url": GUMROAD_ELITE_URL,
     },
 }
