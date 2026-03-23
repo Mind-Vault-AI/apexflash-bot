@@ -1,84 +1,57 @@
 # ApexFlash — Bot Directory Listings
 
----
+> Submit to these directories for organic traffic. Kopieer onderstaande info.
+> ERIK: doe 1 per dag om niet als spam gezien te worden.
 
-## Short Description (1 line)
-
-Real-time Solana whale wallet tracking with instant alerts and 1-tap trading via Jupiter.
-
----
-
-## Medium Description (3 lines)
-
-ApexFlash tracks 500+ Solana whale wallets and sends you instant Telegram alerts when they buy or sell tokens. See what the biggest wallets are accumulating before the price moves. Includes 1-tap buy via Jupiter aggregator, P/L tracking, and whale wallet scoring -- all free.
-
----
-
-## Full Description (paragraph)
-
-ApexFlash is a Solana whale intelligence bot for Telegram. It monitors over 500 large wallet addresses on the Solana blockchain in real-time, detecting when whale wallets buy, sell, or move tokens. When a wallet holding $500K+ makes a trade, you get an instant alert with the token name, amount, price, and a 1-tap buy button powered by Jupiter aggregator. The bot tracks profit and loss on whale trades so you can see which wallets are actually profitable, not just big. Features include real-time whale alerts, 1-tap trading via Jupiter, P/L tracking per wallet, token performance tracking after whale entry, and multi-exchange support for Solana tokens. Built for active Solana traders who want on-chain intelligence without spending hours on block explorers. Free to use.
-
----
-
-## Platform-Specific Submissions
-
-### BotListBot (@BotListBot on Telegram)
+## Quick Copy-Paste Info
 
 **Bot username:** @ApexFlashBot
-**Short description:** Solana whale wallet tracker -- real-time alerts when whales buy/sell tokens
-**Category:** Finance / Crypto
-**Description:** Tracks 500+ Solana whale wallets. Instant alerts on buys and sells. 1-tap trading via Jupiter. P/L tracking. Free.
+**Category:** Finance / Cryptocurrency / Trading
+**Website:** apexflash.pro
 
-### StoreBot (@StoreBot on Telegram)
+**Short (1 line):**
+AI whale intelligence for Solana — detects what whales buy, grades signals A-D, 1-tap trade.
 
-**Bot username:** @ApexFlashBot
-**Description:** Real-time Solana whale tracking bot. Get instant alerts when whale wallets ($500K+) buy or sell tokens. Includes 1-tap buy via Jupiter aggregator, P/L tracking, and whale scoring. Free for all traders.
-**Category:** Finance
+**Medium (2 lines):**
+AI-powered Solana whale tracker. Detects token swaps by 500+ whale wallets, grades every signal A-D (bad ones auto-filtered), 1-tap buy via Jupiter. Free on Telegram.
 
-### botfathers.dev
-
-**Bot name:** ApexFlash
-**Bot username:** @ApexFlashBot
-**Website:** https://twitter.com/MindVault_ai
-**Category:** Finance & Cryptocurrency
-**Short description:** Real-time Solana whale wallet tracking with instant alerts and 1-tap trading.
-**Full description:** ApexFlash monitors 500+ Solana whale wallets and sends instant Telegram alerts when large holders buy or sell tokens. Features include real-time whale alerts, 1-tap buy via Jupiter aggregator, profit/loss tracking per whale wallet, token performance tracking, and multi-exchange affiliate links. Built for Solana traders who want on-chain whale intelligence delivered straight to Telegram. Free to use with no signup required.
-
-### botostore.com
-
-**Bot username:** @ApexFlashBot
-**Title:** ApexFlash - Solana Whale Tracker
-**Category:** Finance / Cryptocurrency
-**Language:** English
-**Description:** Track what Solana whales are buying in real-time. ApexFlash monitors 500+ large wallets and sends instant alerts when they make trades. Buy tokens in 1 tap via Jupiter. Track whale P/L. All free.
-
-### telegramchannels.me
-
-**Bot username:** @ApexFlashBot
-**Category:** Cryptocurrency / Trading
-**Description:** Solana whale intelligence bot. Real-time alerts when whale wallets ($500K+) buy or sell tokens. 1-tap trading via Jupiter aggregator. P/L tracking. Whale wallet scoring. Free whale alerts for Solana traders.
+**Long (paragraph):**
+ApexFlash tracks 500+ whale wallets on Solana and Ethereum. Unlike other bots that show transfers, we detect the actual token SWAPS — what whales are buying via Jupiter and Raydium. Every alert gets AI-graded using CryptoBERT sentiment analysis (Grade A-D). Grade D signals are automatically filtered out. Includes win rate tracking, live leaderboard, portfolio P/L, and exchange deals with $8K+ signup bonuses. Free tier, no credit card needed.
 
 ---
 
-## Keywords / Tags
+## Where to Submit
 
-**Primary tags:**
-solana, whale tracker, whale alerts, crypto bot, telegram bot, defi, jupiter, trading bot, on-chain analytics, whale watching
+### 1. BotListBot (@BotListBot on Telegram)
+- Stuur /submit naar @BotListBot
+- Volg de stappen, gebruik Short description
 
-**Secondary tags:**
-solana trading, whale wallet, crypto alerts, dex trading, token tracker, blockchain analytics, solana defi, crypto signals, whale intelligence, meme coins
+### 2. StoreBot (@StoreBot on Telegram)
+- Stuur /addbot naar @StoreBot
 
-**Hashtags (for discoverability):**
-#Solana #WhaleAlert #CryptoBot #DeFi #TelegramBot #SolanaTrading #WhaleTracker #Jupiter #OnChain #CryptoTrading
+### 3. BotFather Setup (DO THIS FIRST)
+Stuur naar @BotFather:
+- /setdescription → selecteer @ApexFlashBot → plak Short description
+- /setabouttext → plak Medium description
+- /setuserpic → upload het ApexFlash logo
 
----
+### 4. Product Hunt
+- producthunt.com/posts/new
+- Tagline: "AI detects what whales buy on Solana — before the pump"
+- Topics: Crypto, AI, Trading, Telegram Bots
+- Maker: @MindVault_ai
 
-## Submission Checklist
+### 5. botlist.co
+- botlist.co/submit
+- Platform: Telegram, Category: Finance
 
-- [ ] BotListBot (@BotListBot) — send /submit command
-- [ ] StoreBot (@StoreBot) — send /add command
-- [ ] botfathers.dev — submit via website form
-- [ ] botostore.com — submit via website form
-- [ ] telegramchannels.me — submit via website form
-- [ ] botlist.co — additional directory (optional)
-- [ ] telegram-store.com — additional directory (optional)
+### 6. awesome-telegram-bots (GitHub PR)
+- github.com/DenisIzmwordd/awesome-telegram-bots
+- Add to Finance/Crypto section
+
+### 7. TopTelegramBots.com
+- Submit formulier op de site
+
+### 8. r/TelegramBots
+- Post: "Built a free AI whale tracker for Solana — @ApexFlashBot"
+- Gebruik Medium description als body
