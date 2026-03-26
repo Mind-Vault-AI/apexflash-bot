@@ -5426,6 +5426,72 @@ async def marketing_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ══════════════════════════════════════════════
+# LIVE SCALPING MONITOR (Job Queue — every 30s)
+# ══════════════════════════════════════════════
+
+async def scalper_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Live scalping signal detector — fires every 30 seconds.
+    Monitors SOL/BONK/JUP/WIF/RAY/PYTH for rapid momentum moves.
+    Alerts Grade A/B to channel; Grade C logged only.
+    """
+    try:
+        from scalper import check_scalp_signals, format_scalp_alert
+        signals = await check_scalp_signals()
+
+        for sig in signals:
+            grade = sig["grade"]
+            msg = format_scalp_alert(sig)
+
+            # Grade A + B → channel + all subscribers
+            if grade in ("A", "B"):
+                if ALERT_CHANNEL_ID:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=ALERT_CHANNEL_ID,
+                            text=msg,
+                            parse_mode="HTML",
+                            disable_web_page_preview=True,
+                        )
+                    except Exception as ch_err:
+                        logger.warning(f"Scalper channel send error: {ch_err}")
+
+                # Broadcast to all active users who have alerts enabled
+                for uid, udata in list(users.items()):
+                    if not udata.get("alerts_enabled", True):
+                        continue
+                    try:
+                        kb = InlineKeyboardMarkup([[
+                            InlineKeyboardButton(
+                                f"⚡ Trade {sig['symbol']}",
+                                callback_data=f"search_{sig['symbol']}",
+                            )
+                        ]])
+                        await context.bot.send_message(
+                            chat_id=uid,
+                            text=msg,
+                            parse_mode="HTML",
+                            disable_web_page_preview=True,
+                            reply_markup=kb,
+                        )
+                    except Exception:
+                        pass
+
+                logger.info(
+                    f"Scalp signal sent: {sig['symbol']} Grade {grade} "
+                    f"{sig['pct_5m']:+.2f}% (5m)"
+                )
+
+            elif grade == "C":
+                logger.info(
+                    f"Scalp watch: {sig['symbol']} Grade C {sig['pct_5m']:+.2f}% (5m) — not broadcast"
+                )
+
+    except Exception as e:
+        logger.error(f"Scalper job error: {e}")
+
+
+# ══════════════════════════════════════════════
 # ADMIN: /backup & /restore COMMANDS
 # ══════════════════════════════════════════════
 
@@ -6186,7 +6252,12 @@ def main() -> None:
         marketing_job, interval=4 * 3600, first=300, name="marketing_auto",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.9.1 starting (auto-restore + 30min backup)...")
+    # Live scalping monitor — every 30s (price momentum on SOL/BONK/JUP/WIF/RAY/PYTH)
+    app.job_queue.run_repeating(
+        scalper_job, interval=30, first=60, name="scalper",
+    )
+
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.10.1 starting (auto-restore + 30min backup)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
