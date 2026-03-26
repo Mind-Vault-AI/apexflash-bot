@@ -364,7 +364,8 @@ def get_affiliate_stats() -> dict:
 # WIN RATE TRACKING
 # ══════════════════════════════════════════════
 
-def record_trade_result(user_id: int, token: str, pnl_pct: float, pnl_sol: float):
+def record_trade_result(user_id: int, token: str, pnl_pct: float, pnl_sol: float,
+                        signal_grade: str = ""):
     """Record a closed trade result for win rate tracking.
 
     Args:
@@ -372,6 +373,7 @@ def record_trade_result(user_id: int, token: str, pnl_pct: float, pnl_sol: float
         token: Token symbol
         pnl_pct: Profit/loss percentage (positive = win, negative = loss)
         pnl_sol: Profit/loss in SOL
+        signal_grade: Signal quality grade A/B/C/D (optional, for KPI breakdown)
     """
     r = _get_redis()
     if not r:
@@ -386,6 +388,20 @@ def record_trade_result(user_id: int, token: str, pnl_pct: float, pnl_sol: float
             r.incr("winrate:wins")
         else:
             r.incr("winrate:losses")
+
+        # ── KPI: Per-grade win rate (CEO Agent + DMAIC) ──────────────────────
+        # kpi:grade:{A/B/C/D}:total and :wins — fills over time as trades close
+        if signal_grade and signal_grade.upper() in ("A", "B", "C", "D"):
+            g = signal_grade.upper()
+            r.incr(f"kpi:grade:{g}:total")
+            if pnl_pct > 0:
+                r.incr(f"kpi:grade:{g}:wins")
+
+        # ── KPI: Daily snapshot for trending ───────────────────────────────
+        r.hincrby(f"kpi:daily:{today}", "trades", 1)
+        if pnl_pct > 0:
+            r.hincrby(f"kpi:daily:{today}", "wins", 1)
+        r.expire(f"kpi:daily:{today}", 90 * 86400)  # keep 90 days
 
         # Daily counters
         r.incr(f"winrate:total:{today}")
@@ -480,3 +496,88 @@ def import_backup(json_str: str) -> tuple[dict, dict]:
             logger.warning(f"Redis sync after restore failed: {e}")
 
     return users, stats
+
+
+# ══════════════════════════════════════════════
+# CEO AGENT KPI HELPERS
+# ══════════════════════════════════════════════
+
+def track_paid_conversion(user_id: int, tier: str):
+    """
+    Track upgrade event for paid conversion KPI.
+    Call from upgrade flow (pay_sol_pro / pay_sol_elite confirm handlers).
+
+    Keys written:
+      kpi:paid_conversions — total count of upgrades all-time
+      kpi:paid_conversions:{date} — daily count (CEO Agent trending)
+      funnel:upgrade:{date} — already used by funnel tracking (double-write OK)
+    """
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        from datetime import date
+        today = date.today().isoformat()
+        r.incr("kpi:paid_conversions")
+        r.incr(f"kpi:paid_conversions:{today}")
+        r.expire(f"kpi:paid_conversions:{today}", 90 * 86400)
+        # Also tag which tier for ARPU breakdown
+        r.incr(f"kpi:paid_conversions:{tier}:{today}")
+    except Exception as e:
+        logger.debug(f"track_paid_conversion failed: {e}")
+
+
+def track_user_active(user_id: int):
+    """
+    Track daily active user for churn KPI.
+    Call on any user interaction (message, command, callback).
+    Used by CEO Agent to compute churn_30d = users_active_30d_ago - users_active_today.
+
+    Keys written:
+      kpi:dau:{date} — HyperLogLog for unique daily active users
+      user:activity:{user_id}:last_active — timestamp (already in update_last_active)
+    """
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        from datetime import date
+        today = date.today().isoformat()
+        r.pfadd(f"kpi:dau:{today}", str(user_id))
+        r.expire(f"kpi:dau:{today}", 90 * 86400)
+    except Exception as e:
+        logger.debug(f"track_user_active failed: {e}")
+
+
+def get_ceo_kpis() -> dict:
+    """
+    Convenience: return all CEO Agent KPIs in one dict.
+    Used by ceo_agent.py when pipeline is not available.
+    """
+    from datetime import date
+    today = date.today().isoformat()
+    r = _get_redis()
+    if not r:
+        return {}
+    try:
+        result = {}
+        keys = [
+            "platform:total_users",
+            "winrate:total_trades",
+            "winrate:wins",
+            "winrate:total_pnl_sol",
+            "kpi:paid_conversions",
+            "kpi:grade:A:total",
+            "kpi:grade:A:wins",
+            "kpi:grade:B:total",
+            "kpi:grade:B:wins",
+        ]
+        values = r.mget(*keys)
+        for k, v in zip(keys, values):
+            short_key = k.split(":")[-1] if ":" in k else k
+            result[short_key] = v
+        result["date"] = today
+        return result
+    except Exception as e:
+        logger.debug(f"get_ceo_kpis failed: {e}")
+        return {}

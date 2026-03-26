@@ -1063,6 +1063,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "confirm_pay_pro", "confirm_pay_elite", "activate_license",
         "settings", "referral_link",
     }
+    # CEO Agent callbacks (TIER 1 approve/deny buttons)
+    if data.startswith("ceo:"):
+        try:
+            from ceo_agent import handle_ceo_callback
+            await handle_ceo_callback(query, context)
+        except Exception as e:
+            logger.error(f"CEO callback [{data}] error: {e}")
+        return
+
     handler = routes.get(data)
     if handler:
         try:
@@ -6257,7 +6266,22 @@ def main() -> None:
         scalper_job, interval=30, first=60, name="scalper",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.10.1 starting (auto-restore + 30min backup)...")
+    # CEO Agent daily briefing — 08:00 Amsterdam time (UTC+1 winter / UTC+2 summer)
+    # Reads all KPIs from Redis, prioritises via Gemini, sends Telegram briefing to Erik
+    async def ceo_briefing_job(context) -> None:
+        try:
+            from ceo_agent import run_briefing
+            await run_briefing()
+        except Exception as e:
+            logger.error(f"CEO briefing job failed: {e}")
+
+    app.job_queue.run_daily(
+        ceo_briefing_job,
+        time=dt_time(hour=6, minute=0, tzinfo=timezone.utc),  # 08:00 AMS (UTC+2 summer)
+        name="ceo_daily_briefing",
+    )
+
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.11.2 starting (CEO Agent + KPI tracking)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
