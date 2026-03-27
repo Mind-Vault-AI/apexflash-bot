@@ -969,13 +969,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 pass
         return
 
-    if data.startswith("confirm_sell_"):
+    # sell_tok_{mint} — user selected a token from wallet list
+    if data.startswith("sell_tok_"):
         try:
-            actual_data = data.replace("confirm_sell_", "sell_")
-            await _cb_execute_sell(query, user, context, actual_data)
-            _persist()
+            await _cb_sell_token_select(query, user, context, data)
         except Exception as e:
-            logger.error(f"Sell [{data}] error: {e}")
+            logger.error(f"Sell token select [{data}] error: {e}")
+            try:
+                await query.edit_message_text(
+                    "\u26a0\ufe0f Error. Use /start to return.",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+        return
+
+    # sel_{pct}_{mint} — show sell preview/confirmation screen
+    if data.startswith("sel_"):
+        try:
+            await _cb_preview_sell(query, user, context, data)
+        except Exception as e:
+            logger.error(f"Sell preview [{data}] error: {e}")
             try:
                 await query.edit_message_text(
                     "\u26a0\ufe0f Trade failed. Use /start to return.",
@@ -985,11 +999,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 pass
         return
 
-    if data.startswith("sell_"):
+    # csel_{pct}_{mint} — confirmed, execute the sell
+    if data.startswith("csel_"):
         try:
-            await _cb_preview_sell(query, user, context, data)
+            await _cb_execute_sell(query, user, context, data)
+            _persist()
         except Exception as e:
-            logger.error(f"Sell preview [{data}] error: {e}")
+            logger.error(f"Sell execute [{data}] error: {e}")
             try:
                 await query.edit_message_text(
                     "\u26a0\ufe0f Trade failed. Use /start to return.",
@@ -2395,11 +2411,10 @@ async def _cb_trade_sell(query, user, context):
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
-        "Your tokens:\n\n"
+        "Select a token to sell:\n"
     )
 
-    # Store first sellable token for quick sell
-    first_token = None
+    kb = []
     for t in tokens[:8]:
         token_name = None
         for sym, info in COMMON_TOKENS.items():
@@ -2407,30 +2422,9 @@ async def _cb_trade_sell(query, user, context):
                 token_name = sym
                 break
         display = token_name or f"{t['mint'][:8]}..."
-        text += f"\u2022 *{display}:* {t['amount']:,.4f}\n"
-        if first_token is None:
-            first_token = t
+        label = f"\U0001f534 {display} \u2014 {t['amount']:,.4f}"
+        kb.append([InlineKeyboardButton(label, callback_data=f"sell_tok_{t['mint']}")])
 
-    text += (
-        "\n"
-        "To sell: paste the token mint address\n"
-        "and I'll detect it as a sell.\n"
-        "\n"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-    )
-
-    kb = []
-    # Quick sell buttons for first token
-    if first_token:
-        context.user_data["sell_mint"] = first_token["mint"]
-        context.user_data["sell_amount_raw"] = first_token["raw_amount"]
-        context.user_data["sell_decimals"] = first_token["decimals"]
-        kb.append([
-            InlineKeyboardButton("Sell 25%", callback_data="sell_25"),
-            InlineKeyboardButton("Sell 50%", callback_data="sell_50"),
-            InlineKeyboardButton("Sell 100%", callback_data="sell_100"),
-        ])
     kb.append([InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")])
     kb.append([_back_main()[0]])
 
@@ -2805,21 +2799,20 @@ async def _cb_preview_sell(query, user, context, data):
         )
         return
 
-    sell_mint = context.user_data.get("sell_mint")
-    sell_amount_raw = context.user_data.get("sell_amount_raw", "0")
-    if not sell_mint:
+    # data format: sel_25_{mint}, sel_50_{mint}, sel_100_{mint}
+    try:
+        _, pct_str, sell_mint = data.split("_", 2)
+        pct_label = int(pct_str)
+    except Exception:
         await query.edit_message_text(
-            "\u26a0\ufe0f No token selected.",
+            "\u26a0\ufe0f Invalid sell request.",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
             parse_mode="Markdown",
         )
         return
 
-    pct_map = {"sell_25": 25, "sell_50": 50, "sell_100": 100}
-    pct_label = pct_map.get(data, 100)
-
     # Find token name
-    token_name = "Token"
+    token_name = f"{sell_mint[:8]}..."
     for sym, info in COMMON_TOKENS.items():
         if info["mint"] == sell_mint:
             token_name = sym
@@ -2843,11 +2836,41 @@ async def _cb_preview_sell(query, user, context, data):
     kb = [
         [InlineKeyboardButton(
             f"\u2705 Confirm Sell {pct_label}%",
-            callback_data=f"confirm_{data}",
+            callback_data=f"csel_{pct_str}_{sell_mint}",
         )],
-        [InlineKeyboardButton("\u274c Cancel", callback_data="trade")],
+        [InlineKeyboardButton("\u274c Cancel", callback_data="trade_sell")],
     ]
 
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+async def _cb_sell_token_select(query, user, context, data):
+    """User tapped a token to sell. data = sell_tok_{mint}"""
+    mint = data[9:]  # strip "sell_tok_"
+    token_name = None
+    for sym, info in COMMON_TOKENS.items():
+        if info["mint"] == mint:
+            token_name = sym
+            break
+    display = token_name or f"{mint[:8]}..."
+
+    text = (
+        f"\U0001f534 *Sell {display}*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "How much do you want to sell?\n"
+    )
+    kb = [
+        [
+            InlineKeyboardButton("Sell 25%", callback_data=f"sel_25_{mint}"),
+            InlineKeyboardButton("Sell 50%", callback_data=f"sel_50_{mint}"),
+            InlineKeyboardButton("Sell 100%", callback_data=f"sel_100_{mint}"),
+        ],
+        [InlineKeyboardButton("\u25c0 Back", callback_data="trade_sell")],
+    ]
     await query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
     )
@@ -3207,7 +3230,7 @@ async def _cb_execute_buy(query, user, context, data):
 
 
 async def _cb_execute_sell(query, user, context, data):
-    """Execute a sell order. data = sell_25, sell_50, sell_100"""
+    """Execute a sell order. data = csel_{pct}_{mint}"""
     if not user.get("wallet_pubkey") or not user.get("wallet_secret_enc"):
         await query.edit_message_text(
             "\u26a0\ufe0f No wallet found.",
@@ -3216,11 +3239,28 @@ async def _cb_execute_sell(query, user, context, data):
         )
         return
 
-    sell_mint = context.user_data.get("sell_mint")
-    sell_amount_raw = context.user_data.get("sell_amount_raw", "0")
-    if not sell_mint:
+    # Parse mint and pct from callback_data (no user_data dependency)
+    try:
+        _, pct_str, sell_mint = data.split("_", 2)
+        pct = int(pct_str) / 100.0
+    except Exception:
         await query.edit_message_text(
-            "\u26a0\ufe0f No token selected for selling.",
+            "\u26a0\ufe0f Invalid sell request.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    await query.edit_message_text(
+        "\u23f3 *Fetching token balance...*", parse_mode="Markdown",
+    )
+
+    # Fresh balance fetch — always accurate even after bot restarts
+    tokens = await get_token_balances(user["wallet_pubkey"])
+    token_info = next((t for t in tokens if t["mint"] == sell_mint), None)
+    if not token_info:
+        await query.edit_message_text(
+            "\u26a0\ufe0f Token not found in wallet.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("\U0001f4b8 Sell Token", callback_data="trade_sell")],
                 [_back_main()[0]],
@@ -3229,10 +3269,7 @@ async def _cb_execute_sell(query, user, context, data):
         )
         return
 
-    # Calculate sell amount based on percentage
-    pct_map = {"sell_25": 0.25, "sell_50": 0.50, "sell_100": 1.0}
-    pct = pct_map.get(data, 1.0)
-    raw_total = int(sell_amount_raw)
+    raw_total = int(token_info["raw_amount"])
     sell_raw = int(raw_total * pct)
 
     if sell_raw <= 0:
