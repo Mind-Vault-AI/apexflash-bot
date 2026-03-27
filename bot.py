@@ -6281,7 +6281,24 @@ def main() -> None:
         name="ceo_daily_briefing",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.11.2 starting (CEO Agent + KPI tracking)...")
+    # ── War Watch: geopolitical news scanner (every 10 min) ───────────────────
+    async def war_watch_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        try:
+            from news_scanner import scan_once
+            signals = await scan_once(bot=context.bot)
+            if signals:
+                logger.info(f"War Watch: {len(signals)} new signal(s) sent")
+        except Exception as e:
+            logger.error(f"War Watch job failed: {e}")
+
+    app.job_queue.run_repeating(
+        war_watch_job,
+        interval=600,   # every 10 minutes
+        first=120,      # first run 2 min after startup (let bot settle)
+        name="war_watch",
+    )
+
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.11.5 starting (War Watch + CEO Agent + KPI tracking)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
