@@ -3518,6 +3518,19 @@ async def _cb_execute_sell(query, user, context, data):
                 if p.get("mint") != sell_mint:
                     updated_positions.append(p)  # different token — keep
                     continue
+                # Track P&L for win rate KPI (manual sell)
+                try:
+                    entry_sol = float(p.get("entry_sol", 0))
+                    if entry_sol > 0 and pct >= 1.0:
+                        pnl_sol = sol_received - entry_sol
+                        pnl_pct = (pnl_sol / entry_sol) * 100
+                        from persistence import record_trade_result
+                        record_trade_result(
+                            query.from_user.id, sell_token_name, pnl_pct, pnl_sol,
+                            signal_grade=p.get("signal_grade", ""),
+                        )
+                except Exception:
+                    pass
                 if pct >= 1.0:
                     # 100% sell → remove position entirely
                     logger.info(f"Position removed after 100% manual sell: user={query.from_user.id} token={sell_token_name}")
@@ -5615,7 +5628,7 @@ async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             f"Trades today: {platform_stats.get('trades_today', 0)} | "
             f"Total: {platform_stats.get('trades_total', 0)}\n"
             f"{_env_status}\n"
-            f"v3.12.2"
+            f"v3.12.3"
         )
         for admin_id in ADMIN_IDS:
             try:
@@ -6673,7 +6686,7 @@ def main() -> None:
         name="inspector_gadget",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.12.2 starting (War Watch + CEO Agent + KPI grade tracking)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.12.3 starting (War Watch + CEO Agent + KPI grade tracking)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
@@ -6715,7 +6728,7 @@ def main() -> None:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT v3.12.2 is LIVE*\n\n"
+                        "\u26a1 *ApexFlash MEGA BOT v3.12.3 is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"
