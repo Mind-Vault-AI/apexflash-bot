@@ -117,31 +117,40 @@ async def get_sol_balance(pubkey: str) -> float | None:
 
 
 async def get_token_balances(pubkey: str) -> list[dict]:
-    """Get all SPL token balances for a wallet."""
-    try:
-        data = await _rpc("getTokenAccountsByOwner", [
-            pubkey,
-            {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
-            {"encoding": "jsonParsed"},
-        ])
-        accounts = data.get("result", {}).get("value", [])
-        tokens = []
-        for acc in accounts:
-            info = (acc.get("account", {}).get("data", {})
-                    .get("parsed", {}).get("info", {}))
-            ta = info.get("tokenAmount", {})
-            amount = float(ta.get("uiAmount", 0) or 0)
-            if amount > 0:
-                tokens.append({
-                    "mint": info.get("mint", ""),
-                    "amount": amount,
-                    "decimals": ta.get("decimals", 0),
-                    "raw_amount": ta.get("amount", "0"),
-                })
-        return tokens
-    except Exception as e:
-        logger.error(f"Token balances error: {e}")
-        return []
+    """Get all SPL token balances for a wallet.
+    Checks BOTH Token Program (legacy) AND Token2022 Program (modern memecoins).
+    """
+    TOKEN_PROGRAMS = [
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",   # SPL Token (legacy)
+        "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",   # Token2022 (modern)
+    ]
+    tokens = []
+    seen_mints = set()
+    for program_id in TOKEN_PROGRAMS:
+        try:
+            data = await _rpc("getTokenAccountsByOwner", [
+                pubkey,
+                {"programId": program_id},
+                {"encoding": "jsonParsed"},
+            ])
+            accounts = data.get("result", {}).get("value", [])
+            for acc in accounts:
+                info = (acc.get("account", {}).get("data", {})
+                        .get("parsed", {}).get("info", {}))
+                ta = info.get("tokenAmount", {})
+                amount = float(ta.get("uiAmount", 0) or 0)
+                mint = info.get("mint", "")
+                if amount > 0 and mint and mint not in seen_mints:
+                    seen_mints.add(mint)
+                    tokens.append({
+                        "mint": mint,
+                        "amount": amount,
+                        "decimals": ta.get("decimals", 0),
+                        "raw_amount": ta.get("amount", "0"),
+                    })
+        except Exception as e:
+            logger.error(f"Token balances error (program {program_id[:8]}...): {e}")
+    return tokens
 
 
 async def send_raw_transaction(signed_tx_b64: str) -> str | None:
