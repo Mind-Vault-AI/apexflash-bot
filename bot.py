@@ -6361,6 +6361,84 @@ async def cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 # ══════════════════════════════════════════════
+# INSPECTOR GADGET — ADMIN COMMANDS
+# ══════════════════════════════════════════════
+
+async def cmd_addwallet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: /addwallet <address> [label] — add an alpha wallet to track."""
+    uid = update.effective_user.id
+    if uid not in ADMIN_IDS:
+        await update.message.reply_text("⛔ Admin only.")
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "Usage: `/addwallet <solana_address> [label]`\n"
+            "Example: `/addwallet 7xKX... CryptoGodJohn`",
+            parse_mode="Markdown",
+        )
+        return
+
+    address = args[0].strip()
+    label = " ".join(args[1:]).strip() if len(args) > 1 else address[:8] + "..."
+
+    # Basic Solana address validation (base58, 32-44 chars)
+    if not (32 <= len(address) <= 44):
+        await update.message.reply_text("❌ Invalid Solana address length.")
+        return
+
+    try:
+        from inspector_agent import add_alpha_wallet, get_alpha_wallets
+        add_alpha_wallet(address, label)
+        wallets = get_alpha_wallets()
+        await update.message.reply_text(
+            f"✅ *Alpha wallet added*\n"
+            f"Label: `{label}`\n"
+            f"Address: `{address}`\n"
+            f"Total tracked: {len(wallets)}",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"cmd_addwallet error: {e}")
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def cmd_list_wallets(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: /wallets — list all tracked alpha wallets."""
+    uid = update.effective_user.id
+    if uid not in ADMIN_IDS:
+        await update.message.reply_text("⛔ Admin only.")
+        return
+
+    try:
+        from inspector_agent import get_alpha_wallets
+        wallets = get_alpha_wallets()
+        if not wallets:
+            await update.message.reply_text("No alpha wallets tracked yet.\nUse `/addwallet <address> [label]`")
+            return
+
+        lines = ["🕵️ *Inspector Gadget — Tracked Wallets*\n━━━━━━━━━━━━━━━━━━━━━\n"]
+        for i, (addr, label) in enumerate(wallets.items(), 1):
+            short = addr[:6] + "..." + addr[-4:]
+            lines.append(f"{i}. *{label}*\n   `{short}`")
+
+        text = "\n".join(lines)
+        kb = [[InlineKeyboardButton(
+            "🔍 View on Solscan",
+            url=f"https://solscan.io/account/{list(wallets.keys())[0]}",
+        )]]
+        await update.message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"cmd_list_wallets error: {e}")
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+# ══════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════
 
@@ -6421,6 +6499,8 @@ def main() -> None:
     app.add_handler(CommandHandler("promos", cmd_deals))  # alias
     app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
     app.add_handler(CommandHandler("top", cmd_leaderboard))  # alias
+    app.add_handler(CommandHandler("addwallet", cmd_addwallet))    # Inspector: add alpha wallet
+    app.add_handler(CommandHandler("wallets", cmd_list_wallets))   # Inspector: list tracked wallets
 
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))
@@ -6514,6 +6594,71 @@ def main() -> None:
         interval=600,   # every 10 minutes
         first=120,      # first run 2 min after startup (let bot settle)
         name="war_watch",
+    )
+
+    # ── Inspector Gadget: Alpha wallet copy-trade intelligence (every 60s) ─────
+    async def _inspector_copy_signal(signal: dict) -> None:
+        """Callback: broadcast Inspector copy-trade signal to all alert subscribers."""
+        try:
+            from inspector_agent import format_inspector_signal
+            text = format_inspector_signal(signal)
+            mint = signal["mint"]
+
+            kb = [
+                [InlineKeyboardButton(
+                    "⚡ Copy Trade Now",
+                    url=f"https://t.me/ApexFlashBot?start=buy_{mint}",
+                )],
+                [InlineKeyboardButton("📊 Chart", url=f"https://dexscreener.com/solana/{mint}")],
+            ]
+
+            # Send to Erik + all admin (signal test phase first)
+            for admin_id in ADMIN_IDS:
+                try:
+                    await app.bot.send_message(
+                        chat_id=admin_id,
+                        text=text,
+                        reply_markup=InlineKeyboardMarkup(kb),
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    pass
+
+            # Also post to alert subscribers (same as whale alerts)
+            for uid, udata in list(users.items()):
+                if not udata.get("alerts_on"):
+                    continue
+                try:
+                    await app.bot.send_message(
+                        chat_id=uid,
+                        text=text,
+                        reply_markup=InlineKeyboardMarkup(kb),
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.error(f"Inspector signal dispatch error: {e}")
+
+    async def inspector_gadget_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Inspector Gadget: scan alpha wallets, fire copy-trade signals."""
+        try:
+            from inspector_agent import inspector_job, register_signal_callback
+            register_signal_callback(_inspector_copy_signal)
+            results = await inspector_job(context)
+            if results:
+                logger.info(f"Inspector: {len(results)} signal(s) fired")
+        except Exception as e:
+            logger.error(f"Inspector job failed: {e}")
+
+    app.job_queue.run_repeating(
+        inspector_gadget_job,
+        interval=60,   # every 60s — alpha wallets checked every minute
+        first=90,      # first run 90s after startup
+        name="inspector_gadget",
     )
 
     logger.info("\u26a1 ApexFlash MEGA BOT v3.12.0 starting (War Watch + CEO Agent + KPI grade tracking)...")
