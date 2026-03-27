@@ -5445,7 +5445,7 @@ async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             f"Trades today: {platform_stats.get('trades_today', 0)} | "
             f"Total: {platform_stats.get('trades_total', 0)}\n"
             f"{_env_status}\n"
-            f"v3.11.6"
+            f"v3.11.7"
         )
         for admin_id in ADMIN_IDS:
             try:
@@ -6357,7 +6357,7 @@ def main() -> None:
         name="war_watch",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.11.6 starting (War Watch + CEO Agent + KPI grade tracking)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.11.7 starting (War Watch + CEO Agent + KPI grade tracking)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
@@ -6399,7 +6399,7 @@ def main() -> None:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT v3.11.6 is LIVE*\n\n"
+                        "\u26a1 *ApexFlash MEGA BOT v3.11.7 is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"

@@ -78,10 +78,21 @@ def sync():
         "BITUNIX_SECRET_KEY": "fbc58430cb33733f1ea812d9b8177b39",
         "BLOFIN_API_KEY": "98f253cc41e24b468873bb9ef4edae59",
         "MIZAR_API_KEY": "798a0ea2-76b3-4d95-8904-c385d44e773e",
+        "MIZAR_REF": "apexflash",  # Mizar referral slug → https://mizar.com/?ref=apexflash
+        "MIZAR_REFERRAL_URL": "https://mizar.com/?ref=apexflash",
         # Gumroad (store)
         "GUMROAD_APP_ID": "s68lufD3NS4NsIXmjKgAoQkULPNfYplXk7zy0eZZC5s",
         "GUMROAD_APP_SECRET": "pMRriaBhp7lUXoYwC8b56DF013-BIaIRLj7Zy21VymU",
         "GUMROAD_ACCESS_TOKEN": "t_ot7v0emChcYXE5bsFvbJJFSBx_zskCgRPJqOiAssU",
+        # Twitter/X (@MindVault_ai) — marketing auto-poster (3x/day)
+        "TWITTER_API_KEY": "Wh3tVhy2uYRMIkut3cTeWpSA6",
+        "TWITTER_API_SECRET": "AxSOR42545YdqTmz4YxOUoFZCWtXECJpHrH1UPl5389kBjt1h4",
+        "TWITTER_ACCESS_TOKEN": "1959652751140388864-cADqHeQAHBijTyeHIp02TsAnhed7kH",
+        "TWITTER_ACCESS_SECRET": "W1WBiwXXHOqiapDkmG62cgFlz3aEFqxShifPLjpC23lBW",
+        "TWITTER_ENABLED": "true",
+        # OKX
+        "OKX_PASSPHRASE": "OkX_ApI=13!",
+        "OKX_ACCOUNT_ID": "797696059626980898",
     }
     for k, v in extra_keys.items():
         if k not in master:
