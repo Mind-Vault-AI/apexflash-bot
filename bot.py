@@ -5540,6 +5540,7 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         async with _aiohttp.ClientSession() as session:
             # Try DexScreener first (boosted tokens = paid promotions = high interest)
             dexscreener_tokens = []
+            _ds_seen_mints: set = set()  # dedup boosted list itself
             try:
                 async with session.get(
                     "https://api.dexscreener.com/token-boosts/top/v1",
@@ -5548,9 +5549,13 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     if ds_resp.status == 200:
                         ds_data = await ds_resp.json()
                         for item in (ds_data if isinstance(ds_data, list) else []):
-                            if item.get("chainId") == "solana" and item.get("tokenAddress"):
+                            tok_addr = item.get("tokenAddress", "")
+                            if item.get("chainId") == "solana" and tok_addr:
+                                if tok_addr in _ds_seen_mints:
+                                    continue  # skip duplicate boosted entries
+                                _ds_seen_mints.add(tok_addr)
                                 dexscreener_tokens.append({
-                                    "mint": item["tokenAddress"],
+                                    "mint": tok_addr,
                                     "symbol": item.get("description", item.get("url", ""))[:10] or "???",
                                     "source": "dexscreener",
                                     "link": item.get("url", ""),
@@ -5587,27 +5592,31 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         }
 
         # Deduplicate: one entry per unique token (highest volume pool wins)
-        seen_symbols = set()
+        # Dedup on BOTH mint AND symbol — prevents same token from multiple pools
+        seen_mints: set = set()
+        seen_syms: set = set()
         trending = []
         for pool in pools:
             tokens = pool.get("tokens", [])
             # Find the non-base token in this pool
             target_tok = None
             for tok in tokens:
-                mint = tok.get("id", "")
-                if mint not in SKIP_MINTS:
+                mint = tok.get("id", "") or tok.get("address", "")
+                if mint not in SKIP_MINTS and mint:
                     target_tok = tok
                     break
             if not target_tok:
                 continue
 
-            mint = target_tok.get("id", "")
-            symbol = target_tok.get("symbol", "???")
+            mint = target_tok.get("id", "") or target_tok.get("address", "")
+            symbol = (target_tok.get("symbol", "") or "???").strip()
             # Skip if we already have this token (by mint OR symbol)
-            dedup_key = mint
-            if dedup_key in seen_symbols:
+            if (mint and mint in seen_mints) or (symbol != "???" and symbol in seen_syms):
                 continue
-            seen_symbols.add(dedup_key)
+            if mint:
+                seen_mints.add(mint)
+            if symbol != "???":
+                seen_syms.add(symbol)
 
             pct_24h = pool.get("last_price_change_usd_24h", 0) or 0
             volume = pool.get("volume_usd", 0) or 0
