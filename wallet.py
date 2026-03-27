@@ -138,7 +138,15 @@ async def get_token_balances(pubkey: str) -> list[dict]:
                 info = (acc.get("account", {}).get("data", {})
                         .get("parsed", {}).get("info", {}))
                 ta = info.get("tokenAmount", {})
-                amount = float(ta.get("uiAmount", 0) or 0)
+                # uiAmount can be null for Token2022 tokens with certain extensions.
+                # Fall back to uiAmountString (always present as a string) before giving up.
+                ui = ta.get("uiAmount")
+                if ui is None:
+                    try:
+                        ui = float(ta.get("uiAmountString", "0") or "0")
+                    except (ValueError, TypeError):
+                        ui = 0.0
+                amount = float(ui or 0)
                 mint = info.get("mint", "")
                 if amount > 0 and mint and mint not in seen_mints:
                     seen_mints.add(mint)
