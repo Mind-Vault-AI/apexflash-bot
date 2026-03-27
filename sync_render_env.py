@@ -52,14 +52,36 @@ def sync():
     print(f"Master: {len(master)} keys loaded from {MASTER_FILE}")
 
     # Add keys that are in memory but not in Box Drive master
+    # SESSION 23 AUDIT — alle verdwaalde keys gevonden en gecentraliseerd (27-03-2026)
     extra_keys = {
-        "FEE_COLLECT_WALLET": "4LKQGKyjhCpVm7TAnDRtR5dPNExEhSADNCumvZjiuYWi",
+        # Wallets
+        "FEE_COLLECT_WALLET": "4LKQGKyjhCpVm7TAnDRtR5dPNExEhSADNCumvZjiuYWi",  # HOT wallet
+        "PHANTOM_WALLET_MVAI": "3zSWHK9NZdSd6fcAy6AK4VyVrwuKERo27B26Dk5yEEnX",  # @MVAIphantomP1
+        # Affiliate ref codes
         "GATE_REF": "VFFHXVFDUG",
+        "BITUNIX_REF": "xc6jzk",
+        "MEXC_REF": "BPM0e8Rm",
+        "BLOFIN_REF": "b996a0111c1b4497b53d9b3cc82e4539",
+        # AI / LLM keys
         "GEMINI_API_KEY": "AIzaSyAtG0vWvL91DmYEZxG42fELXyPZms29HHI",
+        "DEEPSEEK_API_KEY": "sk-e8d8d36841c340409f10ec61dc23eb84",
+        "NEBIUS_API_KEY": "v1.CmQKHHN0YXRpY2tleS1lMDByaDlneDZlNWtheXBjMzISIXNlcnZpY2VhY2NvdW50LWUwMGIyZWUzdzdhMHczbnExdDIMCIWKls4GEJWA4q0COgwIhY2umQcQwPqmvQFAAloDZTAw.AAAAAAAAAAHJdVt_9i-e7TBnmnWZd_uDaigARH4gk6s2YuNVXpdP9gBRQ3HRjFWfIxdXI8v1e6h_5MOPBzgf3xnonV8KjzYF",
+        # Discord
         "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/1486870373684482219/Fauj_qcE21v0ET1CLQWbJtY51LJniY_gj7WDRLRn3PhIIZkv8wVtaBnNxfubIERzka5E",
         "DISCORD_TRADE_WEBHOOK_URL": "https://discord.com/api/webhooks/1486870373684482219/Fauj_qcE21v0ET1CLQWbJtY51LJniY_gj7WDRLRn3PhIIZkv8wVtaBnNxfubIERzka5E",
+        # News / War Watch
         "NEWSAPI_KEY": "e46681a31870410fbc7413806a291acf",
         "CRYPTOPANIC_KEY": "90ff9f69c0127be870180348125c7e71293d3bd9",
+        # DEX / Trading APIs
+        "JUPITER_API_KEY": "42213fab-4b29-4ef2-a7e4-76b12a0276ff",  # Jupiter Solana DEX
+        "BITUNIX_API_KEY": "7a7d1dbaa93de7e85dd2635228b2bbdd",
+        "BITUNIX_SECRET_KEY": "fbc58430cb33733f1ea812d9b8177b39",
+        "BLOFIN_API_KEY": "98f253cc41e24b468873bb9ef4edae59",
+        "MIZAR_API_KEY": "798a0ea2-76b3-4d95-8904-c385d44e773e",
+        # Gumroad (store)
+        "GUMROAD_APP_ID": "s68lufD3NS4NsIXmjKgAoQkULPNfYplXk7zy0eZZC5s",
+        "GUMROAD_APP_SECRET": "pMRriaBhp7lUXoYwC8b56DF013-BIaIRLj7Zy21VymU",
+        "GUMROAD_ACCESS_TOKEN": "t_ot7v0emChcYXE5bsFvbJJFSBx_zskCgRPJqOiAssU",
     }
     for k, v in extra_keys.items():
         if k not in master:
