@@ -2473,15 +2473,23 @@ async def _cb_trade_sell(query, user, context):
     tokens = await get_token_balances(user["wallet_pubkey"])
 
     if not tokens:
+        pubkey = user["wallet_pubkey"]
+        short = pubkey[:20]
         await query.edit_message_text(
             "\U0001f4b8 *Sell Tokens*\n"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
             "\n"
-            "No tokens found in your wallet.\n"
-            "Buy some tokens first!\n",
+            "\u26a0\ufe0f No tokens found in your bot wallet.\n\n"
+            f"\U0001f510 *Bot wallet:*\n`{pubkey}`\n\n"
+            "Steps to get tokens:\n"
+            "1\ufe0f\u20e3 Send SOL to the address above\n"
+            "2\ufe0f\u20e3 Use Trade \u2192 Buy to purchase a token\n"
+            "3\ufe0f\u20e3 Come back here to sell\n\n"
+            "_Your Phantom wallet is separate \u2014 the bot uses its own wallet._",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("\U0001f4b5 Buy Token", callback_data="trade_buy")],
+                [InlineKeyboardButton("\U0001f4cb Copy Address", callback_data=f"copy_addr_{pubkey}")],
                 [_back_main()[0]],
             ]),
             parse_mode="Markdown",
@@ -5603,7 +5611,7 @@ async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             f"Trades today: {platform_stats.get('trades_today', 0)} | "
             f"Total: {platform_stats.get('trades_total', 0)}\n"
             f"{_env_status}\n"
-            f"v3.12.0"
+            f"v3.12.1"
         )
         for admin_id in ADMIN_IDS:
             try:
@@ -6661,7 +6669,7 @@ def main() -> None:
         name="inspector_gadget",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.12.0 starting (War Watch + CEO Agent + KPI grade tracking)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.12.1 starting (War Watch + CEO Agent + KPI grade tracking)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
@@ -6703,7 +6711,7 @@ def main() -> None:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT v3.12.0 is LIVE*\n\n"
+                        "\u26a1 *ApexFlash MEGA BOT v3.12.1 is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"

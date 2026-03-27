@@ -93,6 +93,8 @@ def sync():
         # OKX
         "OKX_PASSPHRASE": "OkX_ApI=13!",
         "OKX_ACCOUNT_ID": "797696059626980898",
+        # Safety cap for test trades (0 = disabled in production, set >0 to cap all buys)
+        "TEST_TRADE_SOL": "0.001",
     }
     for k, v in extra_keys.items():
         if k not in master:
