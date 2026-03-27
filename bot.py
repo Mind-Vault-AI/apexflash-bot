@@ -1844,10 +1844,16 @@ async def _cb_sl_select_start(query, user, context):
         f"🔴 *Set Stop Loss for {token}*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n\n"
         "Auto-sell if your position drops by:\n\n"
+        "• -3% → scalp (tight)\n"
+        "• -5% → scalp (loose)\n"
         "• -10% → conservative\n"
         "• -15% → balanced\n"
         "• -25% → aggressive\n",
         reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("-3% 🎯", callback_data="sl_3"),
+                InlineKeyboardButton("-5% ⚡", callback_data="sl_5"),
+            ],
             [
                 InlineKeyboardButton("-10%", callback_data="sl_10"),
                 InlineKeyboardButton("-15%", callback_data="sl_15"),
@@ -1871,7 +1877,7 @@ async def _cb_sl_select(query, user, context):
         )
         return
 
-    sl_map = {"sl_10": 10, "sl_15": 15, "sl_25": 25, "sl_none": 0}
+    sl_map = {"sl_3": 3, "sl_5": 5, "sl_10": 10, "sl_15": 15, "sl_25": 25, "sl_none": 0}
     sl_pct = sl_map.get(data, 0)
     context.user_data["pending_sl"] = sl_pct
 
@@ -3402,6 +3408,35 @@ async def _cb_execute_sell(query, user, context, data):
             )
         except Exception:
             pass
+
+        # ── CRITICAL: Sync active_positions after manual sell ──
+        # Without this, SL monitor keeps monitoring a sold position and
+        # tries to sell tokens that no longer exist.
+        try:
+            positions = user.get("active_positions", [])
+            updated_positions = []
+            for p in positions:
+                if p.get("mint") != sell_mint:
+                    updated_positions.append(p)  # different token — keep
+                    continue
+                if pct >= 1.0:
+                    # 100% sell → remove position entirely
+                    logger.info(f"Position removed after 100% manual sell: user={query.from_user.id} token={sell_token_name}")
+                else:
+                    # Partial sell → update remaining raw amount
+                    original_raw = int(p.get("token_amount_raw", 0))
+                    remaining_raw = original_raw - sell_raw
+                    if remaining_raw > 0:
+                        p["token_amount_raw"] = str(remaining_raw)
+                        updated_positions.append(p)
+                        logger.info(f"Position updated after {pct_label} sell: remaining_raw={remaining_raw}")
+                    else:
+                        logger.info(f"Position removed (0 remaining): user={query.from_user.id} token={sell_token_name}")
+            user["active_positions"] = updated_positions
+            _persist()
+        except Exception as pos_err:
+            logger.warning(f"Position sync after sell failed (non-fatal): {pos_err}")
+
     else:
         reason = swap_err or "Unknown error"
         text = (
@@ -5445,7 +5480,7 @@ async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             f"Trades today: {platform_stats.get('trades_today', 0)} | "
             f"Total: {platform_stats.get('trades_total', 0)}\n"
             f"{_env_status}\n"
-            f"v3.11.7"
+            f"v3.11.9"
         )
         for admin_id in ADMIN_IDS:
             try:
@@ -6309,9 +6344,10 @@ def main() -> None:
         heartbeat_job, interval=3600, first=120, name="heartbeat",
     )
 
-    # SL/TP monitor — checks positions every 30s for stop loss / take profit triggers
+    # SL/TP monitor — checks positions every 15s for stop loss / take profit triggers
+    # Fast enough for scalping (-3% SL can trigger quickly)
     app.job_queue.run_repeating(
-        sl_tp_monitor_job, interval=30, first=60, name="sl_tp_monitor",
+        sl_tp_monitor_job, interval=15, first=60, name="sl_tp_monitor",
     )
 
     # Marketing auto-poster — repeating every 4 hours (survives restarts!)
@@ -6357,7 +6393,7 @@ def main() -> None:
         name="war_watch",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.11.7 starting (War Watch + CEO Agent + KPI grade tracking)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.11.9 starting (War Watch + CEO Agent + KPI grade tracking)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
@@ -6399,7 +6435,7 @@ def main() -> None:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT v3.11.7 is LIVE*\n\n"
+                        "\u26a1 *ApexFlash MEGA BOT v3.11.9 is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"
