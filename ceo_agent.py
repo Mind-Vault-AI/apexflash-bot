@@ -36,6 +36,7 @@ ERIK_TELEGRAM_ID = 7851853521
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 UPSTASH_REDIS_URL = os.getenv("UPSTASH_REDIS_URL", "")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 
 AMS = ZoneInfo("Europe/Amsterdam")
 
@@ -444,6 +445,94 @@ async def handle_ceo_callback(query, context) -> None:
         )
 
 
+# ── Discord Briefing ──────────────────────────────────────────────────────────
+
+async def send_discord_briefing(kpis: dict, priorities: dict) -> bool:
+    """Mirror CEO briefing to Discord #apexflash channel as a rich embed."""
+    if not DISCORD_WEBHOOK_URL:
+        logger.debug("CEO Agent: DISCORD_WEBHOOK_URL not set — skipping Discord")
+        return False
+
+    try:
+        import aiohttp
+    except ImportError:
+        logger.warning("CEO Agent: aiohttp not available — Discord skipped")
+        return False
+
+    now_ams = datetime.now(AMS)
+    date_str = now_ams.strftime("%d %b %Y")
+
+    users = kpis.get("users", {}).get("total", 0)
+    wr = kpis.get("trades", {}).get("win_rate_pct", 0)
+    trades_today = kpis.get("trades", {}).get("today", 0)
+    conv = kpis.get("funnel", {}).get("conversion_pct", 0)
+    aff = kpis.get("affiliate", {}).get("total_clicks", 0)
+    on_track = priorities.get("on_track", False)
+    revenue = priorities.get("revenue_mtd_eur", 0)
+    critical_items = priorities.get("critical", [])
+    growth_items = priorities.get("growth", [])
+
+    status_color = 0x00CC66 if on_track else 0xFF4444
+
+    fields = [
+        {"name": "👥 Users", "value": f"**{users:,}**", "inline": True},
+        {"name": "📈 Win Rate", "value": f"**{wr}%**" if wr > 0 else "🔴 geen data", "inline": True},
+        {"name": "🔄 Trades vandaag", "value": str(trades_today), "inline": True},
+        {"name": "💸 Paid Conversie", "value": f"{conv}%" if conv > 0 else "🔴 niet gemeten", "inline": True},
+        {"name": "🔗 Affiliate Clicks", "value": str(aff), "inline": True},
+        {"name": "💰 Revenue MTD", "value": f"€{revenue}", "inline": True},
+    ]
+
+    if critical_items:
+        fields.append({
+            "name": "🔴 KRITIEK",
+            "value": "\n".join(f"• {c}" for c in critical_items[:2]),
+            "inline": False,
+        })
+
+    if growth_items:
+        fields.append({
+            "name": "🟢 GROEI",
+            "value": "\n".join(f"• {g}" for g in growth_items[:2]),
+            "inline": False,
+        })
+
+    embed = {
+        "title": f"🤖 ApexFlash CEO Briefing — {date_str}",
+        "description": priorities.get("one_liner", "—"),
+        "color": status_color,
+        "fields": fields,
+        "footer": {"text": "ApexFlash CEO Agent TIER 1 | apexflash.pro"},
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+
+    payload = {
+        "content": (
+            f"📊 **Daily CEO Briefing** | "
+            f"{'✅ Op schema' if on_track else '❌ Achter op target'} | "
+            f"Maand 6 target: 12,000 users"
+        ),
+        "embeds": [embed],
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                DISCORD_WEBHOOK_URL,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status in (200, 204):
+                    logger.info("CEO Agent: Discord briefing posted ✅")
+                    return True
+                body = await resp.text()
+                logger.warning(f"CEO Agent Discord: {resp.status} — {body[:200]}")
+                return False
+    except Exception as e:
+        logger.error(f"CEO Agent: Discord send failed: {e}")
+        return False
+
+
 # ── Scheduler Entry Point ─────────────────────────────────────────────────────
 
 async def run_briefing() -> None:
@@ -453,6 +542,7 @@ async def run_briefing() -> None:
         kpis = collect_kpis()
         priorities = gemini_prioritise(kpis)
         success = await send_briefing(kpis, priorities)
+        await send_discord_briefing(kpis, priorities)  # Mirror to Discord #apexflash
 
         # Log run to Redis for audit trail
         r = _get_redis()

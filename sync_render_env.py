@@ -56,6 +56,8 @@ def sync():
         "FEE_COLLECT_WALLET": "4LKQGKyjhCpVm7TAnDRtR5dPNExEhSADNCumvZjiuYWi",
         "GATE_REF": "VFFHXVFDUG",
         "GEMINI_API_KEY": "AIzaSyAtG0vWvL91DmYEZxG42fELXyPZms29HHI",
+        "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/1486870373684482219/Fauj_qcE21v0ET1CLQWbJtY51LJniY_gj7WDRLRn3PhIIZkv8wVtaBnNxfubIERzka5E",
+        "DISCORD_TRADE_WEBHOOK_URL": "https://discord.com/api/webhooks/1486870373684482219/Fauj_qcE21v0ET1CLQWbJtY51LJniY_gj7WDRLRn3PhIIZkv8wVtaBnNxfubIERzka5E",
     }
     for k, v in extra_keys.items():
         if k not in master:
