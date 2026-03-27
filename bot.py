@@ -871,7 +871,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     # Handle search result callbacks — user tapped a token from search
     if data.startswith("search_"):
-        mint = data[7:]  # Remove "search_" prefix
+        raw = data[7:]  # Remove "search_" prefix
+        # Grade may be encoded as "MINT:GRADE" (from signal alerts)
+        if ":" in raw:
+            mint, sig_grade = raw.split(":", 1)
+        else:
+            mint, sig_grade = raw, ""
+        context.user_data["target_signal_grade"] = sig_grade  # propagate to buy flow
         # Look up full token info and show buy buttons directly
         token_info = await get_token_info(mint)
         if token_info and token_info.get("symbol"):
@@ -1775,7 +1781,8 @@ _sl_tp_lock = False  # prevents overlapping monitor cycles
 
 async def _ask_sl_tp(chat_id, user, context, bot,
                      mint: str, token_name: str, entry_sol: float,
-                     token_amount_raw: str, token_decimals: int, tx_sig: str):
+                     token_amount_raw: str, token_decimals: int, tx_sig: str,
+                     signal_grade: str = ""):
     """After a successful buy, ask user if they want SL/TP protection."""
     # Store pending position data in context for the callbacks
     context.user_data["pending_position"] = {
@@ -1785,6 +1792,7 @@ async def _ask_sl_tp(chat_id, user, context, bot,
         "token_amount_raw": token_amount_raw,
         "token_decimals": token_decimals,
         "buy_tx": tx_sig,
+        "signal_grade": signal_grade,  # A/B/C/D — for win rate KPI breakdown
     }
 
     await bot.send_message(
@@ -1916,6 +1924,7 @@ async def _cb_tp_select(query, user, context):
         "tp_pct": tp_pct,
         "created": datetime.now(timezone.utc).isoformat(),
         "buy_tx": pending.get("buy_tx", ""),
+        "signal_grade": pending.get("signal_grade", ""),  # A/B/C/D — win rate tracking
     }
 
     if "active_positions" not in user:
@@ -2214,7 +2223,10 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                     # Track win rate (critical for marketing + trust)
                     try:
                         from persistence import record_trade_result
-                        record_trade_result(chat_id, pos["token"], pnl_pct, pnl_sol)
+                        record_trade_result(
+                            chat_id, pos["token"], pnl_pct, pnl_sol,
+                            signal_grade=pos.get("signal_grade", ""),
+                        )
                     except Exception:
                         pass
 
@@ -3170,6 +3182,7 @@ async def _cb_execute_buy(query, user, context, data):
                 token_amount_raw=str(out_amount),
                 token_decimals=token_decimals,
                 tx_sig=tx_sig,
+                signal_grade=context.user_data.get("target_signal_grade", ""),
             )
         except Exception as sltp_err:
             logger.warning(f"SL/TP prompt failed (non-fatal): {sltp_err}")
@@ -5473,7 +5486,7 @@ async def scalper_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                         kb = InlineKeyboardMarkup([[
                             InlineKeyboardButton(
                                 f"⚡ Trade {sig['symbol']}",
-                                callback_data=f"search_{sig['symbol']}",
+                                callback_data=f"search_{sig['symbol']}:{grade}",
                             )
                         ]])
                         await context.bot.send_message(
