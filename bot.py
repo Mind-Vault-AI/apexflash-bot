@@ -44,7 +44,7 @@ from config import (
     FEE_COLLECT_WALLET, REFERRAL_FEE_SHARE_PCT,
     TRADING_ENABLED, MAX_TRADE_SOL, MIN_SOL_RESERVE,
     MAX_SLIPPAGE_BPS, DEFAULT_SLIPPAGE_BPS,
-    PRICE_IMPACT_WARN_PCT, MAX_DAILY_TRADES,
+    PRICE_IMPACT_WARN_PCT, MAX_DAILY_TRADES, TEST_TRADE_SOL,
     TWITTER_API_KEY, TWITTER_API_SECRET,
     TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET,
     TWITTER_ENABLED, ALERT_CHANNEL_ID,
@@ -798,6 +798,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "admin_stats":   _cb_admin_stats,
         "admin_users":   _cb_admin_users,
         "admin_broadcast": _cb_admin_broadcast,
+        "admin_resume_signals": _cb_admin_resume_signals,
         # Withdraw
         "withdraw_start":   _cb_withdraw_start,
         "withdraw_confirm": _cb_withdraw_confirm,
@@ -2158,11 +2159,36 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
 
                 current_sol = int(quote["outAmount"]) / 1_000_000_000
 
-                # Check stop loss
-                if sl_pct > 0:
-                    sl_trigger = entry_sol * (1 - sl_pct / 100)
+                # ── Trailing SL: update peak and move SL floor up ──
+                # Logic: lock in profits as price rises.
+                #   +10% gain → SL moves to break-even (0%)
+                #   +25% gain → SL moves to +10% (never lose this)
+                #   +50% gain → SL moves to +25%
+                #   +100% gain → SL moves to +50%
+                peak_sol = pos.get("peak_sol", entry_sol)
+                if current_sol > peak_sol:
+                    pos["peak_sol"] = current_sol  # track all-time high for this position
+                    peak_sol = current_sol
+
+                gain_pct = (peak_sol / entry_sol - 1) * 100 if entry_sol > 0 else 0
+                if gain_pct >= 100:
+                    effective_sl_floor = entry_sol * 1.50   # lock in 50%
+                elif gain_pct >= 50:
+                    effective_sl_floor = entry_sol * 1.25   # lock in 25%
+                elif gain_pct >= 25:
+                    effective_sl_floor = entry_sol * 1.10   # lock in 10%
+                elif gain_pct >= 10:
+                    effective_sl_floor = entry_sol * 1.00   # break-even
+                else:
+                    effective_sl_floor = 0  # no trailing protection yet
+
+                # Check stop loss (use whichever is HIGHER: fixed SL or trailing floor)
+                if sl_pct > 0 or effective_sl_floor > 0:
+                    fixed_sl = entry_sol * (1 - sl_pct / 100) if sl_pct > 0 else 0
+                    sl_trigger = max(fixed_sl, effective_sl_floor)
                     if current_sol <= sl_trigger:
-                        triggered.append((chat_id, user, pos_index, pos, "SL", current_sol))
+                        trigger_label = "TRAIL_SL" if effective_sl_floor > fixed_sl else "SL"
+                        triggered.append((chat_id, user, pos_index, pos, trigger_label, current_sol))
                         continue  # don't also check TP
 
                 # Check take profit
@@ -2234,7 +2260,12 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                     pnl_pct = (pnl_sol / entry * 100) if entry > 0 else 0
                     pnl_emoji = "🟢" if pnl_sol >= 0 else "🔴"
 
-                    trigger_label = "🔴 STOP LOSS" if trigger_type == "SL" else "🟢 TAKE PROFIT"
+                    if trigger_type == "TRAIL_SL":
+                        trigger_label = "🟡 TRAILING SL"
+                    elif trigger_type == "SL":
+                        trigger_label = "🔴 STOP LOSS"
+                    else:
+                        trigger_label = "🟢 TAKE PROFIT"
 
                     # Record trade
                     _record_trade(
@@ -2253,6 +2284,51 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                         pass
 
                     _persist()
+
+                    # ── CEO TIER 2: Track consecutive losses + auto-pause ──
+                    try:
+                        from persistence import _get_redis as _pr
+                        _r = _pr()
+                        if _r:
+                            if pnl_sol < 0:
+                                consec = _r.incr("winrate:consecutive_losses")
+                                logger.info(f"Consecutive losses: {consec}")
+                                # Check if auto-pause should trigger
+                                from ceo_agent import check_win_rate_and_pause
+                                pause_result = check_win_rate_and_pause()
+                                if pause_result.get("action") == "paused":
+                                    # Alert Erik via Telegram
+                                    for admin_id in ADMIN_IDS:
+                                        try:
+                                            await context.bot.send_message(
+                                                chat_id=admin_id,
+                                                text=(
+                                                    "🤖 *CEO Agent TIER 2 — ACTIE GENOMEN*\n"
+                                                    "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                                                    f"⚠️ Signals **GEPAUZEERD**\n"
+                                                    f"Reden: {pause_result.get('reason', '?')}\n"
+                                                    f"Win rate: {pause_result.get('win_rate', '?')}%\n"
+                                                    f"Trades: {pause_result.get('total_trades', '?')}\n\n"
+                                                    "Signals worden NIET meer verzonden.\n"
+                                                    "Klik hervat om handmatig te hervatten:"
+                                                ),
+                                                reply_markup=InlineKeyboardMarkup([[
+                                                    InlineKeyboardButton(
+                                                        "▶️ Hervat Signals", callback_data="admin_resume_signals"
+                                                    ),
+                                                    InlineKeyboardButton(
+                                                        "📊 Stats", callback_data="admin_stats"
+                                                    ),
+                                                ]]),
+                                                parse_mode="Markdown",
+                                            )
+                                        except Exception:
+                                            pass
+                            else:
+                                # Win: reset consecutive loss counter
+                                _r.set("winrate:consecutive_losses", "0")
+                    except Exception as pause_err:
+                        logger.debug(f"CEO pause check failed (non-fatal): {pause_err}")
 
                     # Notify user
                     await context.bot.send_message(
@@ -2473,6 +2549,15 @@ async def _cb_view_disclaimer(query, user, context):
     )
 
 
+def _apply_test_cap(sol_amount: float) -> float:
+    """If TEST_TRADE_SOL is set, cap the trade to that micro amount.
+    Prevents expensive mistakes during testing. 0 = disabled."""
+    if TEST_TRADE_SOL > 0 and sol_amount > TEST_TRADE_SOL:
+        logger.warning(f"TEST MODE: capping trade {sol_amount} SOL → {TEST_TRADE_SOL} SOL")
+        return TEST_TRADE_SOL
+    return sol_amount
+
+
 def _check_trade_allowed(user: dict, sol_amount: float = 0) -> str | None:
     """Pre-trade risk checks. Returns error message or None if OK."""
     global trading_enabled
@@ -2559,6 +2644,9 @@ async def _cb_preview_buy(query, user, context, data):
         sol_amount = amount_map.get(data)
     if not sol_amount:
         return
+
+    # Apply test cap (micro amounts for safe testing)
+    sol_amount = _apply_test_cap(sol_amount)
 
     # Risk checks
     error = _check_trade_allowed(user, sol_amount)
@@ -4891,6 +4979,31 @@ async def _cb_help_dca(query, user, context):
 
 # ══════════════════════════════════════════════
 # ADMIN SECTION
+async def _cb_admin_resume_signals(query, user, context):
+    """CEO TIER 2: Erik resumes signals after auto-pause."""
+    if not is_admin(query.from_user.id):
+        await query.answer("❌ Admin only.", show_alert=True)
+        return
+    try:
+        from persistence import _get_redis as _pr
+        _r = _pr()
+        if _r:
+            _r.set("signals:paused", "0")
+            _r.set("winrate:consecutive_losses", "0")
+        await query.edit_message_text(
+            "✅ *Signals hervat*\n\n"
+            "CEO Agent heeft de pauze opgeheven.\n"
+            "Signals worden weer verzonden.\n\n"
+            "_Consecutive loss teller gereset._",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📊 Admin Stats", callback_data="admin_stats")],
+            ]),
+        )
+    except Exception as e:
+        await query.edit_message_text(f"❌ Fout: {e}", parse_mode="Markdown")
+
+
 # ══════════════════════════════════════════════
 
 async def _cb_admin(query, user, context):
@@ -5264,6 +5377,16 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
         if not new_alerts:
             return
 
+        # ── CEO TIER 2: Check signals:paused before broadcasting ──
+        try:
+            from persistence import _get_redis as _pr
+            _r = _pr()
+            if _r and _r.get("signals:paused") == b"1":
+                logger.warning("CEO TIER 2: signals PAUSED — skipping broadcast this cycle")
+                return
+        except Exception:
+            pass  # Redis unavailable → proceed (fail open)
+
         # Broadcast to subscribers
         for user_id, user_data in list(users.items()):
             if not user_data.get("alerts_on"):
@@ -5480,7 +5603,7 @@ async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             f"Trades today: {platform_stats.get('trades_today', 0)} | "
             f"Total: {platform_stats.get('trades_total', 0)}\n"
             f"{_env_status}\n"
-            f"v3.11.9"
+            f"v3.12.0"
         )
         for admin_id in ADMIN_IDS:
             try:
@@ -6393,7 +6516,7 @@ def main() -> None:
         name="war_watch",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.11.9 starting (War Watch + CEO Agent + KPI grade tracking)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.12.0 starting (War Watch + CEO Agent + KPI grade tracking)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
@@ -6435,7 +6558,7 @@ def main() -> None:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT v3.11.9 is LIVE*\n\n"
+                        "\u26a1 *ApexFlash MEGA BOT v3.12.0 is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"

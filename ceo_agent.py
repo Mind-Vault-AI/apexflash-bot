@@ -71,6 +71,76 @@ def _redis_incr(key: str):
         return None
 
 
+def _redis_set(key: str, value: str, ex: int = None):
+    r = _get_redis()
+    if not r:
+        return None
+    try:
+        return r.set(key, value, ex=ex)
+    except Exception:
+        return None
+
+
+# ── Win Rate Auto-Pause (TIER 2) ──────────────────────────────────────────────
+
+WIN_RATE_PAUSE_THRESHOLD = 60   # Pause signals if win rate drops below this %
+WIN_RATE_MIN_TRADES = 5         # Minimum trades before auto-pause can trigger
+CONSECUTIVE_LOSS_LIMIT = 3      # Pause after N losses in a row (early warning)
+
+
+def check_win_rate_and_pause() -> dict:
+    """
+    TIER 2 autonomous action: read win rate from Redis.
+    If win rate < threshold for >= MIN_TRADES, set signals:paused=1 in Redis.
+    Returns action dict: {action: "paused"|"ok"|"skip", win_rate, total_trades}
+    """
+    r = _get_redis()
+    if not r:
+        return {"action": "skip", "reason": "no redis"}
+
+    try:
+        total = _safe_int(r.get("winrate:total_trades"))
+        wins = _safe_int(r.get("winrate:wins"))
+        consecutive_losses = _safe_int(r.get("winrate:consecutive_losses"))
+
+        if total < WIN_RATE_MIN_TRADES:
+            return {"action": "skip", "reason": f"only {total} trades, need {WIN_RATE_MIN_TRADES}"}
+
+        win_rate = round(wins / total * 100, 1) if total > 0 else 0
+
+        already_paused = _safe_int(r.get("signals:paused"))
+        if already_paused:
+            return {"action": "already_paused", "win_rate": win_rate, "total_trades": total}
+
+        # Auto-pause conditions
+        should_pause = (
+            win_rate < WIN_RATE_PAUSE_THRESHOLD or
+            consecutive_losses >= CONSECUTIVE_LOSS_LIMIT
+        )
+
+        if should_pause:
+            _redis_set("signals:paused", "1")  # no expiry — Erik must resume manually
+            reason = (
+                f"{consecutive_losses} consecutive losses"
+                if consecutive_losses >= CONSECUTIVE_LOSS_LIMIT
+                else f"win rate {win_rate}% < {WIN_RATE_PAUSE_THRESHOLD}%"
+            )
+            logger.warning(f"CEO Agent TIER 2: signals PAUSED — {reason}")
+            return {
+                "action": "paused",
+                "win_rate": win_rate,
+                "total_trades": total,
+                "consecutive_losses": consecutive_losses,
+                "reason": reason,
+            }
+
+        return {"action": "ok", "win_rate": win_rate, "total_trades": total}
+
+    except Exception as e:
+        logger.error(f"Win rate check failed: {e}")
+        return {"action": "skip", "reason": str(e)}
+
+
 def _safe_int(val, fallback: int = 0) -> int:
     if val is None:
         return fallback

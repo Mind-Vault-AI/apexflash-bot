@@ -72,6 +72,9 @@ MAX_SLIPPAGE_BPS = int(os.getenv("MAX_SLIPPAGE_BPS", "500"))  # 5% max slippage
 DEFAULT_SLIPPAGE_BPS = int(os.getenv("DEFAULT_SLIPPAGE_BPS", "300"))  # 3% default
 PRICE_IMPACT_WARN_PCT = float(os.getenv("PRICE_IMPACT_WARN_PCT", "3.0"))  # Warn if > 3%
 MAX_DAILY_TRADES = int(os.getenv("MAX_DAILY_TRADES", "50"))  # Per user per day
+# TEST_TRADE_SOL: if > 0, ALL trades are capped at this amount (micro testing)
+# Set via Render env var: TEST_TRADE_SOL=0.001 to test with ~€0.15
+TEST_TRADE_SOL = float(os.getenv("TEST_TRADE_SOL", "0"))  # 0 = disabled (production)
 
 # === OpenAI (for AI signals - Elite tier) ===
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
