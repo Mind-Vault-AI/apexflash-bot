@@ -20,6 +20,10 @@ ETHERSCAN_API_KEY = os.getenv("ETHERSCAN_API_KEY", "")
 HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "")
 SOLSCAN_API_KEY = os.getenv("SOLSCAN_API_KEY", "")
 
+# === News / War Watch API Keys ===
+NEWSAPI_KEY = os.getenv("NEWSAPI_KEY", "")          # newsapi.org — 100 req/day free
+CRYPTOPANIC_KEY = os.getenv("CRYPTOPANIC_KEY", "")  # cryptopanic.com — 50 req/hr free
+
 # === MIZAR API ===
 MIZAR_API_KEY = os.getenv("MIZAR_API_KEY", "")
 MIZAR_BASE_URL = "https://api.mizar.com/api/v1"
