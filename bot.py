@@ -69,6 +69,7 @@ from persistence import (
     save_users, load_users, save_stats, load_stats, export_backup, import_backup,
     track_funnel, track_token_lookup, track_token_trade, track_affiliate_click,
     update_last_active, get_popular_tokens, get_funnel_stats, get_affiliate_stats,
+    track_paid_conversion, track_user_active,
 )
 from marketing import post_to_channel as marketing_post
 from twitter_poster import post_tweet as twitter_post, post_thread as twitter_post_thread, get_stats_text as twitter_stats_text
@@ -337,6 +338,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Analytics
     track_funnel("start")
     update_last_active(uid)
+    track_user_active(uid)
     if is_new_user:
         track_funnel("new_user")
 
@@ -753,6 +755,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     user_id = query.from_user.id
     user = get_user(user_id)
     user["username"] = query.from_user.username or ""
+    track_user_active(user_id)
     data = query.data
 
     routes = {
@@ -4578,6 +4581,7 @@ async def _execute_sol_payment(query, user, context, tier: str, price_sol: float
                 "\u2022 Copy Trading & DCA Bot\n"
             )
 
+        track_paid_conversion(query.from_user.id, tier)
         logger.info(f"Premium payment: user {query.from_user.id} → {tier} ({price_sol} SOL)")
 
         kb = InlineKeyboardMarkup([[_back_main()[0]]])
@@ -5611,7 +5615,7 @@ async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             f"Trades today: {platform_stats.get('trades_today', 0)} | "
             f"Total: {platform_stats.get('trades_total', 0)}\n"
             f"{_env_status}\n"
-            f"v3.12.1"
+            f"v3.12.2"
         )
         for admin_id in ADMIN_IDS:
             try:
@@ -6669,7 +6673,7 @@ def main() -> None:
         name="inspector_gadget",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.12.1 starting (War Watch + CEO Agent + KPI grade tracking)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.12.2 starting (War Watch + CEO Agent + KPI grade tracking)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
@@ -6711,7 +6715,7 @@ def main() -> None:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT v3.12.1 is LIVE*\n\n"
+                        "\u26a1 *ApexFlash MEGA BOT v3.12.2 is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"
