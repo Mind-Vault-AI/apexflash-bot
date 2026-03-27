@@ -59,6 +59,7 @@ def sync():
         "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/1486870373684482219/Fauj_qcE21v0ET1CLQWbJtY51LJniY_gj7WDRLRn3PhIIZkv8wVtaBnNxfubIERzka5E",
         "DISCORD_TRADE_WEBHOOK_URL": "https://discord.com/api/webhooks/1486870373684482219/Fauj_qcE21v0ET1CLQWbJtY51LJniY_gj7WDRLRn3PhIIZkv8wVtaBnNxfubIERzka5E",
         "NEWSAPI_KEY": "e46681a31870410fbc7413806a291acf",
+        "CRYPTOPANIC_KEY": "90ff9f69c0127be870180348125c7e71293d3bd9",
     }
     for k, v in extra_keys.items():
         if k not in master:
