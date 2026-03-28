@@ -203,8 +203,13 @@ async def check_scalp_signals() -> list[dict]:
     return signals
 
 
-def format_scalp_alert(s: dict, bot_url: str = "https://t.me/ApexFlashBot") -> str:
+def format_scalp_alert(s: dict) -> str:
     """Format a scalp signal into a Telegram HTML message."""
+    from config import ADMIN_IDS, SCALP_TOKENS
+    ref_id = ADMIN_IDS[0] if ADMIN_IDS else 0
+    mint = SCALP_TOKENS.get(s["symbol"], "")
+    bot_url = f"https://t.me/ApexFlashBot?start=buy_{mint}_ref_{ref_id}" if mint else f"https://t.me/ApexFlashBot?start=ref_{ref_id}"
+    
     grade_emoji = {"A": "🚨", "B": "⚡", "C": "👀"}.get(s["grade"], "📡")
     grade_label = {"A": "STRONG SCALP", "B": "MOMENTUM", "C": "WATCH"}.get(s["grade"], "SIGNAL")
     vol_str = (

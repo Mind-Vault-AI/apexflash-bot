@@ -101,9 +101,9 @@ def sync():
             master[k] = v
             print(f"  Added from memory: {k}")
 
-    # Updated prices (sessie 16+)
-    master["PRO_PRICE_SOL"] = "0.07"      # $9.99 at SOL=$142
-    master["ELITE_PRICE_SOL"] = "0.21"    # $29.99 at SOL=$142
+    # Updated prices (Pivot v1.0)
+    master["PRO_PRICE_SOL"] = "0.105"     # €14.99 at SOL=$142
+    master["ELITE_PRICE_SOL"] = "0.274"   # €39.00 at SOL=$142
 
     # PUT to Render
     payload = json.dumps([{"key": k, "value": v} for k, v in master.items()]).encode()

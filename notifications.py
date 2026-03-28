@@ -213,8 +213,12 @@ async def notify_channel_trade(bot, action: str, sol_amount: float,
         "🤖 Start now → @ApexFlashBot"
     )
 
+    from config import ADMIN_IDS
+    ref_id = ADMIN_IDS[0] if ADMIN_IDS else 0
+    trade_url = f"https://t.me/ApexFlashBot?start=buy_{token_mint}_ref_{ref_id}" if token_mint else f"https://t.me/ApexFlashBot?start=ref_{ref_id}"
+
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚡ Start Trading", url="https://t.me/ApexFlashBot")],
+        [InlineKeyboardButton("⚡ 1-Tap Auto-Trade", url=trade_url)],
         [InlineKeyboardButton("📊 Join Alerts", url="https://t.me/ApexFlashAlerts")],
     ])
 

@@ -237,8 +237,8 @@ GUMROAD_ELITE_URL = os.getenv("GUMROAD_ELITE_URL", "https://mindvault34.gumroad.
 GUMROAD_PRO_PRODUCT_ID = os.getenv("GUMROAD_PRO_PRODUCT_ID", "rwauqu")
 GUMROAD_ELITE_PRODUCT_ID = os.getenv("GUMROAD_ELITE_PRODUCT_ID", "unetcl")
 # In-bot SOL payment (0% processing fee — preferred!)
-PRO_PRICE_SOL = float(os.getenv("PRO_PRICE_SOL", "0.07"))    # ~$9.99 at SOL=$142
-ELITE_PRICE_SOL = float(os.getenv("ELITE_PRICE_SOL", "0.21"))  # ~$29.99 at SOL=$142
+PRO_PRICE_SOL = float(os.getenv("PRO_PRICE_SOL", "0.105"))   # ~$14.99 at SOL=$142
+ELITE_PRICE_SOL = float(os.getenv("ELITE_PRICE_SOL", "0.274")) # ~$39.00 at SOL=$142
 
 # === Twitter/X Auto-Posting ===
 # Get keys from: https://developer.x.com → Your App → Keys and tokens
@@ -320,7 +320,7 @@ TIERS = {
         "ai_signals": False,
         "copy_trade": True,
         "dca_bot": True,
-        "price": 9.99,
+        "price": 14.99,
         "gumroad_url": GUMROAD_PRO_URL,
     },
     "elite": {
@@ -332,7 +332,7 @@ TIERS = {
         "ai_signals": True,
         "copy_trade": True,
         "dca_bot": True,
-        "price": 29.99,
+        "price": 39.00,
         "gumroad_url": GUMROAD_ELITE_URL,
     },
 }
