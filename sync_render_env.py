@@ -101,9 +101,7 @@ def sync():
             master[k] = v
             print(f"  Added from memory: {k}")
 
-    # Updated prices (sessie 16+)
-    master["PRO_PRICE_SOL"] = "0.07"      # $9.99 at SOL=$142
-    master["ELITE_PRICE_SOL"] = "0.21"    # $29.99 at SOL=$142
+    # PRO_PRICE_SOL/ELITE_PRICE_SOL removed — pricing is now dynamic (live SOL/USD rate)
 
     # PUT to Render
     payload = json.dumps([{"key": k, "value": v} for k, v in master.items()]).encode()

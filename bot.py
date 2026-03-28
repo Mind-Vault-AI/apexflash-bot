@@ -36,7 +36,7 @@ from config import (
     BOT_TOKEN, AFFILIATE_LINKS, TOOL_AFFILIATE_LINKS, ADMIN_IDS,
     GUMROAD_PRO_URL, GUMROAD_ELITE_URL, TIERS,
     GUMROAD_ACCESS_TOKEN,
-    PRO_PRICE_SOL, ELITE_PRICE_SOL,
+    PRO_PRICE_USD, ELITE_PRICE_USD, FALLBACK_PRICES,
     SCAN_INTERVAL, WEBSITE_URL, SUPPORT_URL,
     MIZAR_REFERRAL_URL, PLATFORM_FEE_PCT,
     ETH_WHALE_WALLETS, SOL_WHALE_WALLETS,
@@ -4085,9 +4085,11 @@ async def _cb_copy_trade(query, user, context):
             "\u2022 Set your own risk limits\n"
             "\u2022 Stop-loss protection included"
         )
+        _pro_sol = await _get_tier_price_sol("pro")
+        _elite_sol = await _get_tier_price_sol("elite")
         kb = [
-            [InlineKeyboardButton(f"\U0001f680 Pro \u2014 {PRO_PRICE_SOL} SOL", callback_data="pay_sol_pro")],
-            [InlineKeyboardButton(f"\U0001f451 Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite")],
+            [InlineKeyboardButton(f"\U0001f680 Pro \u2014 {_pro_sol} SOL", callback_data="pay_sol_pro")],
+            [InlineKeyboardButton(f"\U0001f451 Elite \u2014 {_elite_sol} SOL", callback_data="pay_sol_elite")],
             [InlineKeyboardButton("\U0001f517 Preview MIZAR", url=MIZAR_REFERRAL_URL)],
             [_back_main()[0]],
         ]
@@ -4167,9 +4169,11 @@ async def _cb_dca_bot(query, user, context):
             "\n"
             "Unlock with Pro or Elite:"
         )
+        _pro_sol = await _get_tier_price_sol("pro")
+        _elite_sol = await _get_tier_price_sol("elite")
         kb = [
-            [InlineKeyboardButton(f"\U0001f680 Pro \u2014 {PRO_PRICE_SOL} SOL", callback_data="pay_sol_pro")],
-            [InlineKeyboardButton(f"\U0001f451 Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite")],
+            [InlineKeyboardButton(f"\U0001f680 Pro \u2014 {_pro_sol} SOL", callback_data="pay_sol_pro")],
+            [InlineKeyboardButton(f"\U0001f451 Elite \u2014 {_elite_sol} SOL", callback_data="pay_sol_elite")],
             [_back_main()[0]],
         ]
     else:
@@ -4353,10 +4357,27 @@ async def _cb_aff_tools(query, user, context):
 # PREMIUM SECTION
 # ══════════════════════════════════════════════
 
+async def _get_tier_price_sol(tier: str) -> float:
+    """Calculate SOL price dynamically from live SOL/USD rate.
+    Always charges the USD equivalent — SOL amount adjusts to market."""
+    usd = PRO_PRICE_USD if tier == "pro" else ELITE_PRICE_USD
+    prices = await get_crypto_prices()
+    sol_usd = prices.get("SOL", 0)
+    if sol_usd <= 0:
+        sol_usd = FALLBACK_PRICES.get("SOL", 130)
+    raw = usd / sol_usd
+    # Round up to 4 decimals so we never undercharge
+    import math
+    return math.ceil(raw * 10000) / 10000
+
+
 async def _cb_premium(query, user, context):
     """Show premium tiers with SOL payment + Gumroad backup."""
     current = user.get("tier", "free")
     tier_info = TIERS[current]
+
+    pro_sol = await _get_tier_price_sol("pro")
+    elite_sol = await _get_tier_price_sol("elite")
 
     text = (
         "\U0001f48e *ApexFlash Premium*\n"
@@ -4370,14 +4391,14 @@ async def _cb_premium(query, user, context):
         "\u2022 3 tracked wallets\n"
         "\u2022 Exchange affiliate deals\n"
         "\n"
-        "\U0001f680 *Pro \u2014 $9.99/mo*\n"
+        f"\U0001f680 *Pro \u2014 ${PRO_PRICE_USD}/mo ({pro_sol} SOL)*\n"
         "\u2022 ETH + SOL alerts (instant)\n"
         "\u2022 20 tracked wallets\n"
         "\u2022 Copy Trading access\n"
         "\u2022 DCA Bot access\n"
         "\u2022 Priority support\n"
         "\n"
-        "\U0001f451 *Elite \u2014 $29.99/mo*\n"
+        f"\U0001f451 *Elite \u2014 ${ELITE_PRICE_USD}/mo ({elite_sol} SOL)*\n"
         "\u2022 All chains (ETH, SOL, BSC, ARB)\n"
         "\u2022 100 tracked wallets\n"
         "\u2022 AI-powered signals\n"
@@ -4389,6 +4410,7 @@ async def _cb_premium(query, user, context):
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
         "\U0001f4b0 *Pay with SOL* \u2014 0% fee, instant activation!\n"
+        "\U0001f4c8 SOL price updates live \u2014 you always pay the USD equivalent.\n"
     )
 
     # Only show Gumroad card option if products are configured
@@ -4403,9 +4425,9 @@ async def _cb_premium(query, user, context):
     if current == "free":
         kb.append([
             InlineKeyboardButton(
-                f"\U0001f680 Pro \u2014 {PRO_PRICE_SOL} SOL", callback_data="pay_sol_pro"),
+                f"\U0001f680 Pro \u2014 {pro_sol} SOL", callback_data="pay_sol_pro"),
             InlineKeyboardButton(
-                f"\U0001f451 Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite"),
+                f"\U0001f451 Elite \u2014 {elite_sol} SOL", callback_data="pay_sol_elite"),
         ])
         if _gumroad_ready:
             kb.append([
@@ -4415,7 +4437,7 @@ async def _cb_premium(query, user, context):
         kb.append([InlineKeyboardButton("\U0001f511 Activate License Key", callback_data="activate_license")])
     elif current == "pro":
         kb.append([InlineKeyboardButton(
-            f"\U0001f451 Upgrade Elite \u2014 {ELITE_PRICE_SOL} SOL", callback_data="pay_sol_elite")])
+            f"\U0001f451 Upgrade Elite \u2014 {elite_sol} SOL", callback_data="pay_sol_elite")])
         if _gumroad_ready:
             kb.append([InlineKeyboardButton("\U0001f4b3 Elite $29.99 (Card)", url=GUMROAD_ELITE_URL)])
         kb.append([InlineKeyboardButton("\U0001f511 Activate License Key", callback_data="activate_license")])
@@ -4458,12 +4480,14 @@ async def _cb_activate_license(query, user, context):
 
 async def _cb_pay_sol_pro(query, user, context):
     """Handle SOL payment for Pro tier."""
-    await _process_sol_payment(query, user, context, "pro", PRO_PRICE_SOL)
+    price_sol = await _get_tier_price_sol("pro")
+    await _process_sol_payment(query, user, context, "pro", price_sol)
 
 
 async def _cb_pay_sol_elite(query, user, context):
     """Handle SOL payment for Elite tier."""
-    await _process_sol_payment(query, user, context, "elite", ELITE_PRICE_SOL)
+    price_sol = await _get_tier_price_sol("elite")
+    await _process_sol_payment(query, user, context, "elite", price_sol)
 
 
 async def _process_sol_payment(query, user, context, tier: str, price_sol: float):
@@ -4534,12 +4558,14 @@ async def _process_sol_payment(query, user, context, tier: str, price_sol: float
 
 async def _cb_confirm_pay_pro(query, user, context):
     """Execute Pro payment."""
-    await _execute_sol_payment(query, user, context, "pro", PRO_PRICE_SOL)
+    price_sol = await _get_tier_price_sol("pro")
+    await _execute_sol_payment(query, user, context, "pro", price_sol)
 
 
 async def _cb_confirm_pay_elite(query, user, context):
     """Execute Elite payment."""
-    await _execute_sol_payment(query, user, context, "elite", ELITE_PRICE_SOL)
+    price_sol = await _get_tier_price_sol("elite")
+    await _execute_sol_payment(query, user, context, "elite", price_sol)
 
 
 async def _execute_sol_payment(query, user, context, tier: str, price_sol: float):
