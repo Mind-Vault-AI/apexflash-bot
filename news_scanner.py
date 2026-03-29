@@ -44,51 +44,41 @@ CRYPTOPANIC_URL = "https://cryptopanic.com/api/developer/v2/posts/"
 
 # Format: keyword → {signal, assets, direction, grade, reason}
 WAR_WATCH_SIGNALS = {
-    # Middle East / Oil supply disruption
-    "iran": {"assets": ["BTC", "ETH", "SOL"], "direction": "SELL", "grade": "B",
-             "reason": "Iran tension → oil spike → risk-off → crypto sell"},
-    "hormuz": {"assets": ["BTC", "ETH"], "direction": "SELL", "grade": "A",
-               "reason": "Strait of Hormuz → oil supply shock → extreme risk-off"},
-    "saudi": {"assets": ["BTC", "ETH"], "direction": "SELL", "grade": "B",
-              "reason": "Saudi geopolitics → oil price impact → crypto risk-off"},
-    "opec": {"assets": ["BTC", "ETH"], "direction": "SELL", "grade": "B",
-             "reason": "OPEC cut/hike → oil market → institutional rebalancing"},
+    # Energy / Oil
+    "iran": {"assets": ["OIL_PERPS (MEXC)", "BTC", "SOL"], "direction": "BUY OIL / SELL CRYPTO", "grade": "B",
+             "reason": "Iran tension → oil spike → risk-off → crypto drop", "aff": "mexc"},
+    "hormuz": {"assets": ["OIL_PERPS (MEXC)", "BTC"], "direction": "BUY OIL / SELL CRYPTO", "grade": "A",
+               "reason": "Strait of Hormuz → oil supply shock → extreme risk-off", "aff": "mexc"},
+    "opec": {"assets": ["OIL_PERPS (MEXC)", "ETH"], "direction": "BUY OIL", "grade": "B",
+             "reason": "OPEC cut/hike → oil market volatility", "aff": "mexc"},
+    "gas supply": {"assets": ["NATURAL_GAS (Bitunix)", "BTC"], "direction": "BUY GAS", "grade": "B",
+             "reason": "Gas supply crunch → energy spike", "aff": "bitunix"},
 
+    # Defense / Drones / Metals
+    "drone strike": {"assets": ["LMT (Bitunix Futures)", "GOLD (Bitunix)"], "direction": "BUY DEFENSE/GOLD", "grade": "A",
+             "reason": "Geopolitical escalation → Defense stocks & Gold rally", "aff": "bitunix"},
+    "nuclear": {"assets": ["GOLD (MEXC)", "BTC"], "direction": "BUY GOLD", "grade": "A",
+                "reason": "Nuclear threat → extreme risk-off → flight to gold", "aff": "mexc"},
+    "invasion": {"assets": ["GOLD (MEXC)", "BITCOIN"], "direction": "BUY GOLD", "grade": "A",
+                 "reason": "Armed conflict → immediate risk-off flight to safety", "aff": "mexc"},
+
+    # Tech & Ai / Chips
+    "tsmc": {"assets": ["NVDA (Bitunix)", "RENDER (Solana)"], "direction": "BUY AI CHIPS", "grade": "B",
+             "reason": "TSMC/Chip news → AI proxy rally", "aff": "bitunix"},
+    "nvidia": {"assets": ["NVDA (Bitunix)", "RENDER (Solana)", "TAO"], "direction": "BUY AI CHIPS", "grade": "B",
+             "reason": "Nvidia momentum → AI token & Stock rally", "aff": "bitunix"},
+    
     # Sanctions / Finance
     "sanctions": {"assets": ["BTC", "USDT"], "direction": "BUY", "grade": "B",
-                  "reason": "New sanctions → BTC as sanctions-bypass asset → demand spike"},
+                  "reason": "New sanctions → BTC as sanctions-bypass asset → demand spike", "aff": "mexc"},
     "swift": {"assets": ["BTC", "USDT"], "direction": "BUY", "grade": "A",
-              "reason": "SWIFT block → immediate crypto alternative demand"},
-    "cbdc": {"assets": ["BTC"], "direction": "BUY", "grade": "B",
-             "reason": "CBDC news → BTC as alternative store of value narrative"},
+              "reason": "SWIFT block → immediate crypto alternative demand", "aff": "mexc"},
 
     # Fed / Macro
     "federal reserve": {"assets": ["BTC", "ETH", "SOL"], "direction": "BUY", "grade": "B",
-                        "reason": "Fed dovish signal → liquidity injection → crypto rally"},
+                        "reason": "Fed dovish signal → liquidity injection → crypto rally", "aff": "mexc"},
     "interest rate": {"assets": ["BTC", "ETH"], "direction": "BUY", "grade": "B",
-                      "reason": "Rate cut signal → risk assets rally → crypto up"},
-    "recession": {"assets": ["BTC"], "direction": "SELL", "grade": "B",
-                  "reason": "Recession fear → risk-off → gold up, crypto down short-term"},
-
-    # War / Conflict
-    "nuclear": {"assets": ["BTC", "ETH", "SOL"], "direction": "SELL", "grade": "A",
-                "reason": "Nuclear threat → extreme risk-off → flight to USD/gold"},
-    "invasion": {"assets": ["BTC", "ETH"], "direction": "SELL", "grade": "A",
-                 "reason": "Armed conflict → immediate risk-off selloff (Ukraine precedent)"},
-    "ceasefire": {"assets": ["BTC", "ETH", "SOL"], "direction": "BUY", "grade": "B",
-                  "reason": "Ceasefire → risk-on recovery → crypto bounce"},
-
-    # Crypto-specific macro
-    "etf approved": {"assets": ["BTC", "ETH"], "direction": "BUY", "grade": "A",
-                     "reason": "Spot ETF approval → institutional demand flood → strong rally"},
-    "sec": {"assets": ["BTC", "ETH", "SOL"], "direction": "SELL", "grade": "B",
-            "reason": "SEC action → regulatory FUD → short-term dump"},
-    "hack": {"assets": ["BTC", "ETH"], "direction": "SELL", "grade": "B",
-             "reason": "Major hack → trust crisis → immediate sell pressure"},
-    "blackrock": {"assets": ["BTC", "ETH"], "direction": "BUY", "grade": "A",
-                  "reason": "BlackRock crypto move → institutional signal → strong buy"},
-    "trump": {"assets": ["BTC", "SOL"], "direction": "BUY", "grade": "B",
-              "reason": "Trump pro-crypto statement → regulatory optimism → rally"},
+                      "reason": "Rate cut signal → risk assets rally → crypto up", "aff": "bitunix"},
 }
 
 # ── Redis helpers ─────────────────────────────────────────────────────────────
@@ -219,9 +209,9 @@ def detect_war_watch_signals(articles: list[dict]) -> list[dict]:
                     "headline": article.get("title", "")[:120],
                     "url": article.get("url", ""),
                     "source": article.get("source", ""),
-                    "panic_score": article.get("panic_score", 0),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "tag": "WAR_WATCH",
+                    "aff": signal_def.get("aff", "mexc"),
                 }
 
     return list(triggered.values())
@@ -231,25 +221,31 @@ def detect_war_watch_signals(articles: list[dict]) -> list[dict]:
 
 def format_telegram_alert(signal: dict) -> str:
     """Format War Watch signal as Telegram Markdown message."""
+    from config import AFFILIATE_LINKS
     grade = signal["grade"]
     direction = signal["direction"]
     assets = " | ".join(signal["assets"])
-    emoji = "🟢" if direction == "BUY" else "🔴"
+    emoji = "🟢" if "BUY" in direction else "🔴"
     grade_emoji = "⭐" if grade == "A" else "🔹"
+    
+    aff_id = signal.get("aff", "mexc")
+    aff_data = AFFILIATE_LINKS.get(aff_id, AFFILIATE_LINKS.get("mexc", {"name": "MEXC", "url": "https://mexc.com"}))
+    aff_link = f"[{aff_data['name']}]({aff_data['url']})"
 
     return (
-        f"⚡ *WAR WATCH — Grade {grade} Signal*\n"
+        f"⚡ *OMNI-ASSET WAR WATCH — Grade {grade}*\n"
         f"{'━' * 22}\n"
         f"\n"
-        f"{grade_emoji} Keyword: *{signal['keyword'].upper()}*\n"
-        f"{emoji} Direction: *{direction}*\n"
+        f"{grade_emoji} Trigger: *{signal['keyword'].upper()}*\n"
+        f"{emoji} Action: *{direction}*\n"
         f"📊 Assets: *{assets}*\n"
-        f"💡 Reden: _{signal['reason']}_\n"
+        f"💡 Strategy: _{signal['reason']}_\n"
         f"\n"
         f"📰 _{signal['headline']}_\n"
         f"\n"
+        f"🔥 **Trade Non-Crypto Assets here:** {aff_link}\n"
         f"{'━' * 22}\n"
-        f"🤖 ApexFlash War Watch | @ApexFlashBot"
+        f"🤖 ApexFlash AI Agency | @ApexFlashBot"
     )
 
 
