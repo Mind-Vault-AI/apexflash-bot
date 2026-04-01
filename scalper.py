@@ -104,17 +104,24 @@ def _pct_change(old: float, new: float) -> float:
 
 
 def _grade_signal(pct_5m: float, pct_15m: float, volume_usd: float) -> str:
-    """Return signal grade A/B/C or None."""
-    has_volume = volume_usd > 1_000_000  # $1M+ pool volume = liquid
+    """Return signal grade A/B/C or None. 
+    Grade A requires trend alignment (5m and 15m in same direction).
+    """
+    has_high_vol = volume_usd > 1_500_000   # $1.5M+ for Grade A (liquidity)
+    has_std_vol = volume_usd > 750_000     # $0.75M+ for Grade B/C
+    
     abs5 = abs(pct_5m)
     abs15 = abs(pct_15m)
+    
+    # ── Trend Alignment: 5m and 15m MUST point same way for Grade A ──────
+    trend_aligned = (pct_5m * pct_15m) > 0
 
-    if abs5 >= 3.0 and has_volume:
+    if abs5 >= 3.0 and trend_aligned and has_high_vol:
         return "A"
     if abs5 >= 1.5 or abs15 >= 3.0:
-        return "B"
+        return "B" if has_std_vol else ""
     if abs5 >= 1.0:
-        return "C"
+        return "C" if has_std_vol else ""
     return ""
 
 

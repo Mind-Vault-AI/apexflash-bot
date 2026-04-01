@@ -5736,50 +5736,66 @@ async def scalper_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         for sig in signals:
             grade = sig["grade"]
             msg = format_scalp_alert(sig)
+            is_high_conviction = (grade == "A")
 
-            # Grade A + B → channel + all subscribers
-            if grade in ("A", "B"):
-                if ALERT_CHANNEL_ID:
-                    try:
-                        await context.bot.send_message(
-                            chat_id=ALERT_CHANNEL_ID,
-                            text=msg,
-                            parse_mode="HTML",
-                            disable_web_page_preview=True,
+            # 1. Public Channel Alert — ONLY Grade A (Protect Social Proof)
+            if is_high_conviction and ALERT_CHANNEL_ID:
+                try:
+                    await context.bot.send_message(
+                        chat_id=ALERT_CHANNEL_ID,
+                        text=f"⭐ <b>HIGH CONVICION SIGNAL</b>\n{msg}",
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                except Exception as ch_err:
+                    logger.warning(f"Scalper channel send error: {ch_err}")
+
+            # 2. Individual User Alerts (Tiered Broadcast)
+            for uid, udata in list(users.items()):
+                if not udata.get("alerts_enabled", True):
+                    continue
+                
+                user_tier = udata.get("tier", "free").lower()
+                is_premium = user_tier in ("pro", "elite")
+                
+                # --- BROADCAST LOGIC ---
+                # Grade A: Everyone (Social Proof)
+                # Grade B/C: Pro/Elite only (Premium Value)
+                should_alert = False
+                alert_text = msg
+                
+                if grade == "A":
+                    should_alert = True
+                    alert_text = f"⭐ <b>GOLD SIGNAL (Grade A)</b>\n{msg}"
+                elif grade in ("B", "C") and is_premium:
+                    should_alert = True
+                    alert_text = f"⚠️ <b>PRO ALERT (Grade {grade} - High Risk)</b>\n{msg}"
+                
+                if not should_alert:
+                    continue
+
+                try:
+                    kb = InlineKeyboardMarkup([[
+                        InlineKeyboardButton(
+                            f"⚡ Trade {sig['symbol']}",
+                            callback_data=f"search_{sig['symbol']}:{grade}",
                         )
-                    except Exception as ch_err:
-                        logger.warning(f"Scalper channel send error: {ch_err}")
+                    ]])
+                    await context.bot.send_message(
+                        chat_id=uid,
+                        text=alert_text,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                        reply_markup=kb,
+                    )
+                except Exception:
+                    pass
 
-                # Broadcast to all active users who have alerts enabled
-                for uid, udata in list(users.items()):
-                    if not udata.get("alerts_enabled", True):
-                        continue
-                    try:
-                        kb = InlineKeyboardMarkup([[
-                            InlineKeyboardButton(
-                                f"⚡ Trade {sig['symbol']}",
-                                callback_data=f"search_{sig['symbol']}:{grade}",
-                            )
-                        ]])
-                        await context.bot.send_message(
-                            chat_id=uid,
-                            text=msg,
-                            parse_mode="HTML",
-                            disable_web_page_preview=True,
-                            reply_markup=kb,
-                        )
-                    except Exception:
-                        pass
-
-                logger.info(
-                    f"Scalp signal sent: {sig['symbol']} Grade {grade} "
-                    f"{sig['pct_5m']:+.2f}% (5m)"
-                )
-
-            elif grade == "C":
-                logger.info(
-                    f"Scalp watch: {sig['symbol']} Grade C {sig['pct_5m']:+.2f}% (5m) — not broadcast"
-                )
+            # Logging
+            if is_high_conviction:
+                logger.info(f"GOLD signal broadcast: {sig['symbol']} {sig['pct_5m']:+.2f}%")
+            else:
+                logger.info(f"Scalp watch (Grade {grade}): {sig['symbol']} — sent to Pro users only")
 
     except Exception as e:
         logger.error(f"Scalper job error: {e}")

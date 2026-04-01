@@ -219,6 +219,7 @@ async def notify_channel_trade(bot, action: str, sol_amount: float,
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("⚡ 1-Tap Auto-Trade", url=trade_url)],
+        [InlineKeyboardButton("🔗 Partner Exchange", callback_data="aff_click_mexc")],
         [InlineKeyboardButton("📊 Join Alerts", url="https://t.me/ApexFlashAlerts")],
     ])
 
