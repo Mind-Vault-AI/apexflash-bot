@@ -499,6 +499,45 @@ def import_backup(json_str: str) -> tuple[dict, dict]:
 
 
 # ══════════════════════════════════════════════
+# GUMROAD REVENUE SYNC
+# ══════════════════════════════════════════════
+
+_REDIS_SYNCED_PURCHASES = "apexflash:synced_purchases"
+
+def is_purchase_synced(purchase_id: str) -> bool:
+    """Check if a specific Gumroad purchase has already been counted."""
+    r = _get_redis()
+    if not r:
+        return False
+    try:
+        return r.sismember(_REDIS_SYNCED_PURCHASES, purchase_id)
+    except Exception:
+        return False
+
+
+def mark_purchase_synced(purchase_id: str):
+    """Mark a Gumroad purchase as synced in Redis."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        r.sadd(_REDIS_SYNCED_PURCHASES, purchase_id)
+        r.expire(_REDIS_SYNCED_PURCHASES, 365 * 86400)  # 1 year TTL
+    except Exception as e:
+        logger.debug(f"mark_purchase_synced failed: {e}")
+
+
+def get_tier_from_product_id(product_id: str) -> str:
+    """Map Gumroad product ID to internal tier code."""
+    from config import GUMROAD_PRO_PRODUCT_ID, GUMROAD_ELITE_PRODUCT_ID
+    if product_id == GUMROAD_PRO_PRODUCT_ID:
+        return "pro"
+    if product_id == GUMROAD_ELITE_PRODUCT_ID:
+        return "elite"
+    return "unknown"
+
+
+# ══════════════════════════════════════════════
 # CEO AGENT KPI HELPERS
 # ══════════════════════════════════════════════
 

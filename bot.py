@@ -6880,6 +6880,69 @@ def main() -> None:
                 logger.warning(f"Startup notification failed: {e}")
 
     app.post_init = post_init
+    # ── Gumroad Revenue Sync: Poll for new sales (every 60 min) ───────────────
+    async def gumroad_sync_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Poll Gumroad for recent sales and sync to KPI tracking."""
+        try:
+            from gumroad import get_recent_sales
+            from persistence import is_purchase_synced, mark_purchase_synced, track_paid_conversion, get_tier_from_product_id
+            
+            sales = await get_recent_sales(page=1)
+            if not sales:
+                return
+
+            new_count = 0
+            for sale in sales:
+                purchase_id = sale.get("id")
+                product_id = sale.get("product_id")
+                
+                if not purchase_id or is_purchase_synced(purchase_id):
+                    continue
+                
+                # New sale detected!
+                tier = get_tier_from_product_id(product_id)
+                if tier == "unknown":
+                    continue
+                
+                # 1. Track in Redis
+                track_paid_conversion(0, tier) # user_id 0 for general sync
+                mark_purchase_synced(purchase_id)
+                new_count += 1
+                
+                # 2. Notify Admin
+                price = sale.get("price", 0) / 100.0 # cents to dollars
+                currency = sale.get("currency", "USD")
+                formatted_price = f"{price:,.2f} {currency}"
+                
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=admin_id,
+                            text=(
+                                f"💰 <b>NEW GUMROAD SALE!</b>\n"
+                                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+                                f"Tier: <b>{tier.upper()}</b>\n"
+                                f"Amount: <b>{formatted_price}</b>\n"
+                                f"Product: <i>{sale.get('product_name', 'Unknown')}</i>\n\n"
+                                f"🚀 <b>Target: €1,000,000</b> — <i>Every sale counts!</i>"
+                            ),
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+            
+            if new_count > 0:
+                logger.info(f"Gumroad Sync: {new_count} new sales synced to Redis")
+        except Exception as e:
+            logger.error(f"Gumroad sync job failed: {e}")
+
+    app.job_queue.run_repeating(
+        gumroad_sync_job,
+        interval=3600,  # every 60 minutes
+        first=60,       # first run 1 min after startup
+        name="gumroad_sync",
+    )
+
     app.run_polling(
         drop_pending_updates=True,
         allowed_updates=["message", "callback_query"],
