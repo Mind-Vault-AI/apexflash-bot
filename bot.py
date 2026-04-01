@@ -6647,6 +6647,44 @@ def main() -> None:
         name="war_watch",
     )
 
+    # ── Zero Loss Manager: autonomous breakeven-lock scalper (24/7) ────────
+    _zero_loss_task = None  # Track the background task
+
+    async def zero_loss_start_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Start the Zero Loss autonomous trader as a persistent background task."""
+        nonlocal _zero_loss_task
+        try:
+            import asyncio as _aio
+            from zero_loss_manager import auto_trader_loop
+            _zero_loss_task = _aio.create_task(auto_trader_loop(bot=context.bot))
+            logger.info("🛡️ Zero Loss Manager: 24/7 autonomous trader STARTED")
+            # Notify admin
+            for admin_id in ADMIN_IDS:
+                try:
+                    await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=(
+                            "🛡️ *Zero Loss Manager ONLINE*\n"
+                            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            "✅ Grade A signals only\n"
+                            "✅ Breakeven lock active\n"
+                            "✅ Auto stop-loss / take-profit\n"
+                            "✅ 24/7 autonomous execution\n\n"
+                            "_All trades reported to this chat._"
+                        ),
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"Zero Loss Manager start failed: {e}")
+
+    app.job_queue.run_once(
+        zero_loss_start_job,
+        when=45,  # start 45s after boot (let other systems settle)
+        name="zero_loss_start",
+    )
+
     # ── Inspector Gadget: Alpha wallet copy-trade intelligence (every 60s) ─────
     async def _inspector_copy_signal(signal: dict) -> None:
         """Callback: broadcast Inspector copy-trade signal to all alert subscribers."""
@@ -6754,13 +6792,16 @@ def main() -> None:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT v3.12.3 is LIVE*\n\n"
+                        "\u26a1 *ApexFlash MEGA BOT v3.13.0 is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"
                         "\u2705 SL/TP monitor active (30s)\n"
                         "\u2705 Auto-backup every 30 min\n"
-                        "\u2705 Marketing auto-poster scheduled"
+                        "\u2705 Marketing auto-poster scheduled\n"
+                        "\u2705 Zero Loss Manager (24/7 autonomous)\n"
+                        "\u2705 War Watch (geopolitics scanner)\n"
+                        "\u2705 CEO Agent (daily briefing)"
                     ),
                     parse_mode="Markdown",
                 )

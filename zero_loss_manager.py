@@ -9,11 +9,22 @@ from wallet import load_keypair, get_sol_balance, get_token_balances
 from jupiter import get_quote, execute_swap
 from scalper import check_scalp_signals, SCALP_TOKENS
 
-logging.basicConfig(
-    format="%(asctime)s [%(levelname)s] ZERO-LOSS: %(message)s",
-    level=logging.INFO,
-)
 logger = logging.getLogger("ZeroLossManager")
+
+
+async def _notify_admin(bot, text: str) -> None:
+    """Send a trade notification to all admins via Telegram."""
+    if not bot:
+        return
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(
+                chat_id=admin_id,
+                text=text,
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            logger.debug(f"Admin notify failed for {admin_id}: {e}")
 
 TRADE_AMOUNT_SOL = 0.05
 BREAKEVEN_TRIGGER_PCT = 0.5  # When up 0.5%, lock stop-loss at breakeven
@@ -45,7 +56,7 @@ async def execute_trade(keypair, action, input_mint, output_mint, amount_raw):
         logger.error(f"[{action}] Swap Failed: {err}")
         return None, 0.0
 
-async def position_manager(keypair, symbol, mint):
+async def position_manager(keypair, symbol, mint, bot=None):
     """
     Sub-task: Manages an open position with Breakeven Lock 
     and strict take-profit execution.
@@ -72,22 +83,37 @@ async def position_manager(keypair, symbol, mint):
         if pct_change >= BREAKEVEN_TRIGGER_PCT and pos['sl_price'] < pos['entry_price']:
             logger.info(f"🔒 BREAKEVEN LOCK TRIGGERED for {symbol}! Risk is now ZERO.")
             pos['sl_price'] = pos['entry_price'] * 1.001  # Lock slightly above entry to cover fees
+            await _notify_admin(bot, (
+                f"🔒 *BREAKEVEN LOCK* — {symbol}\n"
+                f"PNL: {pct_change:+.2f}% | Risk = ZERO"
+            ))
         
         # 2. Hard Stop Loss / Hit Breakeven Lock
         if current_price <= pos['sl_price']:
             logger.info(f"🛑 STOP OUT for {symbol} at {pct_change:+.2f}% PNL. Selling...")
-            await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
+            sig, _ = await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
+            await _notify_admin(bot, (
+                f"🛑 *STOP OUT* — {symbol}\n"
+                f"PNL: {pct_change:+.2f}%\n"
+                f"{'🔒 Breakeven lock held — ZERO LOSS' if pct_change >= 0 else '⚠️ Pre-lock stop loss'}\n"
+                f"Tx: `{sig or 'failed'}`"
+            ))
             del active_positions[symbol]
             break
             
         # 3. Take Profit
         if pct_change >= TAKE_PROFIT_PCT:
             logger.info(f"💰 TAKE PROFIT for {symbol} at {pct_change:+.2f}% PNL. Selling...")
-            await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
+            sig, _ = await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
+            await _notify_admin(bot, (
+                f"💰 *TAKE PROFIT* — {symbol}\n"
+                f"PNL: *{pct_change:+.2f}%* ✅\n"
+                f"Tx: `{sig or 'failed'}`"
+            ))
             del active_positions[symbol]
             break
 
-async def auto_trader_loop():
+async def auto_trader_loop(bot=None):
     """Main loop checking for Grade A signals 24/7."""
     logger.info("🚀 ZERO-LOSS AUTONOMOUS SCALPER: BOOTING...")
     
@@ -138,8 +164,17 @@ async def auto_trader_loop():
                             "tp_price": s['price'] * (1 + (TAKE_PROFIT_PCT/100))
                         }
                         last_trade_ts[sym] = time.time()
+                        await _notify_admin(bot, (
+                            f"⚡ *ZERO-LOSS BUY* — {sym}\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"💰 Amount: *{TRADE_AMOUNT_SOL} SOL*\n"
+                            f"📈 5m move: *{s['pct_5m']:+.2f}%*\n"
+                            f"🎯 TP: *+{TAKE_PROFIT_PCT}%* | 🛡️ SL: *-{STOP_LOSS_PCT}%*\n"
+                            f"🔒 Breakeven lock at *+{BREAKEVEN_TRIGGER_PCT}%*\n"
+                            f"Tx: `{sig}`"
+                        ))
                         # Spawn background position manager
-                        asyncio.create_task(position_manager(keypair, sym, mint))
+                        asyncio.create_task(position_manager(keypair, sym, mint, bot=bot))
                 else:
                     logger.debug(f"Skipping {sym} - Insufficient balance ({sol_balance} SOL)")
 
@@ -149,4 +184,8 @@ async def auto_trader_loop():
         await asyncio.sleep(30) # Check every 30s
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        format="%(asctime)s [%(levelname)s] ZERO-LOSS: %(message)s",
+        level=logging.INFO,
+    )
     asyncio.run(auto_trader_loop())
