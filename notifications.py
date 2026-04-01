@@ -147,16 +147,7 @@ async def notify_discord_trade(user_name: str, action: str, amount: str,
 
 async def notify_telegram_channel(bot, alert_text: str, alert_kb=None,
                                   channel_id: str = "") -> bool:
-    """Post an alert to the public Telegram channel.
-
-    Args:
-        bot: telegram.Bot instance
-        alert_text: Formatted alert message (Markdown)
-        alert_kb: InlineKeyboardMarkup (optional)
-        channel_id: Channel ID or @username (e.g. "@ApexFlashAlerts")
-
-    Returns True on success.
-    """
+    """Post an alert to the public Telegram channel (Gold Signals)."""
     from config import ALERT_CHANNEL_ID
     target = channel_id or ALERT_CHANNEL_ID
     if not target:
@@ -167,7 +158,7 @@ async def notify_telegram_channel(bot, alert_text: str, alert_kb=None,
             chat_id=target,
             text=alert_text,
             reply_markup=alert_kb,
-            parse_mode="Markdown",
+            parse_mode="HTML",
             disable_web_page_preview=True,
         )
         return True
@@ -182,10 +173,9 @@ async def notify_channel_trade(bot, action: str, sol_amount: float,
                                token_mint: str = "",
                                sol_price: float = 0,
                                fee_sol: float = 0) -> bool:
-    """Post rich trade notification to Telegram channel (social proof).
-    Includes chart image when available for maximum engagement."""
+    """Post rich trade notification to Telegram channel (social proof)."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    from config import ALERT_CHANNEL_ID
+    from config import ALERT_CHANNEL_ID, ADMIN_IDS
 
     target = channel_id or ALERT_CHANNEL_ID
     if not target:
@@ -196,35 +186,35 @@ async def notify_channel_trade(bot, action: str, sol_amount: float,
     action_word = "BOUGHT" if action == "BUY" else "SOLD"
 
     text = (
-        f"{action_emoji} *{action_word} {token_name}*\n"
+        f"{action_emoji} <b>{action_word} {token_name}</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "\n"
-        f"💎 Token: *{token_name}*\n"
-        f"💰 Amount: *{sol_amount:.2f} SOL*{usd_value}\n"
+        f"💎 Token: <b>{token_name}</b>\n"
+        f"💰 Amount: <b>{sol_amount:.2f} SOL</b>{usd_value}\n"
     )
     if fee_sol:
-        text += f"💸 Fee: *{fee_sol:.4f} SOL* (1%)\n"
+        text += f"💸 Fee: <b>{fee_sol:.4f} SOL</b> (1%)\n"
     text += (
         "\n"
-        f"🔗 [View on Solscan](https://solscan.io/tx/{tx_sig})\n"
+        f"🔗 <a href='https://solscan.io/tx/{tx_sig}'>View on Solscan</a>\n"
         "\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "⚡ *ApexFlash* — Trade any Solana token\n"
+        "⚡ <b>ApexFlash</b> — Trade any Solana token\n"
         "🤖 Start now → @ApexFlashBot"
     )
 
-    from config import ADMIN_IDS
     ref_id = ADMIN_IDS[0] if ADMIN_IDS else 0
-    trade_url = f"https://t.me/ApexFlashBot?start=buy_{token_mint}_ref_{ref_id}" if token_mint else f"https://t.me/ApexFlashBot?start=ref_{ref_id}"
+    # USE DEEP LINKS IN CHANNEL (callback_data is NOT supported in channels!)
+    trade_url = f"https://t.me/ApexFlashBot?start=buy_{token_mint}" if token_mint else f"https://t.me/ApexFlashBot?start=ref_{ref_id}"
+    aff_url = "https://t.me/ApexFlashBot?start=aff_mexc"  # Default trackable deep link
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("⚡ 1-Tap Auto-Trade", url=trade_url)],
-        [InlineKeyboardButton("🔗 Partner Exchange", callback_data="aff_click_mexc")],
+        [InlineKeyboardButton("🔗 Claim Partner Bonus", url=aff_url)],
         [InlineKeyboardButton("📊 Join Alerts", url="https://t.me/ApexFlashAlerts")],
     ])
 
     try:
-        # Try sending with chart image for visual impact
         chart_url = None
         if token_mint:
             try:
@@ -239,28 +229,20 @@ async def notify_channel_trade(bot, action: str, sol_amount: float,
                 photo=chart_url,
                 caption=text,
                 reply_markup=kb,
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
         else:
             await bot.send_message(
                 chat_id=target,
                 text=text,
                 reply_markup=kb,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 disable_web_page_preview=True,
             )
         return True
     except Exception as e:
         logger.error(f"Telegram channel trade post failed: {e}")
-        # Fallback: try text-only
-        try:
-            await bot.send_message(
-                chat_id=target, text=text, reply_markup=kb,
-                parse_mode="Markdown", disable_web_page_preview=True,
-            )
-            return True
-        except Exception:
-            return False
+        return False
 
 
 # ══════════════════════════════════════════════

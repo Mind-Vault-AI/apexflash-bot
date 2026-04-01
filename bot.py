@@ -352,6 +352,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             # Show welcome first, then auto-trigger /hot after
             context.user_data["_auto_hot"] = True
 
+        # Format: aff_EXCHANGE (trackable affiliate deep link from channel)
+        elif arg.startswith("aff_"):
+            exchange = arg[4:]
+            track_affiliate_click(uid, exchange)
+            context.user_data["_auto_aff"] = exchange
+            logger.info(f"Deep link: user {uid} tracked for affiliate {exchange}")
+
         # Format: buy_MINTADDRESS_ref_USERID (viral token link with referral)
         elif arg.startswith("buy_"):
             parts = arg[4:]  # Remove "buy_"
@@ -515,6 +522,29 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await cmd_hot(update, context)
         except Exception as e:
             logger.warning(f"Auto-hot trigger failed: {e}")
+
+    # ── Auto-trigger Affiliate Redirect if deep linked (Strategy Pivot v1.2) ──
+    aff_key = context.user_data.pop("_auto_aff", None)
+    if aff_key:
+        try:
+            aff_info = AFFILIATE_LINKS.get(aff_key, AFFILIATE_LINKS.get("mexc"))
+            text = (
+                f"🚀 <b>Affiliate Redirect</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"You are opening <b>{aff_info['name']}</b>.\n"
+                f"Benefit: <b>{aff_info['commission']} fee rebate</b>\n\n"
+                f"Click below to open in your browser:"
+            )
+            kb = [
+                [InlineKeyboardButton(f"🔗 Open {aff_info['name']}", url=aff_info["url"])],
+                [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]
+            ]
+            await update.message.reply_text(
+                text, reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.warning(f"Auto-aff trigger failed: {e}")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
