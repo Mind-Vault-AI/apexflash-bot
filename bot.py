@@ -1098,6 +1098,32 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             logger.error(f"CEO callback [{data}] error: {e}")
         return
 
+    # aff_click_{exchange} — track affiliate click then show link
+    if data.startswith("aff_click_"):
+        try:
+            exchange = data.replace("aff_click_", "")
+            track_affiliate_click(user_id, exchange)
+            aff_info = AFFILIATE_LINKS.get(exchange, AFFILIATE_LINKS.get("mexc"))
+            
+            text = (
+                f"🚀 *Affiliate Redirect*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"You are opening *{aff_info['name']}*.\n"
+                f"Benefit: *{aff_info['commission']} fee rebate*\n\n"
+                f"Click below to open in your browser:"
+            )
+            kb = [
+                [InlineKeyboardButton(f"🔗 Open {aff_info['name']}", url=aff_info["url"])],
+                [_back_main()[0]]
+            ]
+            await query.edit_message_text(
+                text, reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Affiliate tracking error: {e}")
+        return
+
     handler = routes.get(data)
     if handler:
         try:
@@ -6315,7 +6341,7 @@ async def cmd_deals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     for key, aff in deals[:4]:
         kb.append([InlineKeyboardButton(
             f"\U0001f525 {aff['name']} \u2014 {aff.get('promo', '')[:30]}",
-            url=aff["url"],
+            callback_data=f"aff_click_{key}",
         )])
     kb.append([InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")])
 
@@ -6655,7 +6681,6 @@ def main() -> None:
         nonlocal _zero_loss_task
         try:
             import asyncio as _aio
-            from zero_loss_manager import auto_trader_loop
             _zero_loss_task = _aio.create_task(auto_trader_loop(bot=context.bot))
             logger.info("🛡️ Zero Loss Manager: 24/7 autonomous trader STARTED")
             # Notify admin
