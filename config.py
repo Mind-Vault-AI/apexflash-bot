@@ -173,6 +173,15 @@ AFFILIATE_LINKS = {
         "category": "exchange",
         "description": "Zero-fee spot trading, fast engine",
     },
+    "bitvavo": {
+        "name": "Bitvavo",
+        "url": f"https://bitvavo.com/invite?a={os.getenv('BITVAVO_REF', '6A3E846932')}",
+        "commission": "15%",
+        "featured": True,
+        "category": "exchange",
+        "description": "Grootste Nederlandse crypto exchange — €10K fee-free trading bij signup",
+        "promo": "€10 gratis crypto + €10.000 fee-vrij handelen",
+    },
 }
 
 # === Affiliate Links — Crypto Tools ===
