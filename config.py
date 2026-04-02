@@ -197,7 +197,7 @@ TOOL_AFFILIATE_LINKS = {
         "name": "Ledger",
         "url": f"https://shop.ledger.com/?r={os.getenv('LEDGER_REF', '')}",
         "commission": "10%",
-        "featured": True,
+        "featured": False,  # No referral code yet — add LEDGER_REF env var to activate
         "description": "Hardware wallet, keep crypto safe",
     },
     "trezor": {
@@ -232,9 +232,22 @@ TOOL_AFFILIATE_LINKS = {
         "name": "NordVPN",
         "url": f"https://nordvpn.com/risk-free/?ref={os.getenv('NORD_REF', '')}",
         "commission": "40-100%",
-        "featured": True,
+        "featured": False,  # No referral code yet — add NORD_REF env var to activate
         "description": "Secure your trading connection",
     },
+}
+
+# Safety: never show featured links that have no real referral code
+def _has_valid_code(url: str) -> bool:
+    return bool(url) and "YOUR_REF" not in url and not url.endswith(("=", "/", "?ref=", "?r=", "?a=", "/r/", "/invite/"))
+
+AFFILIATE_LINKS_ACTIVE = {
+    k: v for k, v in AFFILIATE_LINKS.items()
+    if v.get("featured") and _has_valid_code(v.get("url", ""))
+}
+TOOL_AFFILIATE_LINKS_ACTIVE = {
+    k: v for k, v in TOOL_AFFILIATE_LINKS.items()
+    if v.get("featured") and _has_valid_code(v.get("url", ""))
 }
 
 # === Premium Payment ===
