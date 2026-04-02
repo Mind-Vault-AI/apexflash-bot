@@ -109,8 +109,8 @@ AFFILIATE_LINKS = {
         "promo": "50% Fee Rebate + Copy Trading Free Trial",
     },
     "gate": {
-        "name": "Gate.io",
-        "url": f"https://www.gate.io/signup/{os.getenv('GATE_REF', 'VFFHXVFDUG')}",
+        "name": "Gate.com",
+        "url": f"https://www.gate.com/signup/{os.getenv('GATE_REF', 'VFFHXVFDUG')}?ref_type=103",
         "commission": "up to 40%",
         "featured": True,
         "category": "exchange",
