@@ -33,7 +33,7 @@ from telegram.ext import (
 )
 
 from config import (
-    BOT_TOKEN, AFFILIATE_LINKS, TOOL_AFFILIATE_LINKS, ADMIN_IDS,
+    BOT_TOKEN, AFFILIATE_LINKS, AFFILIATE_LINKS_ACTIVE, TOOL_AFFILIATE_LINKS, ADMIN_IDS,
     GUMROAD_PRO_URL, GUMROAD_ELITE_URL, TIERS,
     GUMROAD_ACCESS_TOKEN,
     PRO_PRICE_USD, ELITE_PRICE_USD, FALLBACK_PRICES,
@@ -426,15 +426,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             bot_username = (await context.bot.get_me()).username
             ref_link = f"https://t.me/{bot_username}?start=ref_{uid}"
 
-            featured = [
-                v for v in AFFILIATE_LINKS.values()
-                if v.get("featured") and v.get("url", "").find("YOUR_REF") == -1
-            ]
-
             onboard_text = (
                 "\U0001f525 *Quick wins before you start:*\n\n"
             )
-            for aff in featured:
+            for aff in AFFILIATE_LINKS_ACTIVE.values():
                 onboard_text += f"✅ *{aff['name']}* — {aff['commission']} fee rebate\n"
 
             onboard_text += (
@@ -446,9 +441,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
 
             kb = []
-            for aff in featured:
+            for key, aff in AFFILIATE_LINKS_ACTIVE.items():
                 kb.append([InlineKeyboardButton(
-                    f"🔗 Open {aff['name']} ({aff['commission']} rebate)", url=aff["url"]
+                    f"🔗 Open {aff['name']} ({aff['commission']} rebate)", callback_data=f"aff_click_{key}"
                 )])
 
             await update.message.reply_text(
