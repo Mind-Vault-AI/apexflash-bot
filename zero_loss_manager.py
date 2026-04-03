@@ -3,6 +3,8 @@ import logging
 import time
 from datetime import datetime, timezone
 
+import aiohttp
+
 from config import ADMIN_IDS, SOL_MINT
 from persistence import load_users
 from wallet import load_keypair, get_sol_balance, get_token_balances
@@ -59,18 +61,44 @@ async def execute_trade(keypair, action, input_mint, output_mint, amount_raw):
         logger.error(f"[{action}] Swap Failed: {err}")
         return None, 0.0
 
+_trend_cache: dict = {"pct": 0.0, "ts": 0.0}
+
 async def check_market_trend() -> float:
     """
-    Hedging Logic: Checks the trend of SOL.
-    If market is dumping (-5%), we skip entries.
+    Fetches SOL 1-hour price change from DexScreener.
+    Returns % change (negative = bearish). Entry skipped if < -5.0%.
+    Cached for 5 minutes to avoid rate limits.
     """
+    global _trend_cache
+    now = time.time()
+
+    if now - _trend_cache["ts"] < 300:
+        return _trend_cache["pct"]
+
     try:
-        # Simplified: fetch SOL/USDC price or similar. 
-        # For now, return 0.0 (neutral) to ensure stability, 
-        # but integrated into the entry filter.
-        return 0.0
-    except Exception:
-        return 0.0
+        url = (
+            "https://api.dexscreener.com/latest/dex/tokens/"
+            "So11111111111111111111111111111111111111112"
+        )
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=6)) as resp:
+                if resp.status == 200:
+                    data = await resp.json(content_type=None)
+                    pairs = data.get("pairs") or []
+                    sol_pair = next(
+                        (p for p in pairs if p.get("quoteToken", {}).get("symbol") == "USDC"),
+                        pairs[0] if pairs else None,
+                    )
+                    if sol_pair:
+                        raw = sol_pair.get("priceChange", {}).get("h1")
+                        pct = float(raw) if raw is not None else 0.0
+                        _trend_cache = {"pct": pct, "ts": now}
+                        logger.info(f"SOL 1h trend: {pct:+.2f}%")
+                        return pct
+    except Exception as e:
+        logger.debug(f"check_market_trend error: {e}")
+
+    return _trend_cache["pct"]
 
 async def position_manager(keypair, symbol, mint, bot=None):
     """
@@ -165,18 +193,30 @@ async def auto_trader_loop(bot=None):
             signals = await check_scalp_signals()
             for s in signals:
                 sym = s['symbol']
-                if s['grade'] != "A": 
+                vol = s.get('volume_usd', 0)
+                grade = s['grade']
+                
+                # Zero-Loss Policy Update: Grade A is preferred, but Grade B with $2M+ volume is also high confidence.
+                is_high_conf = (grade == "A") or (grade == "B" and vol >= 2_000_000)
+                
+                if not is_high_conf:
+                    logger.debug(f"Skipping {sym} Grade {grade} (Conf: low, Vol: ${vol/1e6:.1f}M)")
                     continue
                 
                 now = time.time()
-                if sym in active_positions or (now - last_trade_ts.get(sym, 0) < TRADE_COOLDOWN):
+                if sym in active_positions:
+                    continue
+                if (now - last_trade_ts.get(sym, 0) < TRADE_COOLDOWN):
+                    logger.debug(f"Skipping {sym} (Cooldown active)")
                     continue
                 
                 # Hedge/Safety Filter
-                if await check_market_trend() < -5.0:
+                trend = await check_market_trend()
+                if trend < -4.0:
+                    logger.warning(f"Market Trend Bearish ({trend}%). Entry skipped for {sym}.")
                     continue
 
-                logger.info(f"⚡ GRADE A SIGNAL: {sym}")
+                logger.info(f"⚡ GODMODE SIGNAL TRIGGERED: {sym} Grade {grade} (Vol: ${vol/1e6:.1f}M)")
                 mint = SCALP_TOKENS.get(sym)
                 amount_lamports = int(TRADE_AMOUNT_SOL * 1_000_000_000)
                 

@@ -378,7 +378,11 @@ async def war_watch_loop(bot=None) -> None:
 
 def start_war_watch(bot=None) -> asyncio.Task:
     """Start War Watch as a background asyncio task. Call from bot.py after app starts."""
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     task = loop.create_task(war_watch_loop(bot=bot))
     logger.info("War Watch: background task created")
     return task

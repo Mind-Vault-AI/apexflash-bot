@@ -116,11 +116,11 @@ def _grade_signal(pct_5m: float, pct_15m: float, volume_usd: float) -> str:
     # ── Trend Alignment: 5m and 15m MUST point same way for Grade A ──────
     trend_aligned = (pct_5m * pct_15m) > 0
 
-    if abs5 >= 3.0 and trend_aligned and has_high_vol:
+    if abs5 >= 2.5 and trend_aligned and has_high_vol:
         return "A"
-    if abs5 >= 1.5 or abs15 >= 3.0:
+    if abs5 >= 1.2 or abs15 >= 2.5:
         return "B" if has_std_vol else ""
-    if abs5 >= 1.0:
+    if abs5 >= 0.8:
         return "C" if has_std_vol else ""
     return ""
 

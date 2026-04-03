@@ -19,12 +19,13 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.10.0 (+ AI SENTIMENT ANALYSIS via CryptoBERT + WHALE INTELLIGENCE LAYER)
+Version: 3.15.0 (THE AGENCY GATEWAY + INFINITY ENGINE + PY 3.14 FIX)
 """
 import logging
 import re
 import random
 from datetime import datetime, timezone, time as dt_time
+import asyncio
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
@@ -73,6 +74,10 @@ from persistence import (
 )
 from marketing import post_to_channel as marketing_post
 from twitter_poster import post_tweet as twitter_post, post_thread as twitter_post_thread, get_stats_text as twitter_stats_text
+
+# ── ApexFlash Godmode Agents ──
+from zero_loss_manager import auto_trader_loop
+from ceo_agent import start_ceo_scheduler
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -6565,10 +6570,16 @@ def _check_critical_env():
     import os
     CRITICAL = {
         "BOT_TOKEN": BOT_TOKEN,
+        "ADMIN_IDS": ADMIN_IDS,
+        "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY", ""),
+        "HUGGINGFACE_TOKEN": os.getenv("HUGGINGFACE_TOKEN", ""),
+        "UPSTASH_REDIS_URL": os.getenv("UPSTASH_REDIS_URL", ""),
+        "GUMROAD_ACCESS_TOKEN": os.getenv("GUMROAD_ACCESS_TOKEN", ""),
+        "NEWSAPI_KEY": os.getenv("NEWSAPI_KEY", ""),
+        "CRYPTOPANIC_KEY": os.getenv("CRYPTOPANIC_KEY", ""),
         "HELIUS_API_KEY": os.getenv("HELIUS_API_KEY", ""),
         "ETHERSCAN_API_KEY": os.getenv("ETHERSCAN_API_KEY", ""),
         "WALLET_ENCRYPTION_KEY": os.getenv("WALLET_ENCRYPTION_KEY", ""),
-        "UPSTASH_REDIS_URL": os.getenv("UPSTASH_REDIS_URL", ""),
         "FEE_COLLECT_WALLET": os.getenv("FEE_COLLECT_WALLET", ""),
         "ALERT_CHANNEL_ID": os.getenv("ALERT_CHANNEL_ID", ""),
         "JUPITER_API_KEY": os.getenv("JUPITER_API_KEY", ""),
@@ -6576,13 +6587,19 @@ def _check_critical_env():
     missing = [k for k, v in CRITICAL.items() if not v]
     if missing:
         logger.critical(f"MISSING ENV VARS: {missing} — bot may malfunction!")
-        # Will alert admin via Telegram after bot starts (startup_alert job)
+        # Will alert admin via Telegram after bot starts (startup_alert logic)
         return missing
     logger.info(f"Env check OK: {len(CRITICAL)} critical vars present")
     return []
 
 
 def main() -> None:
+    # Python 3.12+ / 3.14+ loop fix
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN not set! Add it to .env or environment variables.")
         return
@@ -6816,7 +6833,37 @@ def main() -> None:
         name="inspector_gadget",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.12.3 starting (War Watch + CEO Agent + KPI grade tracking)...")
+    async def system_heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Periodic status update for admin visibility (Heartbeat)."""
+        try:
+            from zero_loss_manager import check_market_trend
+            trend = await check_market_trend()
+            emoji = "\U0001f7e2" if trend >= 0 else "\U0001f534"
+            msg = (
+                f"\U0001f493 *APEXFLASH HEARTBEAT*\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"Status: **System Healthy**\n"
+                f"{emoji} SOL Trend: **{trend:+.2f}%**\n"
+                f"📡 Scanning: **Grade A/B+ active**\n"
+                f"\n"
+                f"_Bot is monitoring markets 24/7._"
+            )
+            for admin_id in ADMIN_IDS:
+                try:
+                    await context.bot.send_message(chat_id=admin_id, text=msg, parse_mode="Markdown")
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"Heartbeat failed: {e}")
+
+    app.job_queue.run_repeating(
+        system_heartbeat_job,
+        interval=14400, # every 4 hours
+        first=300,      # first run 5 min after startup
+        name="heartbeat_job",
+    )
+
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.15.0 starting (Infinity Engine + The Agency Gateway)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
@@ -6874,13 +6921,33 @@ def main() -> None:
             except Exception as e:
                 logger.warning(f"Startup notification failed: {e}")
 
+        # 🚀 START GODMODE AGENTS
+        try:
+            # 1. Zero-Loss Autonomous Scalper (24/7 background task)
+            asyncio.create_task(auto_trader_loop(application.bot))
+            logger.info("🛡️ Zero-Loss Manager: task started")
+
+            # 2. CEO Agent Scheduler (Daily 08:00 Amsterdam)
+            start_ceo_scheduler(application.job_queue.scheduler)
+            logger.info("🤖 CEO Agent: scheduler hooked to JobQueue")
+            
+        except Exception as e:
+            logger.error(f"Godmode Agent activation failed: {e}")
+
     app.post_init = post_init
-    # ── Gumroad Revenue Sync: Poll for new sales (every 60 min) ───────────────
+    # ── Gumroad Revenue Sync: Poll for new sales (every 15 min) ───────────────
     async def gumroad_sync_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         """Poll Gumroad for recent sales and sync to KPI tracking."""
         try:
             from gumroad import get_recent_sales
-            from persistence import is_purchase_synced, mark_purchase_synced, track_paid_conversion, get_tier_from_product_id
+            from persistence import (
+                is_purchase_synced, 
+                mark_purchase_synced, 
+                track_paid_conversion, 
+                track_revenue,
+                get_tier_from_product_id,
+                _get_redis
+            )
             
             sales = await get_recent_sales(page=1)
             if not sales:
@@ -6900,12 +6967,19 @@ def main() -> None:
                     continue
                 
                 # 1. Track in Redis
-                track_paid_conversion(0, tier) # user_id 0 for general sync
+                price = sale.get("price", 0) / 100.0 # cents to dollars
+                track_paid_conversion(0, tier) 
+                track_revenue(price)
                 mark_purchase_synced(purchase_id)
                 new_count += 1
                 
-                # 2. Notify Admin
-                price = sale.get("price", 0) / 100.0 # cents to dollars
+                # 2. Get Progress Data
+                r = _get_redis()
+                total_usd = float(r.get("kpi:total_revenue_usd") or 0) if r else price
+                total_eur = total_usd * 0.92  # Approx conversion for €1M goal progress
+                progress_pct = (total_eur / 1_000_000) * 100
+
+                # 3. Notify Admin
                 currency = sale.get("currency", "USD")
                 formatted_price = f"{price:,.2f} {currency}"
                 
@@ -6919,7 +6993,9 @@ def main() -> None:
                                 f"Tier: <b>{tier.upper()}</b>\n"
                                 f"Amount: <b>{formatted_price}</b>\n"
                                 f"Product: <i>{sale.get('product_name', 'Unknown')}</i>\n\n"
-                                f"🚀 <b>Target: €1,000,000</b> — <i>Every sale counts!</i>"
+                                f"📈 <b>Progress to €1,000,000:</b>\n"
+                                f"Total: <b>€{total_eur:,.282f}</b> ({progress_pct:.4f}%)\n\n"
+                                f"🚀 <i>Every sale counts! Godmode active.</i>"
                             ),
                             parse_mode="HTML"
                         )
@@ -6933,7 +7009,7 @@ def main() -> None:
 
     app.job_queue.run_repeating(
         gumroad_sync_job,
-        interval=3600,  # every 60 minutes
+        interval=900,   # every 15 minutes
         first=60,       # first run 1 min after startup
         name="gumroad_sync",
     )

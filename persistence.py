@@ -541,6 +541,21 @@ def get_tier_from_product_id(product_id: str) -> str:
 # CEO AGENT KPI HELPERS
 # ══════════════════════════════════════════════
 
+def track_revenue(amount_usd: float):
+    """
+    Persist total platform revenue in Redis.
+    Keys written:
+      kpi:total_revenue_usd — Running total (float)
+    """
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        r.incrbyfloat("kpi:total_revenue_usd", amount_usd)
+    except Exception as e:
+        logger.debug(f"track_revenue failed: {e}")
+
+
 def track_paid_conversion(user_id: int, tier: str):
     """
     Track upgrade event for paid conversion KPI.
@@ -549,7 +564,6 @@ def track_paid_conversion(user_id: int, tier: str):
     Keys written:
       kpi:paid_conversions — total count of upgrades all-time
       kpi:paid_conversions:{date} — daily count (CEO Agent trending)
-      funnel:upgrade:{date} — already used by funnel tracking (double-write OK)
     """
     r = _get_redis()
     if not r:
@@ -560,7 +574,6 @@ def track_paid_conversion(user_id: int, tier: str):
         r.incr("kpi:paid_conversions")
         r.incr(f"kpi:paid_conversions:{today}")
         r.expire(f"kpi:paid_conversions:{today}", 90 * 86400)
-        # Also tag which tier for ARPU breakdown
         r.incr(f"kpi:paid_conversions:{tier}:{today}")
     except Exception as e:
         logger.debug(f"track_paid_conversion failed: {e}")
@@ -601,6 +614,7 @@ def get_ceo_kpis() -> dict:
     try:
         result = {}
         keys = [
+            "kpi:total_revenue_usd",
             "platform:total_users",
             "winrate:total_trades",
             "winrate:wins",

@@ -144,7 +144,7 @@ async def get_whale_alert_sentiment(alert: dict) -> Optional[dict]:
 # ══════════════════════════════════════════════
 
 # Minimum quality score to send alert (0-100). Below this = suppressed.
-MIN_SIGNAL_QUALITY = 60
+MIN_SIGNAL_QUALITY = 80
 
 # Wallets with historically better signals get bonus points
 HIGH_QUALITY_WALLETS = {

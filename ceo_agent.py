@@ -268,20 +268,26 @@ def collect_kpis() -> dict:
 def gemini_prioritise(kpis: dict) -> dict:
     """
     Call Gemini 2.5 Flash with the KPI snapshot.
-    Returns structured priority list: {critical: [...], high: [...], growth: [...]}
-    Falls back to rule-based if Gemini unavailable.
+    Returns structured priority list. 
+    Includes exponential backoff for 503 (Capacity Exhausted) errors.
     """
     if not GEMINI_API_KEY:
         return _rule_based_priorities(kpis)
 
-    try:
-        import google.generativeai as genai
+    import time as _time
+    max_retries = 3
+    retry_delay = 2
 
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+    for attempt in range(max_retries):
+        try:
+            import google.generativeai as genai
+            from google.api_core import exceptions as google_exceptions
 
-        prompt = f"""You are the CEO Agent for ApexFlash, a crypto AI trading bot platform.
-Goal: €1M netto before 29-03-2028 (Erik's 50th birthday).
+            genai.configure(api_key=GEMINI_API_KEY)
+            model = genai.GenerativeModel("gemini-2.5-flash")
+
+            prompt = f"""You are the CEO Agent for ApexFlash, a crypto AI trading bot platform.
+Goal: €1M netto before 29-03-2028.
 Current date: {kpis.get('date')}
 
 KPI SNAPSHOT (today):
@@ -291,36 +297,37 @@ TARGETS:
 - Win rate: >65%
 - Paid conversion: >8%
 - Users month 6: 12,000
-- Users month 18: 50,000
-
-CONSTRAINTS:
-- VERBOD: Polymarket (KSA NL ban), ETF/stock execution (MiFID II)
-- Budget: €0 extra — only free APIs or existing subscriptions
-- LEAN: No features without measurable impact
 
 Analyse the KPIs. Return ONLY valid JSON, no markdown, with this exact structure:
 {{
   "critical": ["max 2 issues that block the €1M goal TODAY if not fixed"],
   "high": ["max 3 issues to fix this week"],
-  "growth": ["max 2 asymmetric opportunities with highest expected ROI"],
-  "revenue_mtd_eur": <estimated monthly revenue in EUR based on affiliate clicks>,
-  "on_track": <true/false — is the platform on track for month 6 target of 12k users>,
-  "one_liner": "<one sentence status for Erik, max 15 words>"
+  "growth": ["max 2 asymmetric opportunities"],
+  "revenue_mtd_eur": <estimated revenue>,
+  "on_track": <true/false>,
+  "one_liner": "<status sentence>"
 }}"""
 
-        resp = model.generate_content(prompt)
-        text = resp.text.strip()
+            resp = model.generate_content(prompt)
+            text = resp.text.strip()
 
-        # Strip markdown code fences if present
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
+            if text.startswith("```"):
+                lines = text.split("\n")
+                text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
 
-        return json.loads(text)
+            return json.loads(text)
 
-    except Exception as e:
-        logger.warning(f"Gemini prioritisation failed ({e}), using rule-based fallback")
-        return _rule_based_priorities(kpis)
+        except (google_exceptions.ResourceExhausted, google_exceptions.ServiceUnavailable) as e:
+            logger.warning(f"Gemini Capacity Exhausted (Attempt {attempt+1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                _time.sleep(retry_delay * (2 ** attempt))
+            continue
+        except Exception as e:
+            logger.error(f"Gemini prioritisation error: {e}")
+            break
+
+    logger.warning("Gemini failed after retries, using rule-based fallback")
+    return _rule_based_priorities(kpis)
 
 
 def _rule_based_priorities(kpis: dict) -> dict:
