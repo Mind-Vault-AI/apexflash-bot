@@ -927,6 +927,20 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "positions":      _cb_positions,
     }
 
+    # Basic dispatch for exact matches in the routes dictionary
+    if data in routes:
+        try:
+            await routes[data](query, user, context)
+        except Exception as e:
+            logger.error(f"Callback error [{data}]: {e}")
+            from traceback import format_exc
+            logger.error(format_exc())
+            try:
+                await query.edit_message_text("\u26a0\ufe0f An error occurred. Please use /start.")
+            except Exception:
+                pass
+        return
+
     # Handle /hot trending buy buttons — user tapped a trending token
     if data.startswith("hot_buy_"):
         mint = data[8:]  # Remove "hot_buy_" prefix
