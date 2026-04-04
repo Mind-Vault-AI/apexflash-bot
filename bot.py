@@ -468,7 +468,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # Variant B: Revenue & Speed Focus
         welcome_header = (
             "\u26a1 *ApexFlash MEGA BOT v3.15.5*\n"
-            "━━━━━ Mission: €1,000,000 ━━━━━\n"
+            "━━━━━ Institutional Speed ━━━━━\n"
         )
         tagline = "The world's fastest autonomous scalp engine. Your path to financial immunity starts here."
     else:
