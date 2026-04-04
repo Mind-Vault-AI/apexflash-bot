@@ -1,4 +1,4 @@
-from config import BOT_USERNAME
+from core.config import BOT_USERNAME
 """
 ApexFlash AI Visual Producer (v3.21.0)
 ────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ def generate_viral_infographic(
     High-level entry point to generate a signal infographic.
     Returns path to JPEG.
     """
-    from i18n import get_text
+    from core.i18n import get_text
     config = SIGNAL_TYPES.get(signal_type, SIGNAL_TYPES["whale"])
     
     # 1. Base Image (Search for template in marketing/templates)
@@ -112,7 +112,7 @@ def create_infographic(
 
         # Branding (Bottom Right)
         footer_font = ImageFont.load_default()
-        draw.text((width - 300, height - 100), "@{BOT_USERNAME} | Godmode", font=footer_font, fill=(255, 255, 255, 180))
+        draw.text((width - 300, height - 100), f"@{BOT_USERNAME} | Godmode", font=footer_font, fill=(255, 255, 255, 180))
 
         img = img.convert("RGB")
         img.save(output_path, "JPEG", quality=90)

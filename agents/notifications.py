@@ -7,12 +7,12 @@ import logging
 import asyncio
 import aiohttp
 
-from config import (
+from core.config import (
     BOT_USERNAME,
     DISCORD_WEBHOOK_URL, DISCORD_TRADE_WEBHOOK_URL,
     AFFILIATE_LINKS, WEBSITE_URL, CHANNEL_URL, ADMIN_IDS,
 )
-from social_manager import handle_viral_dispatch
+from agents.social_manager import handle_viral_dispatch
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ def _discord_trade_embed(user_name: str, action: str, amount: str,
             "inline": False,
         })
 
-    content = "🤖 **Trade on ApexFlash**: https://t.me/{BOT_USERNAME} — best prices, 1% fee"
+    content = f"🤖 **Trade on ApexFlash**: https://t.me/{BOT_USERNAME} — best prices, 1% fee"
 
     return {"content": content, "embeds": [embed]}
 
@@ -151,7 +151,7 @@ async def notify_discord_trade(user_name: str, action: str, amount: str,
 async def notify_telegram_channel(bot, alert: dict, alert_text: str, alert_kb=None,
                                   channel_id: str = "") -> bool:
     """Post an alert to the public Telegram channel (Gold Signals)."""
-    from config import ALERT_CHANNEL_ID
+    from core.config import ALERT_CHANNEL_ID
     # Trigger Social Manager for Viral Viral Drop (v3.15.2)
     bot_info = await bot.get_me() if bot else None
     bot_username = bot_info.username if bot_info else "ApexFlashBot"
@@ -184,7 +184,7 @@ async def notify_channel_trade(bot, action: str, sol_amount: float,
                                fee_sol: float = 0) -> bool:
     """Post rich trade notification to Telegram channel (social proof)."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    from config import ALERT_CHANNEL_ID, ADMIN_IDS
+    from core.config import ALERT_CHANNEL_ID, ADMIN_IDS
 
     target = channel_id or ALERT_CHANNEL_ID
     if not target:
@@ -209,13 +209,13 @@ async def notify_channel_trade(bot, action: str, sol_amount: float,
         "\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "⚡ <b>ApexFlash</b> — Trade any Solana token\n"
-        "🤖 Start now → @{BOT_USERNAME}"
+        f"🤖 Start now → @{BOT_USERNAME}"
     )
 
     ref_id = ADMIN_IDS[0] if ADMIN_IDS else 0
     # USE DEEP LINKS IN CHANNEL (callback_data is NOT supported in channels!)
     trade_url = f"https://t.me/{BOT_USERNAME}?start=buy_{token_mint}" if token_mint else f"https://t.me/{BOT_USERNAME}?start=ref_{ref_id}"
-    aff_url = "https://t.me/{BOT_USERNAME}?start=aff_mexc"  # Default trackable deep link
+    aff_url = f"https://t.me/{BOT_USERNAME}?start=aff_mexc"  # Default trackable deep link
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("⚡ 1-Tap Auto-Trade", url=trade_url)],
@@ -227,7 +227,7 @@ async def notify_channel_trade(bot, action: str, sol_amount: float,
         chart_url = None
         if token_mint:
             try:
-                from jupiter import get_token_chart_url
+                from exchanges.jupiter import get_token_chart_url
                 chart_url = await get_token_chart_url(token_mint, hours=24)
             except Exception:
                 pass
@@ -283,7 +283,7 @@ def _discord_digest_embed(stats: dict) -> dict:
 
     content = (
         "\U0001f4ca **Daily Digest** \u2014 Here's what happened on ApexFlash today!\n"
-        "\U0001f916 **Start trading**: https://t.me/{BOT_USERNAME}"
+        f"\U0001f916 **Start trading**: https://t.me/{BOT_USERNAME}"
     )
 
     return {"content": content, "embeds": [embed]}
@@ -302,7 +302,7 @@ async def notify_channel_digest(bot, stats: dict,
                                 channel_id: str = "") -> bool:
     """Post daily digest to Telegram channel."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    from config import ALERT_CHANNEL_ID
+    from core.config import ALERT_CHANNEL_ID
 
     target = channel_id or ALERT_CHANNEL_ID
     if not target:
@@ -326,11 +326,11 @@ async def notify_channel_digest(bot, stats: dict,
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\U0001f916 Trade any Solana token with 1% fee!\n"
-        "\U0001f449 @{BOT_USERNAME}"
+        f"\U0001f449 @{BOT_USERNAME}"
     )
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("\U0001f916 Start Trading", url="https://t.me/{BOT_USERNAME}")],
+        [InlineKeyboardButton("\U0001f916 Start Trading", url=f"https://t.me/{BOT_USERNAME}")],
     ])
 
     try:

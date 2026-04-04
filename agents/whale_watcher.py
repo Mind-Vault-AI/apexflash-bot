@@ -9,7 +9,7 @@ import json
 import logging
 import asyncio
 import aiohttp
-from persistence import _get_redis
+from core.persistence import _get_redis
 
 # LEGENDARY WALLETS (Curated Smart Money)
 # These are top-performing Solana traders / insiders

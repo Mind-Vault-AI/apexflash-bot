@@ -16,7 +16,7 @@ Endpoints used:
 import logging
 import aiohttp
 
-from config import (
+from core.config import (
     GUMROAD_ACCESS_TOKEN,
     GUMROAD_PRO_PRODUCT_ID,
     GUMROAD_ELITE_PRODUCT_ID,
@@ -160,7 +160,7 @@ async def sync_gumroad_revenue() -> dict:
     Fetch recent sales from Gumroad and update Redis revenue KPIs.
     Returns: { "revenue_added": float, "conversions_added": int }
     """
-    from persistence import _get_redis
+    from core.persistence import _get_redis
     r = _get_redis()
     if not r:
         return {"error": "Redis unavailable"}

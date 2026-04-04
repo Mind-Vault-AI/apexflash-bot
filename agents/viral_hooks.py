@@ -1,4 +1,4 @@
-from config import BOT_USERNAME
+from core.config import BOT_USERNAME
 """
 ApexFlash Viral Hook Generator (v3.18.0)
 ────────────────────────────────────────────────────────
@@ -39,14 +39,15 @@ def generate_viral_hook(data: dict) -> str:
         "spread": data.get("spread", "2.1"),
         "asset": data.get("asset", "USDC"),
         "inst_move": data.get("inst_move", "Blackrock activity"),
-        "amount": data.get("amount", "2.4")
+        "amount": data.get("amount", "2.4"),
+        "BOT_USERNAME": BOT_USERNAME
     }
     
     try:
         return hook.format(**placeholders)
     except Exception as e:
         logger.error(f"Hook generation failed: {e}")
-        return "⚠️ Massive crypto move detected! Follow the smart money at @{BOT_USERNAME} 🚀"
+        return f"⚠️ Massive crypto move detected! Follow the smart money at @{BOT_USERNAME} 🚀"
 
 def get_marketing_playbook() -> List[str]:
     """Return a list of viral hooks for the daily marketing playbook."""

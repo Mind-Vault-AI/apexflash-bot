@@ -42,7 +42,7 @@ from telegram.ext import (
     MessageHandler, filters, ContextTypes,
 )
 
-from config import (
+from core.config import (
     BOT_USERNAME,
     BOT_TOKEN, AFFILIATE_LINKS, AFFILIATE_LINKS_ACTIVE, TOOL_AFFILIATE_LINKS, ADMIN_IDS,
     GUMROAD_PRO_URL, GUMROAD_ELITE_URL, TIERS,
@@ -60,37 +60,37 @@ from config import (
     TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET,
     TWITTER_ENABLED, ALERT_CHANNEL_ID,
 )
-from chains import fetch_eth_whale_transfers, fetch_sol_whale_transfers, get_crypto_prices
-from arbitrage_scanner import scan_arbitrage, format_arbitrage_alert
-from viral_hooks import get_marketing_playbook
+from exchanges.chains import fetch_eth_whale_transfers, fetch_sol_whale_transfers, get_crypto_prices
+from exchanges.arbitrage_scanner import scan_arbitrage, format_arbitrage_alert
+from agents.viral_hooks import get_marketing_playbook
 from sentiment import get_whale_alert_sentiment, format_sentiment_line
-from wallet import (
+from core.wallet import (
     create_wallet, load_keypair, get_sol_balance,
     get_token_balances, collect_fee, transfer_sol,
 )
-from jupiter import (
+from exchanges.jupiter import (
     get_quote, execute_swap, calculate_fee,
     get_token_info, search_token, get_token_chart_url, COMMON_TOKENS,
 )
-from notifications import (
+from agents.notifications import (
     notify_discord_whale, notify_discord_trade,
     notify_telegram_channel, notify_channel_trade,
     notify_discord_digest, notify_channel_digest,
 )
 from gumroad import verify_license, get_subscriber_count
-from persistence import (
+from core.persistence import (
     save_users, load_users, save_stats, load_stats, export_backup, import_backup,
     track_funnel, track_token_lookup, track_token_trade, track_affiliate_click,
     update_last_active, get_popular_tokens, get_funnel_stats, get_affiliate_stats,
     track_paid_conversion, track_user_active, track_visitor,
     get_user_bucket, track_bucket_kpi, track_user_profit, get_leaderboard_stats,
 )
-from marketing import post_to_channel as marketing_post
-from twitter_poster import post_tweet as twitter_post, post_thread as twitter_post_thread, get_stats_text as twitter_stats_text
+from agents.marketing import post_to_channel as marketing_post
+from agents.twitter_poster import post_tweet as twitter_post, post_thread as twitter_post_thread, get_stats_text as twitter_stats_text
 
 # ── ApexFlash Godmode Agents ──
 from zero_loss_manager import auto_trader_loop
-from ceo_agent import start_ceo_scheduler
+from agents.ceo_agent import start_ceo_scheduler
 from whale_intent import analyze_whale_intent, can_user_analyze
 
 # ══════════════════════════════════════════════
@@ -312,7 +312,7 @@ async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Display the top profitable ApexFlash traders."""
-    from persistence import get_leaderboard_stats
+    from core.persistence import get_leaderboard_stats
     stats = get_leaderboard_stats(limit=10)
     
     if not stats:
@@ -338,7 +338,7 @@ async def cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 def main_menu_kb(user_id: int) -> InlineKeyboardMarkup:
-    from i18n import get_text
+    from core.i18n import get_text
     user = get_user(user_id)
     lang = user.get("language_code", "en")
     
@@ -368,7 +368,7 @@ def _back_main() -> list:
 async def cmd_admin_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Pause auto-trading signals (Admin only)."""
     if not is_admin(update.effective_user.id): return
-    from persistence import _get_redis
+    from core.persistence import _get_redis
     r = _get_redis()
     if r: r.set("signals:paused", "1")
     await update.message.reply_text("⏸️ *Auto-Trading PAUSED*\nNew signals will be ignored.", parse_mode="Markdown")
@@ -376,7 +376,7 @@ async def cmd_admin_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cmd_admin_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Resume auto-trading signals (Admin only)."""
     if not is_admin(update.effective_user.id): return
-    from persistence import _get_redis
+    from core.persistence import _get_redis
     r = _get_redis()
     if r: r.set("signals:paused", "0")
     await update.message.reply_text("▶️ *Auto-Trading RESUMED*\nSearching for Grade A signals...", parse_mode="Markdown")
@@ -1297,7 +1297,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # CEO Agent callbacks (TIER 1 approve/deny buttons)
     if data.startswith("ceo:"):
         try:
-            from ceo_agent import handle_ceo_callback
+            from agents.ceo_agent import handle_ceo_callback
             await handle_ceo_callback(query, context)
         except Exception as e:
             logger.error(f"CEO callback [{data}] error: {e}")
@@ -2509,7 +2509,7 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
 
                     # Track win rate (critical for marketing + trust)
                     try:
-                        from persistence import record_trade_result
+                        from core.persistence import record_trade_result
                         record_trade_result(
                             chat_id, pos["token"], pnl_pct, pnl_sol,
                             signal_grade=pos.get("signal_grade", ""),
@@ -2521,14 +2521,14 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
 
                     # ── CEO TIER 2: Track consecutive losses + auto-pause ──
                     try:
-                        from persistence import _get_redis as _pr
+                        from core.persistence import _get_redis as _pr
                         _r = _pr()
                         if _r:
                             if pnl_sol < 0:
                                 consec = _r.incr("winrate:consecutive_losses")
                                 logger.info(f"Consecutive losses: {consec}")
                                 # Check if auto-pause should trigger
-                                from ceo_agent import check_win_rate_and_pause
+                                from agents.ceo_agent import check_win_rate_and_pause
                                 pause_result = check_win_rate_and_pause()
                                 if pause_result.get("action") == "paused":
                                     # Alert Erik via Telegram
@@ -2590,7 +2590,7 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                     if ALERT_CHANNEL_ID and pnl_sol != 0:
                         try:
                             win_streak = ""
-                            from persistence import get_win_rate
+                            from core.persistence import get_win_rate
                             wr = get_win_rate()
                             if wr and wr.get("total", 0) >= 5:
                                 win_streak = f"\n📊 Platform Win Rate: *{wr.get('win_rate', 0)}%* ({wr.get('total', 0)} trades)"
@@ -2604,7 +2604,7 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                                 f"⏱ Trigger: {trigger_label}\n"
                                 f"{win_streak}\n\n"
                                 f"🔗 [Verify on Solscan](https://solscan.io/tx/{tx_sig})\n\n"
-                                "💡 _Get these signals free → @{BOT_USERNAME}_\n"
+                                f"💡 _Get these signals free → @{BOT_USERNAME}_\n"
                                 "🔥 _Copy top traders → apexflash.pro_"
                             )
                             await context.bot.send_message(
@@ -3498,7 +3498,7 @@ async def _cb_execute_buy(query, user, context, data):
                 referrer_id = user.get("referred_by", 0)
                 if referrer_id and referrer_id in users:
                     referrer = users[referrer_id]
-                    from config import get_referral_pct
+                    from core.config import get_referral_pct
                     ref_pct = get_referral_pct(referrer.get("referral_count", 0))
                     referral_share = int(fee_lamports * ref_pct / 100)
                     platform_share = fee_lamports - referral_share
@@ -3716,7 +3716,7 @@ async def _cb_execute_sell(query, user, context, data):
                 referrer_id = user.get("referred_by", 0)
                 if referrer_id and referrer_id in users:
                     referrer = users[referrer_id]
-                    from config import get_referral_pct
+                    from core.config import get_referral_pct
                     _ref_pct = get_referral_pct(referrer.get("referral_count", 0))
                     ref_share_sol = int(sol_fee_lamports * _ref_pct / 100)
                     platform_sol = sol_fee_lamports - ref_share_sol
@@ -3757,7 +3757,7 @@ async def _cb_execute_sell(query, user, context, data):
                     if entry_sol > 0 and pct >= 1.0:
                         pnl_sol = sol_received - entry_sol
                         pnl_pct = (pnl_sol / entry_sol) * 100
-                        from persistence import record_trade_result
+                        from core.persistence import record_trade_result
                         record_trade_result(
                             query.from_user.id, sell_token_name, pnl_pct, pnl_sol,
                             signal_grade=p.get("signal_grade", ""),
@@ -4285,7 +4285,7 @@ async def _cb_copy_trade(query, user, context):
 
     if not tier.get("copy_trade"):
         # Show top traders as teaser (free users see stats but can't copy)
-        from mizar import get_marketplace_bots
+        from exchanges.mizar import get_marketplace_bots
         top_bots = await get_marketplace_bots(limit=5)
 
         text = (
@@ -4334,7 +4334,7 @@ async def _cb_copy_trade(query, user, context):
         ]
     else:
         # Pro/Elite users — live leaderboard + direct copy link
-        from mizar import get_marketplace_bots
+        from exchanges.mizar import get_marketplace_bots
         top_bots = await get_marketplace_bots(limit=5)
 
         text = (
@@ -4994,7 +4994,7 @@ async def _cb_referral_link(query, user, context):
 
 async def _cb_referral_stats(query, user, context):
     """Detailed referral statistics."""
-    from config import get_referral_pct
+    from core.config import get_referral_pct
     uid = query.from_user.id
     ref_count = sum(1 for u in users.values() if u.get("referred_by") == uid)
     user["referral_count"] = ref_count
@@ -5275,7 +5275,7 @@ async def _cb_admin_resume_signals(query, user, context):
         await query.answer("❌ Admin only.", show_alert=True)
         return
     try:
-        from persistence import _get_redis as _pr
+        from core.persistence import _get_redis as _pr
         _r = _pr()
         if _r:
             _r.set("signals:paused", "0")
@@ -5326,7 +5326,7 @@ async def _cb_admin(query, user, context):
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
     )
-    from persistence import _get_redis
+    from core.persistence import _get_redis
     r = _get_redis()
     is_paused = r.get("signals:paused") == "1" if r else False
 
@@ -5346,7 +5346,7 @@ async def _cb_admin(query, user, context):
 async def _cb_admin_resume_logic(query, user, context):
     """Resume signals via callback."""
     if not is_admin(query.from_user.id): return
-    from persistence import _get_redis
+    from core.persistence import _get_redis
     r = _get_redis()
     if r: r.set("signals:paused", "0")
     await query.answer("▶️ Auto-Trading RESUMED")
@@ -5355,7 +5355,7 @@ async def _cb_admin_resume_logic(query, user, context):
 async def _cb_admin_pause_logic(query, user, context):
     """Pause signals via callback."""
     if not is_admin(query.from_user.id): return
-    from persistence import _get_redis
+    from core.persistence import _get_redis
     r = _get_redis()
     if r: r.set("signals:paused", "1")
     await query.answer("⏸️ Auto-Trading PAUSED")
@@ -5649,7 +5649,7 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
 
         # NEW: Detect what tokens whales are BUYING (the real signal)
         try:
-            from chains import fetch_sol_whale_token_swaps
+            from exchanges.chains import fetch_sol_whale_token_swaps
             swap_alerts = await fetch_sol_whale_token_swaps()
         except Exception as swap_err:
             logger.debug(f"Swap tracker: {swap_err}")
@@ -5696,7 +5696,7 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
 
         # ── CEO TIER 2: Check signals:paused before broadcasting ──
         try:
-            from persistence import _get_redis as _pr
+            from core.persistence import _get_redis as _pr
             _r = _pr()
             if _r and _r.get("signals:paused") == b"1":
                 logger.warning("CEO TIER 2: signals PAUSED — skipping broadcast this cycle")
@@ -5804,10 +5804,10 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                         url=f"https://t.me/{BOT_USERNAME}?start=buy_{token_mint}",
                     )])
                 ch_buttons.append([InlineKeyboardButton(
-                    "🔥 Trending Tokens", url="https://t.me/{BOT_USERNAME}?start=hot",
+                    "🔥 Trending Tokens", url=f"https://t.me/{BOT_USERNAME}?start=hot",
                 )])
                 ch_buttons.append([InlineKeyboardButton(
-                    "⚡ Start Trading", url="https://t.me/{BOT_USERNAME}",
+                    "⚡ Start Trading", url=f"https://t.me/{BOT_USERNAME}",
                 )])
 
                 channel_kb = InlineKeyboardMarkup(ch_buttons)
@@ -6387,7 +6387,7 @@ async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not is_admin(update.effective_user.id):
         return
 
-    from persistence import get_funnel_stats, get_popular_tokens, get_affiliate_stats, _get_redis
+    from core.persistence import get_funnel_stats, get_popular_tokens, get_affiliate_stats, _get_redis
     
     funnel = get_funnel_stats()
     popular = get_popular_tokens("alltime", 5)
@@ -6443,7 +6443,7 @@ async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show personalized AI trade analysis for Elite users."""
-    from advisor_agent import analyze_trader_performance, get_advisor_intro
+    from agents.advisor_agent import analyze_trader_performance, get_advisor_intro
     
     uid = update.effective_user.id
     user = get_user(uid)
@@ -6468,7 +6468,7 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show language selection menu."""
-    from i18n import get_text
+    from core.i18n import get_text
     uid = update.effective_user.id
     user = get_user(uid)
     lang = user.get("language_code", "en")
@@ -6501,10 +6501,10 @@ async def cmd_path(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def scheduled_conversion_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Daily check for free users to send FOMO reports."""
-    from conversion_agent import check_conversion_eligibility, generate_opportunity_report
+    from agents.conversion_agent import check_conversion_eligibility, generate_opportunity_report
     logger.info("🕒 Scheduled Job: Conversion AI (Cycle 14)")
     
-    from persistence import load_users
+    from core.persistence import load_users
     users_data = load_users()
     
     for user_id, data in users_data.items():
@@ -6629,7 +6629,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def cmd_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show personal referral stats and the Global Leaderboard."""
-    from persistence import get_user_referral_stats, get_referral_leaderboard
+    from core.persistence import get_user_referral_stats, get_referral_leaderboard
     
     uid = update.effective_user.id
     user = get_user(uid)
@@ -6677,7 +6677,7 @@ async def cmd_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def arbitrage_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Recurring job to scan cross-chain arbitrage spreads (Elite Feature)."""
-    from config import ELITE_CHANNEL_ID
+    from core.config import ELITE_CHANNEL_ID
     
     alerts = await scan_arbitrage()
     for alert in alerts:
@@ -6786,7 +6786,7 @@ async def _cb_whale_intent(query, user, context):
 
 async def cmd_winrate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show platform and user win rate stats."""
-    from persistence import get_win_rate, get_user_win_rate
+    from core.persistence import get_win_rate, get_user_win_rate
 
     uid = update.effective_user.id
     platform = get_win_rate()
@@ -6896,7 +6896,7 @@ async def cmd_deals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show top traders by win rate and P/L — public social proof."""
-    from persistence import get_win_rate
+    from core.persistence import get_win_rate
 
     platform = get_win_rate()
 
@@ -7003,7 +7003,7 @@ async def cmd_addwallet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     try:
-        from inspector_agent import add_alpha_wallet, get_alpha_wallets
+        from agents.inspector_agent import add_alpha_wallet, get_alpha_wallets
         add_alpha_wallet(address, label)
         wallets = get_alpha_wallets()
         await update.message.reply_text(
@@ -7026,7 +7026,7 @@ async def cmd_list_wallets(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
 
     try:
-        from inspector_agent import get_alpha_wallets
+        from agents.inspector_agent import get_alpha_wallets
         wallets = get_alpha_wallets()
         if not wallets:
             await update.message.reply_text("No alpha wallets tracked yet.\nUse `/addwallet <address> [label]`")
@@ -7104,7 +7104,7 @@ def main() -> None:
 
     # VIRAL AGENT: Start the autonomous social proof loop
     try:
-        from viral_agent import viral_poster_job
+        from agents.viral_agent import viral_poster_job
         app.job_queue.run_repeating(viral_poster_job, interval=3600, first=10)
         logger.info("📱 VIRAL AGENT: Loop scheduled (every 1h)")
     except Exception as viral_err:
@@ -7219,7 +7219,7 @@ def main() -> None:
     # Reads all KPIs from Redis, prioritises via Gemini, sends Telegram briefing to Erik
     async def ceo_briefing_job(context) -> None:
         try:
-            from ceo_agent import run_briefing
+            from agents.ceo_agent import run_briefing
             await run_briefing()
         except Exception as e:
             logger.error(f"CEO briefing job failed: {e}")
@@ -7233,7 +7233,7 @@ def main() -> None:
     # ── War Watch: geopolitical news scanner (every 10 min) ───────────────────
     async def war_watch_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         try:
-            from news_scanner import scan_once
+            from agents.news_scanner import scan_once
             signals = await scan_once(bot=context.bot)
             if signals:
                 logger.info(f"War Watch: {len(signals)} new signal(s) sent")
@@ -7288,7 +7288,7 @@ def main() -> None:
     async def _inspector_copy_signal(signal: dict) -> None:
         """Callback: broadcast Inspector copy-trade signal to all alert subscribers."""
         try:
-            from inspector_agent import format_inspector_signal
+            from agents.inspector_agent import format_inspector_signal
             text = format_inspector_signal(signal)
             mint = signal["mint"]
 
@@ -7334,7 +7334,7 @@ def main() -> None:
     async def inspector_gadget_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         """Inspector Gadget: scan alpha wallets, fire copy-trade signals."""
         try:
-            from inspector_agent import inspector_job, register_signal_callback
+            from agents.inspector_agent import inspector_job, register_signal_callback
             register_signal_callback(_inspector_copy_signal)
             results = await inspector_job(context)
             if results:
@@ -7459,7 +7459,7 @@ def main() -> None:
         """Poll Gumroad for recent sales and sync to KPI tracking."""
         try:
             from gumroad import get_recent_sales
-            from persistence import (
+            from core.persistence import (
                 is_purchase_synced, 
                 mark_purchase_synced, 
                 track_paid_conversion, 

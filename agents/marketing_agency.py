@@ -11,8 +11,8 @@ import time
 import logging
 import asyncio
 import aiohttp
-from persistence import _get_redis
-from config import DISCORD_WEBHOOK_URL, TWITTER_ENABLED
+from core.persistence import _get_redis
+from core.config import DISCORD_WEBHOOK_URL, TWITTER_ENABLED
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] AGENCY: %(message)s",

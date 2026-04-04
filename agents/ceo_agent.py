@@ -92,7 +92,7 @@ AMS = ZoneInfo("Europe/Amsterdam")
 def _get_redis():
     """Lazy Redis connection — reuse from persistence module."""
     try:
-        from persistence import (
+        from core.persistence import (
             _get_redis as _r,
             _safe_int, _safe_float, 
             get_governance_config, update_governance_config,
@@ -809,7 +809,7 @@ def start_ceo_scheduler(scheduler: AsyncIOScheduler = None) -> AsyncIOScheduler:
     Call from bot.py after the scheduler is started.
 
     Usage in bot.py:
-        from ceo_agent import start_ceo_scheduler
+        from agents.ceo_agent import start_ceo_scheduler
         start_ceo_scheduler(existing_scheduler)
     """
     if scheduler is None:

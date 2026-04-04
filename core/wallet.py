@@ -14,7 +14,7 @@ from solders.message import Message
 from solders.hash import Hash
 from cryptography.fernet import Fernet
 
-from config import HELIUS_RPC_URL, WALLET_ENCRYPTION_KEY
+from core.config import HELIUS_RPC_URL, WALLET_ENCRYPTION_KEY
 
 logger = logging.getLogger(__name__)
 

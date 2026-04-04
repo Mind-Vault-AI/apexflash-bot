@@ -112,7 +112,7 @@ INSTITUTIONAL_ALPHA_SIGNALS = {
 
 def _get_redis():
     try:
-        from persistence import _get_redis as _r
+        from core.persistence import _get_redis as _r
         return _r()
     except Exception:
         return None
@@ -283,7 +283,7 @@ async def analyze_impact_with_ai(headlines: list[str]) -> tuple[int, str]:
 
 def format_telegram_alert(signal: dict) -> str:
     """Format signal as Telegram Markdown message."""
-    from config import BOT_USERNAME, AFFILIATE_LINKS
+    from core.config import BOT_USERNAME, AFFILIATE_LINKS
     grade = signal["grade"]
     tag = signal.get("tag", "WAR_WATCH")
     direction = signal["direction"]
@@ -343,7 +343,7 @@ def format_discord_embed(signal: dict) -> dict:
 
 async def notify_signal(signal: dict, bot=None) -> None:
     """Send War Watch signal to Telegram channel + Discord."""
-    from config import BOT_USERNAME, DISCORD_WEBHOOK_URL, ALERT_CHANNEL_ID
+    from core.config import BOT_USERNAME, DISCORD_WEBHOOK_URL, ALERT_CHANNEL_ID
 
     text = format_telegram_alert(signal)
 
@@ -352,7 +352,7 @@ async def notify_signal(signal: dict, bot=None) -> None:
         try:
             from telegram import InlineKeyboardMarkup, InlineKeyboardButton
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("⚡ Trade Now", url="https://t.me/{BOT_USERNAME}"),
+                InlineKeyboardButton("⚡ Trade Now", url=f"https://t.me/{BOT_USERNAME}"),
                 InlineKeyboardButton("📊 More Signals", url="https://apexflash.pro"),
             ]])
             await bot.send_message(

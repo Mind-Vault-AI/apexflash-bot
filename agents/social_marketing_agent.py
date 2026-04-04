@@ -14,8 +14,8 @@ import argparse
 import sys
 import random
 from datetime import datetime
-from config import BOT_USERNAME, AFFILIATE_LINKS, ADMIN_IDS
-from persistence import get_trade_history
+from core.config import BOT_USERNAME, AFFILIATE_LINKS, ADMIN_IDS
+from core.persistence import get_trade_history
 
 # Dummy Trade History (to be replaced with live persistence db hook)
 MOCK_RECENT_TRADES = [

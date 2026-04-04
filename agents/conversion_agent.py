@@ -8,9 +8,9 @@ Logic: Transform "Missed Signals" into persuasive Opportunity Reports.
 import asyncio
 import logging
 import google.generativeai as genai
-from persistence import get_missed_signals
-from i18n import get_text
-from config import VERSION
+from core.persistence import get_missed_signals
+from core.i18n import get_text
+from core.config import VERSION
 
 logger = logging.getLogger("ConversionAgent")
 

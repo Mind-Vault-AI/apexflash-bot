@@ -5,7 +5,7 @@ Docs: https://docs.mizar.com
 """
 import logging
 import aiohttp
-from config import MIZAR_API_KEY, MIZAR_BASE_URL, MIZAR_REFERRAL_URL
+from core.config import MIZAR_API_KEY, MIZAR_BASE_URL, MIZAR_REFERRAL_URL
 
 logger = logging.getLogger(__name__)
 

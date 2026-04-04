@@ -18,7 +18,7 @@ ALPHA WALLETS: Known Solana on-chain traders.
   Add more via /addwallet command or INSPECTOR_WALLETS env var.
 
 Usage (called from bot.py):
-  from inspector_agent import inspector_job, get_alpha_wallets, add_alpha_wallet
+  from agents.inspector_agent import inspector_job, get_alpha_wallets, add_alpha_wallet
 """
 
 import asyncio
@@ -377,7 +377,7 @@ async def inspector_job(context=None) -> list[dict]:
     3. If signal = BUY + rug = safe: fire copy-trade alert
     Returns list of signals fired (for logging).
     """
-    from config import HELIUS_API_KEY
+    from core.config import HELIUS_API_KEY
     if not HELIUS_API_KEY:
         return []
 
@@ -440,7 +440,7 @@ async def inspector_job(context=None) -> list[dict]:
 
                 # ── Alpha Clan Clustering (v3.19.0) ──
                 cluster_count = 1
-                from persistence import _get_redis
+                from core.persistence import _get_redis
                 r = _get_redis()
                 if r:
                     cluster_key = f"apexflash:alpha_history:{mint}"

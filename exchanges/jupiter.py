@@ -12,7 +12,7 @@ import aiohttp
 from solders.keypair import Keypair
 from solders.transaction import VersionedTransaction
 
-from config import (
+from core.config import (
     JUPITER_API_KEY, JUPITER_QUOTE_URL, JUPITER_SWAP_URL,
     HELIUS_RPC_URL, PLATFORM_FEE_PCT, RPC_URLS,
 )

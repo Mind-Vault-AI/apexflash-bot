@@ -15,10 +15,10 @@ import logging
 import os
 import google.generativeai as genai
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from persistence import get_recent_wins, _get_redis
-from config import BOT_TOKEN, ALERT_CHANNEL_ID, VERSION, TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET
-from video_agent import generate_viral_infographic
-from twitter_poster import post_tweet_with_media
+from core.persistence import get_recent_wins, _get_redis
+from core.config import BOT_TOKEN, ALERT_CHANNEL_ID, VERSION, TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET
+from agents.video_agent import generate_viral_infographic
+from agents.twitter_poster import post_tweet_with_media
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ViralAgent")

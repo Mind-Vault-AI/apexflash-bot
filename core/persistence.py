@@ -501,7 +501,7 @@ def get_governance_config() -> dict:
     Allows the AI to 'learn' and tune its own performance.
     """
     r = _get_redis()
-    from config import TAKE_PROFIT_PCT, STOP_LOSS_PCT, BREAKEVEN_TRIGGER_PCT
+    from core.config import TAKE_PROFIT_PCT, STOP_LOSS_PCT, BREAKEVEN_TRIGGER_PCT
     
     defaults = {
         "tp_pct": TAKE_PROFIT_PCT,
@@ -787,7 +787,7 @@ def mark_purchase_synced(purchase_id: str):
 
 def get_tier_from_product_id(product_id: str) -> str:
     """Map Gumroad product ID to internal tier code."""
-    from config import GUMROAD_PRO_PRODUCT_ID, GUMROAD_ELITE_PRODUCT_ID
+    from core.config import GUMROAD_PRO_PRODUCT_ID, GUMROAD_ELITE_PRODUCT_ID
     if product_id == GUMROAD_PRO_PRODUCT_ID:
         return "pro"
     if product_id == GUMROAD_ELITE_PRODUCT_ID:

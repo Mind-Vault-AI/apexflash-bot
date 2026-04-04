@@ -52,7 +52,7 @@ msg(report)
 
 # Test config values
 try:
-    import config
+    from core import config
     cfg_report = (
         f"\n📋 CONFIG:\n"
         f"BOT_TOKEN: {'SET' if config.BOT_TOKEN else 'MISSING'}\n"

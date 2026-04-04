@@ -220,7 +220,7 @@ async def check_scalp_signals() -> list[dict]:
     return signals
 
 
-    from config import BOT_USERNAME, ADMIN_IDS
+    from core.config import BOT_USERNAME, ADMIN_IDS
     ref_id = ADMIN_IDS[0] if ADMIN_IDS else 0
     sym = s["symbol"]
     mint = ALL_TOKENS.get(sym, "")

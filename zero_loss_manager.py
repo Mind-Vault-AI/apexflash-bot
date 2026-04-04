@@ -5,14 +5,14 @@ from datetime import datetime, timezone
 
 import aiohttp
 
-from config import (
+from core.config import (
     ADMIN_IDS, SOL_MINT, 
     AUTONOMOUS_TRADE_AMOUNT_SOL, BREAKEVEN_TRIGGER_PCT, 
     TAKE_PROFIT_PCT, STOP_LOSS_PCT, AUTONOMOUS_COOLDOWN
 )
-from persistence import load_users, record_trade_result, get_governance_config, get_market_panic_score
-from wallet import load_keypair, get_sol_balance, get_token_balances
-from jupiter import get_quote, execute_swap
+from core.persistence import load_users, record_trade_result, get_governance_config, get_market_panic_score
+from core.wallet import load_keypair, get_sol_balance, get_token_balances
+from exchanges.jupiter import get_quote, execute_swap
 from scalper import check_scalp_signals, SCALP_TOKENS
 
 logging.basicConfig(
@@ -106,7 +106,7 @@ async def check_market_trend() -> float:
 
 async def position_manager(keypair, symbol, mint, bot=None):
     """Sub-task: Manages an open position with Breakeven Lock."""
-    from persistence import save_active_positions
+    from core.persistence import save_active_positions
     
     pos = active_positions.get(symbol)
     if not pos:
@@ -186,7 +186,7 @@ async def position_manager(keypair, symbol, mint, bot=None):
 
 async def auto_trader_loop(bot=None):
     """Main loop checking for Grade A signals 24/7."""
-    from persistence import load_active_positions, save_active_positions
+    from core.persistence import load_active_positions, save_active_positions
     global active_positions
     
     logger.info("🚀 ZERO-LOSS ENGINE v3.15.3: ENGAGED")

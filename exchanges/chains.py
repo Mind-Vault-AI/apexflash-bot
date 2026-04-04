@@ -5,7 +5,7 @@ Etherscan V2 (ETH) + Helius (SOL) whale tracking + CoinGecko price feed.
 import logging
 import time
 import aiohttp
-from config import (
+from core.config import (
     ETHERSCAN_API_KEY, HELIUS_API_KEY, SOLSCAN_API_KEY,
     ETH_WHALE_WALLETS, SOL_WHALE_WALLETS,
     ETH_ALERT_THRESHOLD, SOL_ALERT_THRESHOLD,

@@ -6,7 +6,7 @@ Main Goal: Customer Acquisition & Brand Authority.
 import logging
 import asyncio
 import aiohttp
-from config import (
+from core.config import (
     TWITTER_API_KEY, TWITTER_API_SECRET,
     TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET,
     TWITTER_ENABLED, WEBSITE_URL, CHANNEL_URL,
