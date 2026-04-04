@@ -6905,7 +6905,7 @@ def main() -> None:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT v3.13.0 is LIVE*\n\n"
+                        "\u26a1 *ApexFlash MEGA BOT Godmode Infinity (v3.15.0) is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"
