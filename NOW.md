@@ -9,7 +9,11 @@
 - ✅ **Sensitivity**: Grade A (2.5%+) and High-Vol Grade B (1.2%+) trades enabled.
 - ✅ **Zero-Loss Manager**: High-confidence autonomous scalping with breakeven-locks.
 
-## APEXFLASH LIVE STATE — v3.15.2 (Godmode Infinity)
+## APEXFLASH LIVE STATE — v3.15.5 (Autonomy Hardened)
+- **HOTFIX 5 (Zero-Loss Manager Loop)**: The `auto_trader_loop` exited prematurely if an admin wallet was not found on the very first tick. Overridden to retry indefinitely, ensuring 24/7 background operation.
+- **HOTFIX 6 (Deep Links & Referrals)**: 
+  - Dynamic `BOT_USERNAME` environment mapping for all viral hooks and Copy-Trade alerts to prevent redirecting to hardcoded standard bot. 
+  - Removed code block backticks from all referral links to ensure 1-tap natively clickable deep links for users.
 - **Godmode Infinity (v3.15.2)**: Jumped multiple versions to reflect massive stability and feature leap.
 - **Telegram Crash-Loop Fix**: Added automated detection for `telegram.error.Conflict` to forcefully `/close` inactive getUpdates sessions blocking Render deployment.
 - **Frontend Sync**: Updated `apexflash-app` marketing copy to natively feature the 24/7 Zero-Loss Autonomous Engine over manual trading.
@@ -22,4 +26,4 @@
 3. **[MULTI-CHAIN]** Base & Arbitrum signal integration for Tier 2 Growth.
 
 ---
-*Last updated: 2026-04-02T16:48:00+02:00 — Antigravity Godmode Agent 1.0*
+*Last updated: 2026-04-04T10:45:00+02:00 — Antigravity Godmode Agent 2.0*
