@@ -419,7 +419,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 pass
 
     text = (
-        "\u26a1 *ApexFlash MEGA BOT*\n"
+        "\u26a1 *ApexFlash MEGA BOT v3.15.2*\n"
+        "━━━━━ Godmode Infinity ━━━━━\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
