@@ -1,0 +1,6 @@
+2026-04-04 07:11:55,129 [INFO] ZERO-LOSS: Redis connected (Upstash)
+2026-04-04 07:11:55,152 [INFO] ZERO-LOSS: Loaded 5 users from Redis
+2026-04-04 07:11:55,175 [INFO] ZERO-LOSS: Loaded platform stats from Redis
+2026-04-04 07:11:55,578 [INFO] ZERO-LOSS: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/deleteWebhook "HTTP/1.1 200 OK"
+2026-04-04 07:11:55,922 [INFO] ZERO-LOSS: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/close "HTTP/1.1 429 Too Many Requests"
+2026-04-04 07:11:55,922 [INFO] ZERO-LOSS: Cleared webhook + closed sessions before startup

@@ -678,34 +678,25 @@ async def cmd_share(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def _cb_share(query, user, context):
     """Callback version of share command."""
-    uid = query.from_user.id
-    bot_info = await context.bot.get_me()
-    ref_link = f"https://t.me/{bot_info.username}?start=ref_{uid}"
-    
-    text = (
-        "\U0001f381 *ApexFlash: Share & Win Pro*\n"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-        "\n"
-        "Copy and share the message below to any crypto group. "
-        "When someone joins, you automatically get **24 HOURS OF PRO STATUS**! \U0001f680\n"
-        "\n"
-        "\U0001f4cb *Your Viral Message:*\n"
-        "```\n"
-        "\U0001f40b See what Solana whales are buying BEFORE the pump! \U0001f680\n"
-        "\n"
-        "\U0001f916 ApexFlash AI grades every signal A-D and buys in 1-tap.\n"
-        "\U0001f512 Breakeven-Lock ensures zero-loss trading.\n"
-        "\n"
-        "Join the 1% for FREE now: \n"
-        f"{ref_link}\n"
-        "```\n"
-        "\n"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-        f"Users referred: *{get_user(uid).get('referral_count', 0)}*"
-    )
-    
-    await query.edit_message_text(text, parse_mode="Markdown")
+    # We call cmd_share with a mock update to reuse logic
+    class MockUpdate:
+        def __init__(self, query):
+            self.effective_user = query.from_user
+            self.effective_chat = query.message.chat
+            self.message = query.message
+        async def reply_text(self, *args, **kwargs):
+            return await self.message.reply_text(*args, **kwargs)
+
+    await cmd_share(MockUpdate(query), context)
     await query.answer()
+
+
+async def _cb_stats(query, user, context):
+    """Generic stats callback."""
+    if is_admin(query.from_user.id):
+        return await _cb_admin_stats(query, user, context)
+    # For regular users, show referral stats
+    return await _cb_referral_stats(query, user, context)
 
 
 async def cmd_tweetstats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -6991,7 +6982,7 @@ def main() -> None:
         name="heartbeat_job",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.15.0 starting (Infinity Engine + The Agency Gateway)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.15.2 starting (Infinity Engine + The Agency Gateway)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")

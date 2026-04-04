@@ -4,6 +4,7 @@ Push whale alerts and trade notifications to Discord + Telegram channel.
 Every notification = distribution = more users = more 1% fees.
 """
 import logging
+import asyncio
 import aiohttp
 
 from config import (

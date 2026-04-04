@@ -1,0 +1,288 @@
+2026-04-04 07:14:01,128 [INFO] ZERO-LOSS: Redis connected (Upstash)
+2026-04-04 07:14:01,151 [INFO] ZERO-LOSS: Loaded 5 users from Redis
+2026-04-04 07:14:01,173 [INFO] ZERO-LOSS: Loaded platform stats from Redis
+2026-04-04 07:14:01,581 [INFO] ZERO-LOSS: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/deleteWebhook "HTTP/1.1 200 OK"
+2026-04-04 07:14:01,921 [INFO] ZERO-LOSS: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/close "HTTP/1.1 429 Too Many Requests"
+2026-04-04 07:14:01,922 [INFO] ZERO-LOSS: Cleared webhook + closed sessions before startup
+2026-04-04 07:14:11,923 [CRITICAL] ZERO-LOSS: MISSING ENV VARS: ['CRYPTOPANIC_KEY'] ù bot may malfunction!
+2026-04-04 07:14:11,923 [CRITICAL] ZERO-LOSS: STARTUP WARNING: Missing ['CRYPTOPANIC_KEY']
+2026-04-04 07:14:12,530 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,530 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,530 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,530 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,530 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,531 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,531 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,531 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,531 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,531 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,532 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,532 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,532 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,532 [INFO] ZERO-LOSS: \u26a1 ApexFlash MEGA BOT v3.15.0 starting (Infinity Engine + The Agency Gateway)...
+2026-04-04 07:14:12,532 [INFO] ZERO-LOSS: \U0001f4e1 Scan interval: 60s | Digest: 20:00 UTC
+2026-04-04 07:14:12,532 [INFO] ZERO-LOSS: \U0001f451 Admin IDs: [7851853521]
+2026-04-04 07:14:12,532 [INFO] ZERO-LOSS: \U0001f40b Tracking 14 ETH + 6 SOL wallets
+2026-04-04 07:14:12,532 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,574 [INFO] ZERO-LOSS: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/getMe "HTTP/1.1 200 OK"
+2026-04-04 07:14:12,598 [INFO] ZERO-LOSS: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/setMyCommands "HTTP/1.1 200 OK"
+2026-04-04 07:14:12,598 [INFO] ZERO-LOSS: \u2705 Menu commands set
+2026-04-04 07:14:12,664 [INFO] ZERO-LOSS: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/sendMessage "HTTP/1.1 200 OK"
+2026-04-04 07:14:12,665 [INFO] ZERO-LOSS: \U0001f6e1\ufe0f Zero-Loss Manager: task started
+2026-04-04 07:14:12,665 [INFO] ZERO-LOSS: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-04 07:14:12,665 [INFO] ZERO-LOSS: CEO Agent: scheduled daily briefing at 08:00 Amsterdam
+2026-04-04 07:14:12,665 [INFO] ZERO-LOSS: \U0001f916 CEO Agent: scheduler hooked to JobQueue
+2026-04-04 07:14:12,665 [INFO] ZERO-LOSS: \U0001f680 ZERO-LOSS AUTONOMOUS SCALPER: BOOTING...
+2026-04-04 07:14:12,688 [INFO] ZERO-LOSS: Loaded 5 users from Redis
+2026-04-04 07:14:12,690 [INFO] ZERO-LOSS: \U0001f511 Loaded Admin Wallet: 9cUfU6SkaH9mbveAeLoYE6LV2VFN72Vygop3xKYes8T3
+2026-04-04 07:14:12,754 [INFO] ZERO-LOSS: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/deleteWebhook "HTTP/1.1 200 OK"
+2026-04-04 07:14:12,755 [INFO] ZERO-LOSS: Added job "whale_scanner" to job store "default"
+2026-04-04 07:14:12,755 [INFO] ZERO-LOSS: Added job "daily_digest" to job store "default"
+2026-04-04 07:14:12,755 [INFO] ZERO-LOSS: Added job "auto_save" to job store "default"
+2026-04-04 07:14:12,755 [INFO] ZERO-LOSS: Added job "auto_backup" to job store "default"
+2026-04-04 07:14:12,755 [INFO] ZERO-LOSS: Added job "heartbeat" to job store "default"
+2026-04-04 07:14:12,755 [INFO] ZERO-LOSS: Added job "sl_tp_monitor" to job store "default"
+2026-04-04 07:14:12,755 [INFO] ZERO-LOSS: Added job "marketing_auto" to job store "default"
+2026-04-04 07:14:12,755 [INFO] ZERO-LOSS: Added job "scalper" to job store "default"
+2026-04-04 07:14:12,756 [INFO] ZERO-LOSS: Added job "ceo_daily_briefing" to job store "default"
+2026-04-04 07:14:12,756 [INFO] ZERO-LOSS: Added job "war_watch" to job store "default"
+2026-04-04 07:14:12,756 [INFO] ZERO-LOSS: Added job "zero_loss_start" to job store "default"
+2026-04-04 07:14:12,756 [INFO] ZERO-LOSS: Added job "inspector_gadget" to job store "default"
+2026-04-04 07:14:12,756 [INFO] ZERO-LOSS: Added job "heartbeat_job" to job store "default"
+2026-04-04 07:14:12,756 [INFO] ZERO-LOSS: Added job "gumroad_sync" to job store "default"
+2026-04-04 07:14:12,756 [INFO] ZERO-LOSS: Added job "run_briefing" to job store "default"
+2026-04-04 07:14:12,756 [INFO] ZERO-LOSS: Scheduler started
+2026-04-04 07:14:12,756 [INFO] ZERO-LOSS: Application started
+2026-04-04 07:14:12,789 [WARNING] ZERO-LOSS: RPC [getBalance]: 429 rate-limited on endpoint 0, trying fallback
+2026-04-04 07:14:12,822 [INFO] ZERO-LOSS: Balance for 9cUfU6Sk...: 0.233234624 SOL (233234624 lamports)
+2026-04-04 07:14:12,822 [WARNING] ZERO-LOSS: \u26a0\ufe0f Low Balance: 0.233234624 SOL. Waiting...
+2026-04-04 07:14:17,333 [INFO] ZERO-LOSS: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/getUpdates "HTTP/1.1 409 Conflict"
+2026-04-04 07:14:17,334 [ERROR] ZERO-LOSS: Error while getting Updates: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-04-04 07:14:17,334 [ERROR] ZERO-LOSS: No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 756, in _network_loop_retry
+    if not await do_action():
+           ^^^^^^^^^^^^^^^^^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 750, in do_action
+    return action_cb_task.result()
+           ~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 390, in polling_action_cb
+    raise exc
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 379, in polling_action_cb
+    updates = await self.bot.get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_extbot.py", line 647, in get_updates
+    updates = await super().get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\_bot.py", line 4326, in get_updates
+    await self._post(
+    ^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    ),
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\_bot.py", line 618, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_extbot.py", line 353, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\_bot.py", line 647, in _do_post
+    result = await request.post(
+             ^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\request\_baserequest.py", line 200, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\request\_baserequest.py", line 383, in _request_wrapper
+    raise Conflict(message)
+telegram.error.Conflict: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-04-04 07:14:22,545 [INFO] ZERO-LOSS: Running job "whale_scanner (trigger: interval[0:01:00], next run at: 2026-04-04 05:15:22 UTC)" (scheduled at 2026-04-04 05:14:22.529608+00:00)
+2026-04-04 07:14:23,974 [INFO] ZERO-LOSS: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/getUpdates "HTTP/1.1 409 Conflict"
+2026-04-04 07:14:23,974 [ERROR] ZERO-LOSS: Error while getting Updates: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-04-04 07:14:23,974 [ERROR] ZERO-LOSS: No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 756, in _network_loop_retry
+    if not await do_action():
+           ^^^^^^^^^^^^^^^^^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 750, in do_action
+    return action_cb_task.result()
+           ~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 390, in polling_action_cb
+    raise exc
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 379, in polling_action_cb
+    updates = await self.bot.get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_extbot.py", line 647, in get_updates
+    updates = await super().get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\_bot.py", line 4326, in get_updates
+    await self._post(
+    ^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    ),
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\_bot.py", line 618, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_extbot.py", line 353, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\_bot.py", line 647, in _do_post
+    result = await request.post(
+             ^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\request\_baserequest.py", line 200, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\request\_baserequest.py", line 383, in _request_wrapper
+    raise Conflict(message)
+telegram.error.Conflict: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-04-04 07:14:25,641 [INFO] ZERO-LOSS: Job "whale_scanner (trigger: interval[0:01:00], next run at: 2026-04-04 05:15:22 UTC)" executed successfully
+2026-04-04 07:14:28,908 [INFO] ZERO-LOSS: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/getUpdates "HTTP/1.1 409 Conflict"
+2026-04-04 07:14:28,909 [ERROR] ZERO-LOSS: Error while getting Updates: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-04-04 07:14:28,909 [ERROR] ZERO-LOSS: No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 756, in _network_loop_retry
+    if not await do_action():
+           ^^^^^^^^^^^^^^^^^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 750, in do_action
+    return action_cb_task.result()
+           ~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 390, in polling_action_cb
+    raise exc
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 379, in polling_action_cb
+    updates = await self.bot.get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_extbot.py", line 647, in get_updates
+    updates = await super().get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\_bot.py", line 4326, in get_updates
+    await self._post(
+    ^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    ),
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\_bot.py", line 618, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_extbot.py", line 353, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\_bot.py", line 647, in _do_post
+    result = await request.post(
+             ^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\request\_baserequest.py", line 200, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\request\_baserequest.py", line 383, in _request_wrapper
+    raise Conflict(message)
+telegram.error.Conflict: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-04-04 07:14:38,568 [INFO] ZERO-LOSS: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/getUpdates "HTTP/1.1 409 Conflict"
+2026-04-04 07:14:38,568 [ERROR] ZERO-LOSS: Error while getting Updates: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-04-04 07:14:38,568 [ERROR] ZERO-LOSS: No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 756, in _network_loop_retry
+    if not await do_action():
+           ^^^^^^^^^^^^^^^^^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 750, in do_action
+    return action_cb_task.result()
+           ~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 390, in polling_action_cb
+    raise exc
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_updater.py", line 379, in polling_action_cb
+    updates = await self.bot.get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_extbot.py", line 647, in get_updates
+    updates = await super().get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\_bot.py", line 4326, in get_updates
+    await self._post(
+    ^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    ),
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\_bot.py", line 618, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\ext\_extbot.py", line 353, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\_bot.py", line 647, in _do_post
+    result = await request.post(
+             ^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\request\_baserequest.py", line 200, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\erik_\AppData\Roaming\Python\Python314\site-packages\telegram\request\_baserequest.py", line 383, in _request_wrapper
+    raise Conflict(message)
+telegram.error.Conflict: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
