@@ -578,7 +578,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Help command."""
     text = (
-        "\U0001f4d6 *Help & FAQ*\n"
+        "\U0001f4d6 *Help & FAQ (v3.15.2)*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
@@ -5304,7 +5304,7 @@ async def _cb_admin_stats(query, user, context):
     total_ref_earnings = sum(u.get("referral_earnings", 0) for u in users.values())
 
     text = (
-        "\U0001f4ca *Revenue & Growth*\n"
+        "\U0001f4ca *Revenue & Growth (v3.15.2)*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         f"\n"
@@ -5380,7 +5380,7 @@ async def _cb_admin_broadcast(query, user, context):
         return
 
     text = (
-        "\U0001f4e2 *Broadcast*\n"
+        "\U0001f4e2 *Broadcast (v3.15.2)*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
@@ -7040,7 +7040,7 @@ def main() -> None:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT Godmode Infinity (v3.15.0) is LIVE*\n\n"
+                        "\u26a1 *ApexFlash MEGA BOT Godmode Infinity (v3.15.2) is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"
