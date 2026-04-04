@@ -115,7 +115,7 @@ async def viral_poster_job(context):
                                 await post_tweet_with_media(
                                     TWITTER_API_KEY, TWITTER_API_SECRET, 
                                     TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET,
-                                    f"GODMODE WIN: {trade['pnl_pct']}% on ${trade['token']}! 🚀\nCaptured by #ApexFlash AI. Join us: t.me/ApexFlashBot",
+                                    f"GODMODE WIN: {trade['pnl_pct']}% on ${trade['token']}! 🚀\nCaptured by #ApexFlash AI. Join us: t.me/apexflash_bot",
                                     media_path
                                 )
                                 # Also send to Telegram Admin for "Viral Kit"

@@ -3450,7 +3450,7 @@ async def _cb_execute_buy(query, user, context, data):
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         )
-        # Generate viral share link: t.me/ApexFlashBot?start=buy_MINT_ref_USERID
+        # Generate viral share link: t.me/apexflash_bot?start=buy_MINT_ref_USERID
         try:
             _bot_un = (await context.bot.get_me()).username
             share_link = f"https://t.me/{_bot_un}?start=buy_{target_mint}_ref_{query.from_user.id}"

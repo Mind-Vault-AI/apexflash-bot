@@ -154,7 +154,7 @@ async def notify_telegram_channel(bot, alert: dict, alert_text: str, alert_kb=No
     from core.config import ALERT_CHANNEL_ID
     # Trigger Social Manager for Viral Viral Drop (v3.15.2)
     bot_info = await bot.get_me() if bot else None
-    bot_username = bot_info.username if bot_info else "ApexFlashBot"
+    bot_username = bot_info.username if bot_info else "apexflash_bot"
     admin_id = ADMIN_IDS[0] if ADMIN_IDS else 0
     asyncio.create_task(handle_viral_dispatch(alert, bot_username, admin_id))
 
