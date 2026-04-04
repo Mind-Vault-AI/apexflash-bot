@@ -20,6 +20,7 @@ STATS_FILE = DATA_DIR / "stats.json"
 # Redis keys
 _REDIS_USERS_KEY = "apexflash:users"
 _REDIS_STATS_KEY = "apexflash:stats"
+_REDIS_POSITIONS_KEY = "apexflash:active_positions"
 
 # Redis connection (lazy init)
 _redis_client = None
@@ -210,6 +211,36 @@ def load_stats() -> dict | None:
     except Exception as e:
         logger.error(f"Load stats failed: {e}")
         return None
+
+
+# ══════════════════════════════════════════════
+# ACTIVE POSITIONS (Zero-Loss Manager)
+# ══════════════════════════════════════════════
+
+def save_active_positions(positions: dict) -> bool:
+    """Save active trades to Redis. Crucial for 24/7 autonomy."""
+    r = _get_redis()
+    if not r:
+        return False
+    try:
+        r.set(_REDIS_POSITIONS_KEY, json.dumps(positions, default=str))
+        return True
+    except Exception as e:
+        logger.error(f"Redis save_active_positions failed: {e}")
+        return False
+
+
+def load_active_positions() -> dict:
+    """Load active trades from Redis on bot restart."""
+    r = _get_redis()
+    if r:
+        try:
+            data = r.get(_REDIS_POSITIONS_KEY)
+            if data:
+                return json.loads(data)
+        except Exception as e:
+            logger.error(f"Redis load_active_positions failed: {e}")
+    return {}
 
 
 # ══════════════════════════════════════════════
