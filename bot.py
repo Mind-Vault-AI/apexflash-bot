@@ -7014,10 +7014,16 @@ def main() -> None:
         name="gumroad_sync",
     )
 
-    app.run_polling(
-        drop_pending_updates=True,
-        allowed_updates=["message", "callback_query"],
-    )
+    try:
+        app.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=["message", "callback_query"],
+        )
+    except Exception as e:
+        if "Conflict" in str(e) or "terminated by other getUpdates" in str(e):
+            logger.warning("Another bot instance is running. Shutting down this local instance gracefully to prevent conflicts.")
+        else:
+            raise
 
 
 if __name__ == "__main__":
@@ -7049,15 +7055,23 @@ if __name__ == "__main__":
                 json={"drop_pending_updates": True},
                 timeout=10,
             )
-            logging.info("Cleared webhook + pending updates before startup")
-            _time.sleep(3)  # Let Telegram release old polling connections
+            httpx.post(
+                f"https://api.telegram.org/bot{_tok}/close",
+                timeout=10,
+            )
+            logging.info("Cleared webhook + closed sessions before startup")
+            _time.sleep(10)  # Let Telegram release old polling connections
     except Exception as e:
         logging.warning(f"Pre-startup cleanup failed: {e}")
 
     try:
         main()
     except Exception as e:
-        err_msg = f"\U0001f534 BOT CRASH:\n\n{e}\n\n{traceback.format_exc()}"
-        logging.error(err_msg)
-        _send_crash_report(err_msg)
-        raise
+        err_str = str(e)
+        if "Conflict" in err_str or "terminated by other getUpdates" in err_str:
+            logging.warning("Auto-fix: telegram.error.Conflict detected. Exiting gracefully.")
+        else:
+            err_msg = f"\U0001f534 BOT CRASH:\n\n{e}\n\n{traceback.format_exc()}"
+            logging.error(err_msg)
+            _send_crash_report(err_msg)
+            raise
