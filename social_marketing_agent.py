@@ -15,6 +15,7 @@ import sys
 import random
 from datetime import datetime
 from config import AFFILIATE_LINKS, ADMIN_IDS
+from persistence import get_trade_history
 
 # Dummy Trade History (to be replaced with live persistence db hook)
 MOCK_RECENT_TRADES = [
@@ -103,13 +104,21 @@ def main():
     args = parser.parse_args()
 
     if args.reddit:
-        # Pakt de best presterende laaste trade
-        trade = MOCK_RECENT_TRADES[0]
-        post_to_reddit(trade['asset'], trade['roi'])
+        # Pakt de best presterende laaste trade uit de ECHTE geschiedenis
+        history = get_trade_history(limit=5)
+        if not history:
+            print("Geen echte trades gevonden in Redis. Gebruik --tiktok met handmatige data.")
+            return
+        trade = history[0]
+        post_to_reddit(trade['symbol'], f"{trade['pnl']}%")
     elif args.tiktok:
         generate_tiktok_script(args.tiktok[0], args.tiktok[1])
     else:
-        print("Mislukt: Gebruik --reddit of --tiktok ASSET ROI")
+        # Toon de laatste 3 wins als suggestie
+        print("💡 Laatste 3 Echte Wins voor Content:")
+        for t in get_trade_history(3):
+            print(f"- {t['symbol']}: {t['pnl']}% ({t['type']})")
+        print("\nGebruik --reddit of --tiktok ASSET ROI")
 
 if __name__ == "__main__":
     main()

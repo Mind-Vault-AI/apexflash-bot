@@ -18,11 +18,13 @@ Revenue model:
   3. Premium subscriptions via Gumroad (Pro $9.99, Elite $29.99)
   4. MIZAR copy trading referrals (future)
 
-Author: MindVault AI / Erik
-Version: 3.15.2 (THE AGENCY GATEWAY + INFINITY ENGINE + PY 3.14 FIX)
+# ApexFlash v3.22.0 "Conversion Godmode"
+# PDCA Cycle 14 Implementation
+# ═══════════════════════════════════════════════
 """
-VERSION = "3.15.2"
+VERSION = "3.22.0"
 import aiohttp
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -58,6 +60,8 @@ from config import (
     TWITTER_ENABLED, ALERT_CHANNEL_ID,
 )
 from chains import fetch_eth_whale_transfers, fetch_sol_whale_transfers, get_crypto_prices
+from arbitrage_scanner import scan_arbitrage, format_arbitrage_alert
+from viral_hooks import get_marketing_playbook
 from sentiment import get_whale_alert_sentiment, format_sentiment_line
 from wallet import (
     create_wallet, load_keypair, get_sol_balance,
@@ -77,7 +81,8 @@ from persistence import (
     save_users, load_users, save_stats, load_stats, export_backup, import_backup,
     track_funnel, track_token_lookup, track_token_trade, track_affiliate_click,
     update_last_active, get_popular_tokens, get_funnel_stats, get_affiliate_stats,
-    track_paid_conversion, track_user_active,
+    track_paid_conversion, track_user_active, track_visitor,
+    get_user_bucket, track_bucket_kpi, track_user_profit, get_leaderboard_stats,
 )
 from marketing import post_to_channel as marketing_post
 from twitter_poster import post_tweet as twitter_post, post_thread as twitter_post_thread, get_stats_text as twitter_stats_text
@@ -85,6 +90,7 @@ from twitter_poster import post_tweet as twitter_post, post_thread as twitter_po
 # ── ApexFlash Godmode Agents ──
 from zero_loss_manager import auto_trader_loop
 from ceo_agent import start_ceo_scheduler
+from whale_intent import analyze_whale_intent, can_user_analyze
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -247,6 +253,7 @@ def get_user(user_id: int) -> dict:
             "accepted_terms": False,
             "trades_today": 0,
             "last_trade_date": "",
+            "active_chain": "SOL",  # Default to Solana
         }
     # Migrate old users missing wallet/referral fields
     u = users[user_id]
@@ -272,6 +279,8 @@ def get_user(user_id: int) -> dict:
         u["trades_today"] = 0
     if "last_trade_date" not in u:
         u["last_trade_date"] = ""
+    if "active_chain" not in u:
+        u["active_chain"] = "SOL"
     return u
 
 
@@ -300,44 +309,53 @@ async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # KEYBOARD BUILDERS
 # ══════════════════════════════════════════════
 
-def main_menu_kb(user_id: int = 0) -> InlineKeyboardMarkup:
-    """Build the main menu inline keyboard."""
-    user = get_user(user_id) if user_id else {"alerts_on": False}
-    alert_icon = "\U0001f7e2" if user.get("alerts_on") else "\U0001f534"
+async def cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Display the top profitable ApexFlash traders."""
+    from persistence import get_leaderboard_stats
+    stats = get_leaderboard_stats(limit=10)
+    
+    if not stats:
+        await update.message.reply_text("🏆 *Leaderboard is warming up...*\nNo trades tracked yet!", parse_mode="Markdown")
+        return
+        
+    lines = []
+    emojis = ["🥇", "🥈", "🥉", "👤", "👤", "👤", "👤", "👤", "👤", "👤"]
+    for i, s in enumerate(stats):
+        emoji = emojis[i] if i < len(emojis) else "👤"
+        uid_anon = f"User_{s['id'][-4:]}"
+        lines.append(f"{emoji} *{uid_anon}*: `{float(s['profit']):.2f} SOL` profit")
+        
+    text = "\n".join(lines)
+    await update.message.reply_text(
+        f"🏆 *APEXFLASH GLOBAL LEADERBOARD*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Top profitable users (all-time):\n\n"
+        f"{text}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🚀 _Trade like a whale. ApexFlash v{VERSION}_",
+        parse_mode="Markdown"
+    )
 
+def main_menu_kb(user_id: int) -> InlineKeyboardMarkup:
+    from i18n import get_text
+    user = get_user(user_id)
+    lang = user.get("language_code", "en")
+    
     kb = [
-        [InlineKeyboardButton(
-            f"\U0001f40b Whale Alerts [{alert_icon}]", callback_data="whale",
-        )],
         [
-            InlineKeyboardButton("\U0001f4ca Top Wallets", callback_data="whale_top"),
-            InlineKeyboardButton("\U0001f4b0 Latest Moves", callback_data="whale_latest"),
-        ],
-        [InlineKeyboardButton(
-            "\U0001f4b0 Trade (Solana)", callback_data="trade",
-        )],
-        [
-            InlineKeyboardButton("\U0001f4ca Market", callback_data="cmd_market_refresh"),
-            InlineKeyboardButton("\U0001f4bc Portfolio", callback_data="portfolio"),
-        ],
-        [
-            InlineKeyboardButton("\U0001f4c8 Copy Trade", callback_data="copy_trade"),
-            InlineKeyboardButton("\U0001f916 DCA Bot", callback_data="dca_bot"),
+            InlineKeyboardButton("\U0001f4ca " + get_text("TRADE", lang), callback_data="trade"),
+            InlineKeyboardButton("\U0001f916 " + get_text("ADVISOR", lang), callback_data="cmd_advisor"),
         ],
         [InlineKeyboardButton("\U0001f4b1 Partners & Tools", callback_data="exchanges")],
         [
-            InlineKeyboardButton("\U0001f91d Referral", callback_data="referral"),
-            InlineKeyboardButton("\U0001f48e Premium", callback_data="premium"),
+            InlineKeyboardButton("\U0001f680 " + get_text("AFFILIATE", lang), callback_data="referral"),
+            InlineKeyboardButton("\U0001f48e " + get_text("PREMIUM", lang), callback_data="premium"),
         ],
         [
-            InlineKeyboardButton("\u2699\ufe0f Settings", callback_data="settings"),
-            InlineKeyboardButton("\U0001f4d6 Help", callback_data="help"),
+            InlineKeyboardButton("\U0001f504 Base/SOL Network", callback_data="switch_network"),
+            InlineKeyboardButton("\U0001f5e3 " + get_text("LANGUAGE", lang), callback_data="language_menu"),
         ],
     ]
-
-    if is_admin(user_id):
-        kb.append([InlineKeyboardButton("\U0001f451 Admin Panel", callback_data="admin")])
-
     return InlineKeyboardMarkup(kb)
 
 
@@ -374,6 +392,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     track_funnel("start")
     update_last_active(uid)
     track_user_active(uid)
+    
+    # A/B Testing Bucket Assignment
+    bucket_id = get_user_bucket(uid)
+    track_bucket_kpi(bucket_id, "start")
+    
+    # Default channel is direct; updated if ref prefix matches marketing campaigns
+    visitor_channel = "direct"
+    
     if is_new_user:
         track_funnel("new_user")
 
@@ -418,7 +444,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # Format: ref_USERID (simple referral)
         elif arg.startswith("ref_"):
             try:
-                referrer_id = int(arg[4:])
+                ref_val = arg[4:]
+                # Check for marketing channel prefixes
+                if ref_val.startswith("tt"): visitor_channel = "tiktok"
+                elif ref_val.startswith("rl"): visitor_channel = "reels"
+                elif ref_val.startswith("tg"): visitor_channel = "tg_channel"
+                
+                referrer_id = int(ref_val)
                 if referrer_id != uid and not user.get("referred_by"):
                     user["referred_by"] = referrer_id
                     referrer = get_user(referrer_id)
@@ -427,13 +459,31 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             except (ValueError, IndexError):
                 pass
 
+    # Track unique visitor globally and per channel
+    track_visitor(uid, visitor_channel)
+
+    # A/B Split Content (Variant A: Safety vs Variant B: Revenue)
+    if bucket_id == 1:
+        # Variant B: Revenue & Speed Focus
+        welcome_header = (
+            "\u26a1 *ApexFlash MEGA BOT v3.15.5*\n"
+            "━━━━━ Mission: €1,000,000 ━━━━━\n"
+        )
+        tagline = "The world's fastest autonomous scalp engine. Your path to financial immunity starts here."
+    else:
+        # Variant A: Safety & Zero-Loss Focus
+        welcome_header = (
+            "\u26a1 *ApexFlash MEGA BOT v3.15.5*\n"
+            "━━━━━ Godmode Zero-Loss ━━━━━\n"
+        )
+        tagline = "Protect your capital with the only bot that has a built-in Breakeven Lock. Zero-loss philosophy active."
+
     text = (
-        "\u26a1 *ApexFlash MEGA BOT v3.15.2*\n"
-        "━━━━━ Godmode Infinity ━━━━━\n"
+        f"{welcome_header}"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
-        "Your all-in-one crypto trading edge:\n"
+        f"{tagline}\n"
         "\n"
         "\U0001f40b *Whale Tracking* \u2014 Real-time alerts\n"
         "\U0001f4b0 *Trade* \u2014 Swap Solana tokens instantly\n"
@@ -584,7 +634,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Help command."""
     text = (
-        "\U0001f4d6 *Help & FAQ (v3.15.2)*\n"
+        "\U0001f4d6 *Help & FAQ (v3.15.4)*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
@@ -931,6 +981,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "set_sl_tp":      _cb_sl_select_start,
         "skip_sl_tp":     _cb_skip_sl_tp,
         "positions":      _cb_positions,
+        "switch_network": _cb_switch_network,
+        # v3.20.0 Core
+        "language_menu":  _cb_language_menu,
+        "set_lang_en":    _cb_set_lang_en,
+        "set_lang_es":    _cb_set_lang_es,
+        "set_lang_zh":    _cb_set_lang_zh,
+        "set_lang_nl":    _cb_set_lang_nl,
+        "cmd_advisor":    _cb_advisor,
     }
 
     # Basic dispatch for exact matches in the routes dictionary
@@ -5670,6 +5728,16 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                             )
                         ])
 
+                    # PREMIUM: Whale Intent AI (Elite Only)
+                    if can_user_analyze(user_data.get("tier", "free")):
+                        tx_hash = alert.get("tx_hash", "")
+                        alert_kb.append([
+                            InlineKeyboardButton(
+                                "🤖 Analyze Intent (AI)", 
+                                callback_data=f"whale_intent_{tx_hash[:20]}_{token_symbol}"
+                            )
+                        ])
+
                     featured = [
                         (k, v) for k, v in AFFILIATE_LINKS.items()
                         if v.get("featured")
@@ -6289,40 +6357,155 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text("⚠️ Error loading market data.")
 
 
+async def cmd_admin_marketing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: get the current viral hooks for social media."""
+    if not is_admin(update.effective_user.id):
+        return
+        
+    hooks = get_marketing_playbook()
+    text = "🚀 **SOCIAL DOMINANCE PLAYBOOK (v3.18.0)**\n"
+    text += "Use these high-conversion hooks for TikTok/Reels:\n\n"
+    for hook in hooks:
+        text += f"• `{hook}`\n\n"
+        
+    await update.message.reply_text(text, parse_mode="Markdown")
+
 async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Admin: show funnel, popular tokens, affiliate stats."""
+    """Admin: show funnel, popular tokens, affiliate stats, and referral revenue."""
     if not is_admin(update.effective_user.id):
         return
 
+    from persistence import get_funnel_stats, get_popular_tokens, get_affiliate_stats, _get_redis
+    
     funnel = get_funnel_stats()
     popular = get_popular_tokens("alltime", 5)
     affiliates = get_affiliate_stats()
-
-    funnel_text = (
-        "\U0001f4ca *Funnel (today)*\n"
-        f"\u2022 /start: {funnel.get('start', 0)}\n"
-        f"\u2022 New users: {funnel.get('new_user', 0)}\n"
-        f"\u2022 Wallets created: {funnel.get('wallet_created', 0)}\n"
-        f"\u2022 First trade: {funnel.get('first_trade', 0)}\n"
-        f"\u2022 Upgrades: {funnel.get('upgrade', 0)}\n"
+    
+    r = _get_redis()
+    referral_payouts_sol = float(r.get("kpi:total_referral_payouts_sol") or 0) if r else 0
+    
+    # REVENUE MISSION TRACKER (€1M Goal)
+    total_vol = platform_stats.get("volume_total_usd", 0)
+    # Estimated gross revenue from 1% platform fee
+    gross_revenue_usd = total_vol * 0.01
+    
+    # Calculate net (payouts subtracted)
+    sol_price = 150.0  # Placeholder, in prod use get_crypto_prices
+    payouts_usd = referral_payouts_sol * sol_price
+    net_revenue_usd = gross_revenue_usd - payouts_usd
+    
+    goal_usd = 1000000.0
+    progress_pct = (net_revenue_usd / goal_usd * 100) if goal_usd > 0 else 0
+    
+    # WHALE SEGMENTATION (v3.19.0)
+    whale_vol_usd = float(r.get("kpi:whale_volume_usd") or 0) if r else 0
+    alpha_clan_hits = int(r.get("kpi:alpha_clan_signals") or 0) if r else 0
+    retail_vol_usd = total_vol - whale_vol_usd
+    
+    whale_share = (whale_vol_usd / total_vol * 100) if total_vol > 0 else 0
+    
+    revenue_text = (
+        "\U0001f3af *MISSION: €1,000,000 NET REVENUE*\n"
+        f"\u25b6 Gross Revenue: *${gross_revenue_usd:,.2f}*\n"
+        f"\u25b6 Referral Payouts: *-${payouts_usd:,.2f}* ({referral_payouts_sol:.2f} SOL)\n"
+        f"\u25b6 *NET REVENUE:* *${max(0, net_revenue_usd):,.2f}*\n"
+        f"————————————————————————\n"
+        f"\U0001f40b *WHALE SEGMENTATION:*\n"
+        f"• Institutional/Whale: *${whale_vol_usd:,.0f}* ({whale_share:.1f}%)\n"
+        f"• Retail/Organic: *${retail_vol_usd:,.0f}*\n"
+        f"• Alpha Clan Signals: *{alpha_clan_hits}* triggers\n"
+        f"————————————————————————\n"
+        f"\u25b6 Progress to €1M: *{progress_pct:.2f}%*\n"
+        f"————————————————————————\n"
     )
 
-    popular_text = "\U0001f525 *Popular Tokens (all-time)*\n"
-    for i, t in enumerate(popular, 1):
-        popular_text += f"{i}. {t['symbol']} — {t['lookups']} lookups\n"
-    if not popular:
-        popular_text += "No data yet\n"
-
-    aff_text = "\U0001f4b0 *Affiliate Clicks*\n"
-    for ex, count in affiliates.items():
-        aff_text += f"\u2022 {ex.upper()}: {count}\n"
-    if not affiliates or all(v == 0 for v in affiliates.values()):
-        aff_text += "No clicks yet\n"
-
+    # Simplified formatting for long outputs
+    funnel_text = "\U0001f4ca *Funnel Stats:*\n" + "\n".join([f"• {k}: {v}" for k,v in funnel.items()])
+    popular_text = "\n\n🔥 *Popular Tokens:*\n" + "\n".join([f"• {t['symbol']}" for t in popular])
+    
     await update.message.reply_text(
-        f"{funnel_text}\n{popular_text}\n{aff_text}",
+        f"{revenue_text}\n{funnel_text}{popular_text}",
         parse_mode="Markdown",
     )
+
+
+async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show personalized AI trade analysis for Elite users."""
+    from advisor_agent import analyze_trader_performance, get_advisor_intro
+    from persistence import get_user
+    
+    uid = update.effective_user.id
+    user = get_user(uid)
+    
+    if user.get("tier", "free") not in ("elite", "admin"):
+        await update.message.reply_text(
+            "💎 *ApexFlash AI Advisor (Elite)*\n\n"
+            "This professional feature is reserved for **Elite** members.\n"
+            "Upgrade to receive personalized Gemini 2.0 trade coaching.",
+            parse_mode="Markdown"
+        )
+        return
+
+    history = user.get("trade_history", [])
+    if not history:
+        await update.message.reply_text("📈 *No Trade History Found.*", parse_mode="Markdown")
+        return
+
+    msg = await update.message.reply_text("🤖 *AI Advisor is analyzing your stats...*", parse_mode="Markdown")
+    analysis = await analyze_trader_performance(uid, history)
+    await msg.edit_text(f"{get_advisor_intro()}{analysis}", parse_mode="Markdown")
+
+async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show language selection menu."""
+    from i18n import get_text
+    uid = update.effective_user.id
+    user = get_user(uid)
+    lang = user.get("language_code", "en")
+    
+    kb = [
+        [InlineKeyboardButton("English 🇺🇸", callback_data="set_lang_en"), InlineKeyboardButton("Español 🇪🇸", callback_data="set_lang_es")],
+        [InlineKeyboardButton("中文 🇨🇳", callback_data="set_lang_zh"), InlineKeyboardButton("Nederlands 🇳🇱", callback_data="set_lang_nl")],
+        [_back_main()[0]]
+    ]
+    await update.message.reply_text(get_text("SELECT_LANG", lang), reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+
+async def cmd_path(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show the user their AI-personalized 'Road to €1M' path."""
+    user_id = update.effective_user.id
+    lang = context.user_data.get("lang", "en")
+    
+    # Static content for now, but AI-ready for customization
+    title = "🏆 *THE APEX ROAD TO €1,000,000*"
+    body = (
+        "1. 🚀 *Onboarding:* Fund your wallet with 0.1+ SOL.\n"
+        "2. 🛡️ *Protection:* Lock in 0.5% Breakeven (Auto-Guard).\n"
+        "3. 📈 *Scaling:* Copy elite traders via 'Alpha Clan'.\n"
+        "4. 💎 *Compounding:* Reinvest 50% of profits into the bot.\n\n"
+        "Your current progress: *Phase 1 (Active)*"
+    )
+    kb = [[InlineKeyboardButton("⚡ Optimize Strategy", callback_data="advisor_analyze")]]
+    await update.message.reply_text(f"{title}\n\n{body}", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+
+async def scheduled_conversion_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Daily check for free users to send FOMO reports."""
+    from conversion_agent import check_conversion_eligibility, generate_opportunity_report
+    logger.info("🕒 Scheduled Job: Conversion AI (Cycle 14)")
+    
+    from persistence import load_users
+    users_data = load_users()
+    
+    for user_id, data in users_data.items():
+        if await check_conversion_eligibility(user_id, data):
+            lang = data.get("lang", "en")
+            report = await generate_opportunity_report(user_id, lang)
+            if report:
+                try:
+                    await context.bot.send_message(chat_id=user_id, text=report, parse_mode="Markdown")
+                    logger.info(f"Conversion report sent to {user_id}")
+                except Exception as e:
+                    logger.debug(f"Failed to send conversion report to {user_id}: {e}")
 
 
 async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -6419,7 +6602,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"\u2705 *Auto-Restore Complete*\n\n"
             f"Users restored: *{len(restored_users)}*\n"
             f"Wallets restored: *{wallets}*\n"
-            f"Total users now: *{len(users)}*\n\n"
+            f"Total users now: {len(users)}*\n\n"
             f"\U0001f512 All wallet keys recovered.",
             parse_mode="Markdown",
         )
@@ -6430,8 +6613,165 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 # ══════════════════════════════════════════════
-# WIN RATE + DEALS COMMANDS
+# REFERRAL LEADERBOARD & STATS
 # ══════════════════════════════════════════════
+
+async def cmd_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show personal referral stats and the Global Leaderboard."""
+    from persistence import get_user_referral_stats, get_referral_leaderboard
+    
+    uid = update.effective_user.id
+    user = get_user(uid)
+    stats = get_user_referral_stats(uid)
+    leaderboard = get_referral_leaderboard(limit=5)
+    
+    bot_username = (await context.bot.get_me()).username
+    ref_link = f"https://t.me/{bot_username}?start=ref_{uid}"
+    
+    # 🏆 Personal Stats
+    text = (
+        "\U0001f91d *ApexFlash Referral Program*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        f"👤 *Your Stats:*\n"
+        f"\u2022 Total Referrals: *{user.get('referral_count', 0)}*\n"
+        f"\u2022 Total Earned: *{stats['earnings']:.4f} SOL*\n"
+        f"\u2022 Global Rank: *#{stats['rank'] if stats['rank'] > 0 else 'N/A'}*\n\n"
+        f"\U0001f517 *Your Referral Link:*\n`{ref_link}`\n\n"
+        f"_Share this link to earn 25-40% of every trade fee your friends pay!_\n\n"
+    )
+    
+    # 🥇 Global Leaderboard
+    if leaderboard:
+        text += "🏆 *GLOBAL REFERRAL LEADERS:*\n"
+        emojis = ["🥇", "🥈", "🥉", "👤", "👤"]
+        for i, entry in enumerate(leaderboard):
+            emoji = emojis[i] if i < len(emojis) else "👤"
+            # Anonymize user ID
+            anon_name = f"User_{str(entry['user_id'])[-4:]}"
+            text += f"{emoji} *{anon_name}*: `{entry['total_sol']:.2f} SOL` earned\n"
+        text += "\n"
+    
+    kb = [
+        [InlineKeyboardButton("\U0001f4e3 Share Link", switch_inline_query=f"\nJoin me on ApexFlash! The fastest whale tracker on Solana: {ref_link}")],
+        [_back_main()[0]],
+    ]
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+        disable_web_page_preview=True
+    )
+
+async def arbitrage_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Recurring job to scan cross-chain arbitrage spreads (Elite Feature)."""
+    from config import ELITE_CHANNEL_ID
+    
+    alerts = await scan_arbitrage()
+    for alert in alerts:
+        text = format_arbitrage_alert(alert)
+        # Broadcast to Elite Channel and Admin Chat
+        if ELITE_CHANNEL_ID:
+            try:
+                await context.bot.send_message(
+                    chat_id=ELITE_CHANNEL_ID,
+                    text=text,
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Arbitrage Elite alert failed: {e}")
+        
+        # Admin direct alert
+        for admin_id in [u_id for u_id, u in users.items() if u.get("tier") == "admin"]:
+            try:
+                await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+            except: pass
+
+async def _cb_switch_network(query, user, context):
+    """Toggle between Solana and Base networks."""
+    current = user.get("active_chain", "SOL")
+    new_chain = "BASE" if current == "SOL" else "SOL"
+    user["active_chain"] = new_chain
+    _persist()
+    
+    await query.answer(f"🌐 Switched to {new_chain} network")
+    # Refresh menu
+    await query.edit_message_reply_markup(reply_markup=main_menu_kb(query.from_user.id))
+
+async def _cb_language_menu(query, user, context):
+    """Callback to show language selection."""
+    class FakeUpdate:
+        effective_user = query.from_user
+        message = query.message
+    await cmd_language(FakeUpdate(), context)
+
+async def _cb_advisor(query, user, context):
+    """Callback to show AI advisor analysis."""
+    class FakeUpdate:
+        effective_user = query.from_user
+        message = query.message
+    await cmd_advisor(FakeUpdate(), context)
+
+async def _cb_set_lang_en(query, user, context): await _set_lang(query, user, "en")
+async def _cb_set_lang_es(query, user, context): await _set_lang(query, user, "es")
+async def _cb_set_lang_zh(query, user, context): await _set_lang(query, user, "zh")
+async def _cb_set_lang_nl(query, user, context): await _set_lang(query, user, "nl")
+
+async def _set_lang(query, user, lang_code):
+    user["language_code"] = lang_code
+    _persist()
+    await query.answer(f"🗣 Language: {lang_code.upper()}")
+    await query.edit_message_reply_markup(reply_markup=main_menu_kb(query.from_user.id))
+
+
+async def _cb_referral(query, user, context):
+    """Callback for referral button in main menu."""
+    # Wrapper to reuse cmd_referrals logic
+    class FakeUpdate:
+        effective_user = query.from_user
+        message = query.message
+    await cmd_referrals(FakeUpdate(), context)
+
+
+async def _cb_whale_intent(query, user, context):
+    """Callback for Elite users to analyze whale intent via AI."""
+    if not can_user_analyze(user.get("tier", "free")):
+        await query.answer("💎 Elite feature! Upgrade to analyze whale intent.", show_alert=True)
+        return
+
+    data = query.data.split("_")
+    if len(data) < 4:
+        await query.answer("⚠️ Analysis data incomplete.")
+        return
+    
+    tx_hash_prefix = data[2]
+    token_symbol = data[3]
+    
+    await query.answer("🤖 AI is analyzing whale history...")
+    await query.edit_message_text(
+        f"{query.message.text}\n\n"
+        f"⏳ *AI ANALYZING INTENT...*",
+        parse_mode="Markdown"
+    )
+
+    # Note: In a real system, we'd look up the full tx_hash from the prefix in seen_tx_hashes
+    # For now, we use the token info we have.
+    analysis = await analyze_whale_intent(
+        tx_hash=tx_hash_prefix,
+        wallet="Tracked Whale",
+        token=token_symbol,
+        amount_sol=0  # Simplified for the callback
+    )
+
+    await query.edit_message_text(
+        f"{query.message.text}\n\n"
+        f"\U0001f9e0 *AI WHALE INTENT:*\n"
+        f"{analysis}",
+        parse_mode="Markdown",
+        reply_markup=query.message.reply_markup
+    )
+
 
 async def cmd_winrate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show platform and user win rate stats."""
@@ -6751,6 +7091,14 @@ def main() -> None:
 
     app = Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
 
+    # VIRAL AGENT: Start the autonomous social proof loop
+    try:
+        from viral_agent import viral_poster_job
+        app.job_queue.run_repeating(viral_poster_job, interval=3600, first=10)
+        logger.info("📱 VIRAL AGENT: Loop scheduled (every 1h)")
+    except Exception as viral_err:
+        logger.error(f"Failed to start Viral Agent: {viral_err}")
+
     # Commands
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
@@ -6772,11 +7120,18 @@ def main() -> None:
     app.add_handler(CommandHandler("tweetstats", cmd_tweetstats))
     app.add_handler(CommandHandler("debug", cmd_debug))
     app.add_handler(CommandHandler("analytics", cmd_analytics))
+    app.add_handler(CommandHandler("admin_marketing", cmd_admin_marketing))
+    app.add_handler(CommandHandler("advisor", cmd_advisor))
+    app.add_handler(CommandHandler("language", cmd_language))
+    app.add_handler(CommandHandler("admin_studio", cmd_admin_studio))
+    app.add_handler(CommandHandler("path", cmd_path))
     app.add_handler(CommandHandler("winrate", cmd_winrate))
     app.add_handler(CommandHandler("deals", cmd_deals))
     app.add_handler(CommandHandler("promos", cmd_deals))  # alias
     app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
     app.add_handler(CommandHandler("top", cmd_leaderboard))  # alias
+    app.add_handler(CommandHandler("referrals", cmd_referrals))
+    app.add_handler(CommandHandler("ref", cmd_referrals))     # alias
     app.add_handler(CommandHandler("addwallet", cmd_addwallet))    # Inspector: add alpha wallet
     app.add_handler(CommandHandler("wallets", cmd_list_wallets))   # Inspector: list tracked wallets
 
@@ -6801,6 +7156,13 @@ def main() -> None:
         interval=SCAN_INTERVAL,
         first=10,
         name="whale_scanner",
+    )
+
+    # Conversion AI daily nudge (Cycle 14)
+    app.job_queue.run_daily(
+        scheduled_conversion_job,
+        time=dt_time(hour=9, minute=0, tzinfo=timezone.utc),
+        name="conversion_nudge",
     )
 
     # Daily digest — posts to Discord + TG channel at 20:00 UTC
@@ -6976,6 +7338,9 @@ def main() -> None:
         name="inspector_gadget",
     )
 
+    # Arbitrage Scanner (Cycle 9)
+    app.job_queue.run_repeating(arbitrage_job, interval=60, first=10)
+
     async def system_heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         """Periodic status update for admin visibility (Heartbeat)."""
         try:
@@ -7006,7 +7371,7 @@ def main() -> None:
         name="heartbeat_job",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.15.2 starting (Infinity Engine + The Agency Gateway)...")
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.15.4 starting (Infinity Engine + The Agency Gateway)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
@@ -7048,7 +7413,7 @@ def main() -> None:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT Godmode Infinity (v3.15.2) is LIVE*\n\n"
+                        "\u26a1 *ApexFlash MEGA BOT Godmode Infinity (v3.15.4) is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"
@@ -7137,7 +7502,7 @@ def main() -> None:
                                 f"Amount: <b>{formatted_price}</b>\n"
                                 f"Product: <i>{sale.get('product_name', 'Unknown')}</i>\n\n"
                                 f"📈 <b>Progress to €1,000,000:</b>\n"
-                                f"Total: <b>€{total_eur:,.282f}</b> ({progress_pct:.4f}%)\n\n"
+                                f"Total: <b>€{total_eur:,.2f}</b> ({progress_pct:.4f}%)\n\n"
                                 f"🚀 <i>Every sale counts! Godmode active.</i>"
                             ),
                             parse_mode="HTML"

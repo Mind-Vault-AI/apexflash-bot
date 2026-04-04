@@ -248,15 +248,43 @@ POSTS = [
     },
 ]
 
+# ── Dynamic Social Proof Engine (v3.18.0) ─────────────────────────────────────
 
-def get_scheduled_post(hour_utc: int) -> str:
-    """Pick a post based on time of day.
+async def get_social_proof_post() -> str:
+    """Generate high-conversion social proof based on real bot data."""
+    from persistence import get_referral_leaderboard, platform_stats
+    
+    # 1. Referral Success
+    top_refs = get_referral_leaderboard(limit=1)
+    if top_refs:
+        ref = top_refs[0]
+        # Anonymize user ID
+        anon_name = f"User_{str(ref['user_id'])[-4:]}"
+        return (
+            f"🔥 *SOCIAL PROOF: THE GODMODE SCALE*\n"
+            f"{'━' * 22}\n"
+            f"🏆 *{anon_name}* just hit a new milestone!\n"
+            f"💰 Total Referral Earnings: `{ref['total_sol']:.2f} SOL`\n"
+            f"\n"
+            f"They aren't even trading—just sharing the link.\n"
+            f"🚀 **Start your Affiliate Empire:** @ApexFlashBot"
+        )
+    
+    # 2. Platform Volume Success (Fallback)
+    vol = platform_stats.get("volume_total_usd", 0)
+    if vol > 0:
+        return (
+            f"📈 *PLATFORM DOMINANCE*\n"
+            f"{'━' * 22}\n"
+            f"ApexFlash users have traded over *${vol:,.0f}* in volume!\n"
+            f"⚡ Proof that the fastest swaps are on Telegram.\n"
+            f"\n"
+            f"Join the smart money: @ApexFlashBot"
+        )
 
-    Morning (6-11):  tips & motivation
-    Afternoon (12-17): features & whale
-    Evening (18-23): CTA & referral
-    Night (0-5): trust & exchange
-    """
+    return random.choice(POSTS)["text"]
+
+
     if 6 <= hour_utc < 12:
         cats = ["tip", "whale", "trust"]
     elif 12 <= hour_utc < 18:
@@ -277,7 +305,12 @@ async def post_to_channel(bot, channel_id: str) -> bool:
         return False
     try:
         hour = datetime.now(timezone.utc).hour
-        text = get_scheduled_post(hour)
+        # 30% chance to send a Dynamic Social Proof post
+        if random.random() < 0.3:
+            text = await get_social_proof_post()
+        else:
+            text = get_scheduled_post(hour)
+            
         await bot.send_message(
             chat_id=channel_id,
             text=text,

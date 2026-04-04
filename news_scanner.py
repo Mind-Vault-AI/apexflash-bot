@@ -25,6 +25,7 @@ import os
 from datetime import datetime, timezone, timedelta
 
 import aiohttp
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -42,6 +43,11 @@ NEWSAPI_URL = "https://newsapi.org/v2/everything"
 
 # CryptoPanic endpoint (Developer v2)
 CRYPTOPANIC_URL = "https://cryptopanic.com/api/developer/v2/posts/"
+
+# AI Config
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 # ── Geopolitical Keyword → Signal Mapping ─────────────────────────────────────
 
@@ -82,6 +88,24 @@ WAR_WATCH_SIGNALS = {
                         "reason": "Fed dovish signal → liquidity injection → crypto rally", "aff": "mexc"},
     "interest rate": {"assets": ["BTC", "ETH"], "direction": "BUY", "grade": "B",
                       "reason": "Rate cut signal → risk assets rally → crypto up", "aff": "bitunix"},
+}
+
+# ── Institutional Alpha Mapping (v3.17.0) ─────────────────────────────────────
+
+# Format: keyword → {assets, direction, grade, reason, category}
+INSTITUTIONAL_ALPHA_SIGNALS = {
+    "blackrock": {"assets": ["BTC", "ETH"], "direction": "BULLISH ACCUMULATION", "grade": "S",
+                  "reason": "Blackrock move → Massive institutional liquidity inflow", "cat": "INSTITUTIONAL"},
+    "fidelity": {"assets": ["BTC", "ETH"], "direction": "BULLISH", "grade": "S",
+                 "reason": "Fidelity institutional activity detected", "cat": "INSTITUTIONAL"},
+    "etf filing": {"assets": ["BTC", "ETH", "SOL"], "direction": "BUY", "grade": "S",
+                   "reason": "ETF filing/approval → Regulatory hurdle cleared → Rally", "cat": "REGULATORY"},
+    "sec approval": {"assets": ["BTC", "ETH", "SOL"], "direction": "BUY", "grade": "S",
+                     "reason": "SEC pivot/approval → Massive bullish catalyst", "cat": "REGULATORY"},
+    "goldman sachs": {"assets": ["BTC", "ETH"], "direction": "BULLISH", "grade": "A",
+                      "reason": "Goldman Sachs institutional desk activity", "cat": "INSTITUTIONAL"},
+    "bull market": {"assets": ["BTC", "SOL"], "direction": "BUY", "grade": "B",
+                    "reason": "Macro sentiment pivot to Bull Market", "cat": "SENTIMENT"},
 }
 
 # ── Redis helpers ─────────────────────────────────────────────────────────────
@@ -191,52 +215,90 @@ async def fetch_cryptopanic(session: aiohttp.ClientSession) -> list[dict]:
 
 # ── Signal Detector ───────────────────────────────────────────────────────────
 
-def detect_war_watch_signals(articles: list[dict]) -> list[dict]:
+def detect_signals(articles: list[dict]) -> list[dict]:
     """
-    Scan article titles for War Watch keywords.
+    Scan article titles for War Watch and Institutional Alpha keywords.
     Returns list of signal dicts (deduplicated by keyword).
     """
     triggered: dict[str, dict] = {}  # keyword → signal (dedup)
 
-    for article in articles:
-        title_lower = (article.get("title", "") + " " + article.get("description", "")).lower()
+    # Combine all signal source maps
+    combined_signals = {
+        **{k: {**v, "tag": "WAR_WATCH"} for k, v in WAR_WATCH_SIGNALS.items()},
+        **{k: {**v, "tag": "INST_ALPHA"} for k, v in INSTITUTIONAL_ALPHA_SIGNALS.items()}
+    }
 
-        for keyword, signal_def in WAR_WATCH_SIGNALS.items():
-            if keyword in title_lower and keyword not in triggered:
+    for article in articles:
+        title_desc = (article.get("title", "") + " " + article.get("description", "")).lower()
+
+        for keyword, signal_def in combined_signals.items():
+            if keyword in title_desc and keyword not in triggered:
+                # Assign Grade S for critical institutional moves
+                final_grade = signal_def["grade"]
+                
                 triggered[keyword] = {
                     "keyword": keyword,
                     "assets": signal_def["assets"],
                     "direction": signal_def["direction"],
-                    "grade": signal_def["grade"],
+                    "grade": final_grade,
                     "reason": signal_def["reason"],
                     "headline": article.get("title", "")[:120],
                     "url": article.get("url", ""),
                     "source": article.get("source", ""),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "tag": "WAR_WATCH",
+                    "tag": signal_def["tag"],
                     "aff": signal_def.get("aff", "mexc"),
                 }
 
     return list(triggered.values())
 
 
+async def analyze_impact_with_ai(headlines: list[str]) -> tuple[int, str]:
+    """
+    Use Gemini 2.0 Flash to analyze headlines for Institutional / Market Impact.
+    Returns (panic_score 0-100, label).
+    """
+    if not GEMINI_API_KEY or not headlines:
+        return 0, "neutral"
+        
+    try:
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        prompt = (
+            "Analyze these crypto/geopolitical headlines. "
+            "Identify Grade S (Statistically Significant) institutional moves. "
+            "Respond in JSON format: {'score': int, 'sentiment': 'bearish'|'bullish'|'neutral', 'is_institutional': bool}. "
+            "Grade S examples: Blackrock ETF approval, Fed Interest Rate Cut, Institutional Custody launch.\n\n"
+            + "\n".join(headlines[:15])
+        )
+        response = await model.generate_content_async(prompt)
+        text = response.text.replace('```json', '').replace('```', '').strip()
+        data = json.loads(text)
+        return data.get('score', 0), data.get('sentiment', 'neutral')
+    except Exception as e:
+        logger.error(f"Gemini Alpha AI failed: {e}")
+        return 0, "neutral"
+
+
 # ── Alert Formatters ──────────────────────────────────────────────────────────
 
 def format_telegram_alert(signal: dict) -> str:
-    """Format War Watch signal as Telegram Markdown message."""
+    """Format signal as Telegram Markdown message."""
     from config import AFFILIATE_LINKS
     grade = signal["grade"]
+    tag = signal.get("tag", "WAR_WATCH")
     direction = signal["direction"]
     assets = " | ".join(signal["assets"])
-    emoji = "🟢" if "BUY" in direction else "🔴"
-    grade_emoji = "⭐" if grade == "A" else "🔹"
+    
+    emoji = "🟢" if ("BUY" in direction or "BULLISH" in direction) else "🔴"
+    header = "🏛️ *INSTITUTIONAL ALPHA* — Grade S" if grade == "S" else f"⚡ *{tag.replace('_', ' ')}* — Grade {grade}"
+    grade_emoji = "💎" if grade == "S" else ("⭐" if grade == "A" else "🔹")
     
     aff_id = signal.get("aff", "mexc")
     aff_data = AFFILIATE_LINKS.get(aff_id, AFFILIATE_LINKS.get("mexc", {"name": "MEXC", "url": "https://mexc.com"}))
     aff_link = f"[{aff_data['name']}]({aff_data['url']})"
 
     return (
-        f"⚡ *OMNI-ASSET WAR WATCH — Grade {grade}*\n"
+        f"{header}\n"
         f"{'━' * 22}\n"
         f"\n"
         f"{grade_emoji} Trigger: *{signal['keyword'].upper()}*\n"
@@ -246,9 +308,9 @@ def format_telegram_alert(signal: dict) -> str:
         f"\n"
         f"📰 _{signal['headline']}_\n"
         f"\n"
-        f"🔥 **Trade Non-Crypto Assets here:** {aff_link}\n"
+        f"🛡️ **Capital Preservation Active** | {aff_link}\n"
         f"{'━' * 22}\n"
-        f"🤖 ApexFlash AI Agency | @ApexFlashBot"
+        f"🤖 ApexFlash Godmode | @ApexFlashBot"
     )
 
 
@@ -351,15 +413,18 @@ async def scan_once(bot=None) -> list[dict]:
     all_articles = newsapi_articles + cryptopanic_articles
     logger.info(f"War Watch: {len(all_articles)} total articles scanned")
 
-    signals = detect_war_watch_signals(all_articles)
-    new_signals = [s for s in signals if s["keyword"] not in _alerted_keywords]
+    # ── Signal Detection ──────────────────────────
+    new_signals = detect_signals(all_articles)
+    
+    # Filter only signals we haven't alerted for recently
+    new_signals = [s for s in new_signals if s["keyword"] not in _alerted_keywords]
 
     for signal in new_signals:
         _alerted_keywords.add(signal["keyword"])
         _log_alert(signal)
         await notify_signal(signal, bot=bot)
         logger.info(
-            f"War Watch SIGNAL: {signal['grade']} | {signal['keyword']} | "
+            f"Alpha SIGNAL: {signal['grade']} | {signal['keyword']} | "
             f"{signal['direction']} {signal['assets']}"
         )
 

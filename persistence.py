@@ -273,12 +273,72 @@ def track_funnel(step: str):
     except Exception as e:
         logger.debug(f"Funnel track failed: {e}")
 
+def track_visitor(user_id: int, channel: str = "direct"):
+    """
+    Track unique visitor per channel using HyperLogLog.
+    Used for ROI analysis (TikTok vs Reels vs Telegram).
+    """
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        from datetime import date
+        today = date.today().isoformat()
+        # Daily unique per channel
+        r.pfadd(f"kpi:visitors:{channel}:{today}", str(user_id))
+        r.expire(f"kpi:visitors:{channel}:{today}", 90 * 86400)
+        # All-time unique per channel
+        r.pfadd(f"kpi:visitors:{channel}:alltime", str(user_id))
+    except Exception as e:
+        logger.debug(f"track_visitor failed: {e}")
+
 
 def track_token_lookup(token_mint: str, token_symbol: str = ""):
     """Track token lookup for popularity analytics."""
     r = _get_redis()
     if not r:
         return
+    try:
+        from datetime import date
+        today = date.today().isoformat()
+        r.zincrby(f"kpi:token_lookups:{today}", 1, f"{token_symbol}:{token_mint}")
+        r.expire(f"kpi:token_lookups:{today}", 30 * 86400)
+    except Exception as e:
+        logger.debug(f"track_token_lookup failed: {e}")
+
+# ── OPPORTUNITY LOSS TRACKING (Cycle 14) ──────────────────────────────────────
+
+def track_missed_signal(user_id: int, signal_type: str, token: str, pnl: float = 0.0):
+    """Log a signal that a user missed due to tier restrictions."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        import time
+        # Store as a JSON string in a list for the user (last 20 signals)
+        signal = {
+            "type": signal_type,
+            "token": token,
+            "pnl": pnl,
+            "ts": int(time.time())
+        }
+        r.lpush(f"user:{user_id}:missed_signals", json.dumps(signal))
+        r.ltrim(f"user:{user_id}:missed_signals", 0, 19)
+        r.expire(f"user:{user_id}:missed_signals", 7 * 86400) # 1 week TTL
+    except Exception as e:
+        logger.debug(f"track_missed_signal failed: {e}")
+
+def get_missed_signals(user_id: int) -> list[dict]:
+    """Retrieve the last 20 missed signals for a user."""
+    r = _get_redis()
+    if not r:
+        return []
+    try:
+        raw = r.lrange(f"user:{user_id}:missed_signals", 0, 19)
+        return [json.loads(s) for s in raw]
+    except Exception as e:
+        logger.debug(f"get_missed_signals failed: {e}")
+        return []
     try:
         from datetime import date
         today = date.today().isoformat()
@@ -323,6 +383,59 @@ def track_affiliate_click(user_id: int, exchange: str):
     except Exception as e:
         logger.debug(f"Affiliate tracking failed: {e}")
 
+
+
+def get_trade_history(limit: int = 5) -> list:
+    """Get real wins for the social marketing agent."""
+    r = _get_redis()
+    if not r:
+        return []
+    try:
+        import json as _json
+        raw = r.lrange("kpi:trade_history", 0, limit - 1)
+        return [_json.loads(x) for x in raw]
+    except Exception:
+        return []
+
+def get_user_bucket(user_id: int) -> int:
+    """
+    Deterministic A/B bucket assignment (0 or 1).
+    Used for testing onboarding variations.
+    """
+    return user_id % 2
+
+def track_bucket_kpi(bucket_id: int, step: str):
+    """Track conversion funnel steps per A/B bucket."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        from datetime import date
+        today = date.today().isoformat()
+        r.incr(f"kpi:ab:bucket_{bucket_id}:{step}:{today}")
+        r.incr(f"kpi:ab:bucket_{bucket_id}:{step}:alltime")
+    except Exception:
+        pass
+
+
+def get_recent_wins(limit: int = 5) -> list:
+    """Get the latest profitable trades for viral marketing."""
+    r = _get_redis()
+    if not r:
+        return []
+    try:
+        import json as _json
+        # Check both local trade history and winrate:recent
+        raw = r.lrange("winrate:recent", 0, limit - 1)
+        wins = []
+        for x in raw:
+            data = _json.loads(x)
+            if data.get("pnl_pct", 0) > 0:
+                wins.append(data)
+        return wins
+    except Exception as e:
+        logger.debug(f"get_recent_wins failed: {e}")
+        return []
 
 def update_last_active(user_id: int):
     """Update last_active timestamp for churn detection."""
@@ -379,6 +492,112 @@ def get_affiliate_stats() -> dict:
     r = _get_redis()
     if not r:
         return {}
+
+
+def get_governance_config() -> dict:
+    """
+    Get dynamic system parameters (TP, SL, Selectivity).
+    Defaults to config.py values if Redis is empty.
+    Allows the AI to 'learn' and tune its own performance.
+    """
+    r = _get_redis()
+    from config import TAKE_PROFIT_PCT, STOP_LOSS_PCT, BREAKEVEN_TRIGGER_PCT
+    
+    defaults = {
+        "tp_pct": TAKE_PROFIT_PCT,
+        "sl_pct": STOP_LOSS_PCT,
+        "breakeven_pct": BREAKEVEN_TRIGGER_PCT,
+        "grade_a_min_pct": 2.5,  # Min move for Grade A
+        "min_volume_usd": 1500000 # Min volume for Grade A
+    }
+    
+    if not r:
+        return defaults
+        
+    try:
+        data = r.get("apexflash:governance")
+        if data:
+            import json as _json
+            return _json.loads(data)
+        else:
+            # Seed defaults
+            r.set("apexflash:governance", json.dumps(defaults))
+            return defaults
+    except Exception:
+        return defaults
+
+def update_governance_config(key: str, value: float):
+    """Update a specific governance parameter (Kaizen Engine)."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        cfg = get_governance_config()
+        cfg[key] = value
+        r.set("apexflash:governance", json.dumps(cfg))
+        logger.info(f"KAIZEN: Updated governance {key} -> {value}")
+    except Exception as e:
+        logger.error(f"update_governance_config failed: {e}")
+
+
+def set_market_panic_score(score: int, label: str = "neutral"):
+    """
+    Store the AI-scanned market mood.
+    Used for the 'Shock Breaker' defensive system.
+    """
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        r.set("kpi:market_panic_score", score)
+        r.set("kpi:market_sentiment_label", label)
+    except Exception:
+        pass
+
+def get_market_panic_score() -> int:
+    """Get latest AI-driven panic score (0-100)."""
+    r = _get_redis()
+    if not r:
+        return 0
+    try:
+        val = r.get("kpi:market_panic_score")
+        return int(val) if val else 0
+    except Exception:
+        return 0
+
+
+def track_user_profit(user_id: int, pnl_sol: float):
+    """
+    Track cumulative profit for a user.
+    Used for the Global Leaderboard (Gamification).
+    """
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        # Increment total profit
+        r.zincrby("apexflash:leaderboard", pnl_sol, str(user_id))
+        r.incr("kpi:total_user_profit_tracked")
+    except Exception as e:
+        logger.error(f"track_user_profit failed: {e}")
+
+def get_leaderboard_stats(limit: int = 10) -> list[dict]:
+    """Get top profitable users for the Telegram leaderboard."""
+    r = _get_redis()
+    if not r:
+        return []
+    try:
+        # Get top users from the sorted set
+        data = r.zrevrange("apexflash:leaderboard", 0, limit - 1, withscores=True)
+        return [{"id": uid.decode() if isinstance(uid, bytes) else uid, "profit": score} for uid, score in data]
+    except Exception:
+        return []
+
+def get_affiliate_stats() -> dict:
+    """Get affiliate click counts per exchange."""
+    r = _get_redis()
+    if not r:
+        return {}
     try:
         exchanges = ["mexc", "bitunix", "blofin", "gate"]
         stats = {}
@@ -389,6 +608,7 @@ def get_affiliate_stats() -> dict:
     except Exception as e:
         logger.debug(f"Get affiliate stats failed: {e}")
         return {}
+
 
 
 # ══════════════════════════════════════════════
@@ -446,18 +666,25 @@ def record_trade_result(user_id: int, token: str, pnl_pct: float, pnl_sol: float
 
         # Running P/L total
         r.incrbyfloat("winrate:total_pnl_sol", pnl_sol)
+        
+        # Leaderboard sync
+        track_user_profit(user_id, pnl_sol)
 
-        # Recent results (for display — last 50)
-        import json as _json
-        r.lpush("winrate:recent", _json.dumps({
+        # winrate:recent (for display — last 50)
+        recent_entry = _json.dumps({
             "user_id": user_id,
             "token": token,
             "pnl_pct": round(pnl_pct, 2),
             "pnl_sol": round(pnl_sol, 4),
             "win": pnl_pct > 0,
             "ts": datetime.utcnow().isoformat(),
-        }))
+        })
+        r.lpush("winrate:recent", recent_entry)
         r.ltrim("winrate:recent", 0, 49)
+
+        # kpi:trade_history (backward compatibility for marketing agent)
+        r.lpush("kpi:trade_history", recent_entry)
+        r.ltrim("kpi:trade_history", 0, 49)
 
         logger.info(f"Trade result recorded: {token} {'WIN' if pnl_pct > 0 else 'LOSS'} {pnl_pct:+.1f}%")
     except Exception as e:
@@ -635,33 +862,95 @@ def track_user_active(user_id: int):
 def get_ceo_kpis() -> dict:
     """
     Convenience: return all CEO Agent KPIs in one dict.
-    Used by ceo_agent.py when pipeline is not available.
+    Summarizes revenue, funnel, and channel performance.
     """
-    from datetime import date
-    today = date.today().isoformat()
     r = _get_redis()
     if not r:
         return {}
+    
     try:
-        result = {}
-        keys = [
-            "kpi:total_revenue_usd",
-            "platform:total_users",
-            "winrate:total_trades",
-            "winrate:wins",
-            "winrate:total_pnl_sol",
-            "kpi:paid_conversions",
-            "kpi:grade:A:total",
-            "kpi:grade:A:wins",
-            "kpi:grade:B:total",
-            "kpi:grade:B:wins",
-        ]
-        values = r.mget(*keys)
-        for k, v in zip(keys, values):
-            short_key = k.split(":")[-1] if ":" in k else k
-            result[short_key] = v
-        result["date"] = today
-        return result
-    except Exception as e:
-        logger.debug(f"get_ceo_kpis failed: {e}")
+        from datetime import date
+        today = date.today().isoformat()
+        
+        # 1. Revenue
+        revenue_usd = float(r.get("kpi:total_revenue_usd") or 0)
+        
+        # 2. Channel Attribution (MTD/All-time)
+        channels = ["tiktok", "reels", "tg_channel", "direct"]
+        attribution = {}
+        for chan in channels:
+            attribution[chan] = r.pfcount(f"kpi:visitors:{chan}:alltime")
+            
+        # 3. Paid Conversions
+        paid_total = int(r.get("kpi:paid_conversions") or 0)
+        
+        # 4. A/B Test Performance
+        ab_stats = {
+            "variant_0": int(r.get("kpi:ab:bucket_0:paid:alltime") or 0),
+            "variant_1": int(r.get("kpi:ab:bucket_1:paid:alltime") or 0)
+        }
+        
+        return {
+            "revenue_usd": revenue_usd,
+            "revenue_eur": revenue_usd * 0.92,
+            "paid_conversions": paid_total,
+            "channels": attribution,
+            "ab_test": ab_stats,
+            "timestamp": today
+        }
+    except Exception:
         return {}
+
+
+# 🏆 REFERRAL LEADERBOARD & GAIN TRACKING
+# ══════════════════════════════════════════════
+
+def track_referral_earning(referrer_id: int, amount_sol: float):
+    """
+    Track earnings for a referrer.
+    Updates Sorted Set for leaderboard and increment all-time counter.
+    """
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        # 1. Update leaderboard (Sorted Set: user_id -> total_sol)
+        r.zincrby("apexflash:referral_leaderboard", amount_sol, str(referrer_id))
+        
+        # 2. Update user's all-time earnings key
+        r.incrbyfloat(f"user:referral_earnings:{referrer_id}", amount_sol)
+        
+        # 3. Track global referral payout KPI
+        r.incrbyfloat("kpi:total_referral_payouts_sol", amount_sol)
+        
+        logger.debug(f"Referral earning tracked: {referrer_id} +{amount_sol} SOL")
+    except Exception as e:
+        logger.error(f"track_referral_earning failed: {e}")
+
+def get_referral_leaderboard(limit: int = 10) -> list:
+    """Get top referrers by earnings."""
+    r = _get_redis()
+    if not r:
+        return []
+    try:
+        # Returns list of (user_id, total_sol)
+        results = r.zrevrange("apexflash:referral_leaderboard", 0, limit - 1, withscores=True)
+        return [{"user_id": int(uid), "total_sol": round(score, 4)} for uid, score in results]
+    except Exception as e:
+        logger.error(f"get_referral_leaderboard failed: {e}")
+        return []
+
+def get_user_referral_stats(user_id: int) -> dict:
+    """Get personal referral stats and rank."""
+    r = _get_redis()
+    if not r:
+        return {"rank": 0, "earnings": 0}
+    try:
+        earnings = float(r.get(f"user:referral_earnings:{user_id}") or 0)
+        rank = r.zrevrank("apexflash:referral_leaderboard", str(user_id))
+        return {
+            "earnings": round(earnings, 4),
+            "rank": (rank + 1) if rank is not None else 0
+        }
+    except Exception:
+        return {"rank": 0, "earnings": 0}

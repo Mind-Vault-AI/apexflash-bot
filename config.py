@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # <KAIZEN_VERSION_START>
-VERSION = "3.15.2"
+VERSION = "3.15.9"
 # <KAIZEN_VERSION_END>
 
 # === Telegram ===
@@ -89,6 +89,11 @@ BREAKEVEN_TRIGGER_PCT = float(os.getenv("BREAKEVEN_TRIGGER_PCT", "0.5"))
 TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "2.0"))
 STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "1.0"))
 AUTONOMOUS_COOLDOWN = int(os.getenv("AUTONOMOUS_COOLDOWN", "300"))
+
+# RUG-GUARD SECURITY THRESHOLDS
+RUG_GUARD_MIN_LP_SOL = float(os.getenv("RUG_GUARD_MIN_LP_SOL", "10.0"))
+RUG_GUARD_BLOCK_MINTABLE = os.getenv("RUG_GUARD_BLOCK_MINTABLE", "true").lower() == "true"
+RUG_GUARD_BLOCK_UNLOCKED_LP = os.getenv("RUG_GUARD_BLOCK_UNLOCKED_LP", "true").lower() == "true"
 # <KAIZEN_AUTONOMOUS_END>
 
 # === Affiliate Links — Exchanges ===

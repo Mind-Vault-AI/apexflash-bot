@@ -1,5 +1,6 @@
 """
 ceo_agent.py — Autonomous CEO Agent (TIER 1)
+VERSION = "3.15.7"
 =============================================
 Runs daily at 08:00 Amsterdam time (Europe/Amsterdam).
 Reads all KPIs from Redis, uses Gemini 2.5 Flash to prioritise issues,
@@ -30,6 +31,52 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Bot
 
 logger = logging.getLogger(__name__)
 
+# ── Kaizen Self-Improvement Engine ──────────────────────────────────────────
+
+async def kaizen_performance_audit():
+    """
+    Analyzes the trailing 7-day performance.
+    Autonomously adjusts governance parameters for optimal survival and profit.
+    """
+    logger.info("KAIZEN: Starting Performance Audit...")
+    kpis = collect_kpis()
+    wr = kpis.get("trades", {}).get("win_rate_pct", 0)
+    gov = get_governance_config()
+    
+    current_sl = gov.get("sl_pct", 1.0)
+    current_tp = gov.get("tp_pct", 2.0)
+    current_sel = gov.get("grade_a_min_pct", 2.5)
+    
+    updates = []
+    
+    # ── Logic 1: Underperformance (Protect Capital) ──────────────
+    if wr < 55 and wr > 0:
+        # Tighten Stop Loss (+ safer entries)
+        new_sl = max(0.5, current_sl - 0.1)
+        new_sel = min(4.0, current_sel + 0.2)
+        update_governance_config("sl_pct", new_sl)
+        update_governance_config("grade_a_min_pct", new_sel)
+        updates.append(f"Tightened SL to {new_sl}% and raised Selectivity to {new_sel}% (WR: {wr}%)")
+        
+    # ── Logic 2: Outperformance (Capture Upside) ──────────────
+    elif wr > 75:
+        # Loosen TP (let winners run)
+        new_tp = min(5.0, current_tp + 0.2)
+        update_governance_config("tp_pct", new_tp)
+        updates.append(f"Raised Take-Profit to {new_tp}% due to Strong WR ({wr}%)")
+        
+    if updates:
+        msg = "🤖 *KAIZEN ADJUSTMENT MADE*\n" + "\n".join(f"• {u}" for u in updates)
+        # Notify Erik
+        try:
+            from telegram import Bot
+            bot = Bot(token=BOT_TOKEN)
+            await bot.send_message(chat_id=ERIK_TELEGRAM_ID, text=msg, parse_mode="Markdown")
+        except Exception:
+            pass
+    else:
+        logger.info("KAIZEN: Performance within stable range. No adjustments needed.")
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 ERIK_TELEGRAM_ID = 7851853521
@@ -45,7 +92,12 @@ AMS = ZoneInfo("Europe/Amsterdam")
 def _get_redis():
     """Lazy Redis connection — reuse from persistence module."""
     try:
-        from persistence import _get_redis as _r  # noqa: F401
+        from persistence import (
+            _get_redis as _r,
+            _safe_int, _safe_float, 
+            get_governance_config, update_governance_config,
+            get_market_panic_score,
+        )
         return _r()
     except Exception:
         return None
@@ -230,9 +282,16 @@ def collect_kpis() -> dict:
             pipe.get("affiliate:clicks:count:blofin")    # 14
             pipe.get("affiliate:clicks:count:gate")      # 15
             pipe.lrange("winrate:recent", 0, 4)          # 16
+            pipe.get("kpi:total_revenue_usd")            # 17
+            pipe.get("kpi:ab:bucket_0:start:alltime")    # 18
+            pipe.get("kpi:ab:bucket_0:paid:alltime")     # 19
+            pipe.get("kpi:ab:bucket_1:start:alltime")    # 20
+            pipe.get("kpi:ab:bucket_1:paid:alltime")     # 21
+            pipe.get("kpi:market_panic_score")           # 22
+            pipe.get("kpi:market_sentiment_label")       # 23
             results = pipe.execute()
         else:
-            results = [None] * 17
+            results = [None] * 24
 
         total_users = _safe_int(results[0])
         total_trades = _safe_int(results[1])
@@ -251,6 +310,20 @@ def collect_kpis() -> dict:
         affiliate_blofin = _safe_int(results[14])
         affiliate_gate = _safe_int(results[15])
         recent_raw = results[16] if isinstance(results[16], list) else []
+        total_revenue_usd = _safe_float(results[17])
+        
+        # A/B Testing
+        ab_0_start = _safe_int(results[18])
+        ab_0_paid = _safe_int(results[19])
+        ab_1_start = _safe_int(results[20])
+        ab_1_paid = _safe_int(results[21])
+        
+        ab_0_cr = round(ab_0_paid / ab_0_start * 100, 2) if ab_0_start > 0 else 0
+        ab_1_cr = round(ab_1_paid / ab_1_start * 100, 2) if ab_1_start > 0 else 0
+        
+        # Panic Score (AI Predictive)
+        panic_score = _safe_int(results[22])
+        sentiment_label = str(results[23]) if results[23] else "neutral"
 
         win_rate = round(wins / total_trades * 100, 1) if total_trades > 0 else 0
         conversion = round(funnel_upgrade / funnel_start * 100, 1) if funnel_start > 0 else 0
@@ -283,9 +356,18 @@ def collect_kpis() -> dict:
                 "upgrades_today": funnel_upgrade,
                 "conversion_pct": conversion,
             },
+            "sentiment": {
+                "panic_score": panic_score,
+                "label": sentiment_label,
+                "shock_breaker": "ACTIVE 🛡️" if panic_score >= 85 else "STANDBY ✅"
+            },
             "grades": {
                 "A": {"total": grade_a_total, "win_rate": grade_a_wr},
                 "B": {"total": grade_b_total, "win_rate": grade_b_wr},
+            },
+            "ab_test": {
+                "variant_a": {"start": ab_0_start, "paid": ab_0_paid, "cr": ab_0_cr, "label": "Safety First"},
+                "variant_b": {"start": ab_1_start, "paid": ab_1_paid, "cr": ab_1_cr, "label": "Revenue First"}
             },
             "affiliate": {
                 "total_clicks": total_affiliate_clicks,
@@ -295,6 +377,11 @@ def collect_kpis() -> dict:
                 "gate": affiliate_gate,
             },
             "recent_trades": recent_trades,
+            "revenue": {
+                "total_usd": total_revenue_usd,
+                "total_eur": total_revenue_usd * 0.92, # Approx rate
+                "goal_eur": 1_000_000,
+            }
         }
 
     except Exception as e:
@@ -426,6 +513,24 @@ def format_briefing(kpis: dict, priorities: dict) -> str:
     conv = kpis.get("funnel", {}).get("conversion_pct", 0)
     aff_total = kpis.get("affiliate", {}).get("total_clicks", 0)
     revenue_mtd = priorities.get("revenue_mtd_eur", 0)
+    total_revenue_eur = kpis.get("revenue", {}).get("total_eur", 0)
+    goal_eur = kpis.get("revenue", {}).get("goal_eur", 1000000)
+    progress_pct = (total_revenue_eur / goal_eur) * 100 if goal_eur > 0 else 0
+    
+    ab = kpis.get("ab_test", {})
+    v0 = ab.get("variant_a", {})
+    v1 = ab.get("variant_b", {})
+    
+    # Visual Progress Bar
+    bar_len = 12
+    filled = int(progress_pct / (100 / bar_len))
+    bar = "█" * filled + "░" * (bar_len - filled)
+    
+    sent = kpis.get("sentiment", {})
+    panic = sent.get("panic_score", 0)
+    mood = sent.get("label", "neutral")
+    sb_status = sent.get("shock_breaker", "STANDBY")
+    
     on_track = priorities.get("on_track", False)
     one_liner = priorities.get("one_liner", "—")
 
@@ -456,15 +561,20 @@ def format_briefing(kpis: dict, priorities: dict) -> str:
         f"├ Trades vandaag: *{trades_today}*\n"
         f"├ Totaal P/L: *{pnl:+.4f} SOL*\n"
         f"├ Affiliate clicks MTD: *{aff_total}*\n"
-        f"├ Paid conversion: *{conv_display}* (target: >8%) {conv_status}\n"
-        f"└ Pad naar €1M: {track_status}\n\n"
+        f"├ AI Market Mood: *{mood.upper()}* ({panic}/100)\n"
+        f"├ Shock Breaker: *{sb_status}*\n"
+        f"├ Paid conversion: *{conv_display}* {conv_status}\n"
+        f"└ *Pad naar €1M:* `{bar}` {progress_pct:.2f}% {track_status}\n\n"
         f"🔴 *KRITIEK — fix vandaag*\n{critical_lines}\n\n"
         f"🟡 *HOOG — deze week*\n{high_lines}\n\n"
         f"🟢 *GROEI — deze sprint*\n{growth_lines}\n\n"
-        f"💰 *Revenue (maand to date)*\n"
+        f"💰 *Revenue (Totaal)*\n"
         f"├ Affiliate (geschat): €{revenue_mtd}\n"
-        f"└ Gumroad: koppeling pending\n\n"
-        f"📈 *Month 6 target: 12,000 users* → nu {users:,} ({track_status})\n\n"
+        f"└ Gumroad (bevestigd): €{total_revenue_eur:,.2f}\n\n"
+        f"🧪 *A/B Test (Onboarding Funnel)*\n"
+        f"├ {v0.get('label')}: *{v0.get('cr')}%* ({v0.get('paid')}/{v0.get('start')})\n"
+        f"└ {v1.get('label')}: *{v1.get('cr')}%* ({v1.get('paid')}/{v1.get('start')})\n\n"
+        f"📈 *Month 6 target: 12,000 users* → nu {users:,}\n\n"
         f"⚙️ _TIER 1 — Shadow mode. Gebruik knoppen om acties goed te keuren._"
     )
 

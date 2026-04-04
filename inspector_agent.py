@@ -438,6 +438,17 @@ async def inspector_job(context=None) -> list[dict]:
                     )
                     continue
 
+                # ── Alpha Clan Clustering (v3.19.0) ──
+                cluster_count = 1
+                from persistence import _get_redis
+                r = _get_redis()
+                if r:
+                    cluster_key = f"apexflash:alpha_history:{mint}"
+                    # Record this buyer
+                    r.sadd(cluster_key, wallet_addr)
+                    r.expire(cluster_key, 1800) # 30 mins window
+                    cluster_count = r.scard(cluster_key)
+
                 # ── Build signal ──
                 signal = {
                     "type": "INSPECTOR",
@@ -450,6 +461,8 @@ async def inspector_job(context=None) -> list[dict]:
                     "mtf": mtf,
                     "timeframes": mtf.get("timeframes", []),
                     "confluence": mtf.get("confluence", ""),
+                    "cluster_count": cluster_count,
+                    "is_alpha_clan": cluster_count >= 2
                 }
                 fired.append(signal)
 
@@ -489,14 +502,19 @@ def format_inspector_signal(signal: dict) -> str:
         rsi_str = f"RSI {tf['rsi']:.0f}" if tf.get("rsi") else ""
         tf_lines += f"  {emoji} {tf['label']}: {tf.get('bias', '?')} {rsi_str}\n"
 
+    header = "🕵️ *INSPECTOR GADGET — Copy Trade Signal*"
+    if signal.get("is_alpha_clan"):
+        header = "🔥 *ALPHA CLAN ALERT* (Cluster Found)"
+        
     return (
-        "🕵️ *INSPECTOR GADGET — Copy Trade Signal*\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{header}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"👁 *Alpha Wallet:* `{label}`\n"
+        f"💎 *Clan Confidence:* {signal.get('cluster_count', 1)} wallets buying!\n"
         f"💰 *Bought:* {amount_sol:.3f} SOL\n"
         f"🪙 *Token:* `{mint[:20]}...`\n\n"
         f"📊 *Multi-TF Confluence:* {confluence}\n"
         f"{tf_lines}\n"
         f"🛡 *Rug Check:* {rug_line}\n\n"
-        "⚡ _Copy trade with tight SL (-5%):_"
+        f"⚡ _Copy trade with tight SL (-5%):_"
     )

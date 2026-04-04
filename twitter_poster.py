@@ -261,6 +261,16 @@ TWEETS = [
 # ANALYTICS: Fetch engagement metrics
 # ══════════════════════════════════════════════
 
+
+def _get_api_v1(api_key: str, api_secret: str,
+                access_token: str, access_secret: str) -> Optional["tweepy.API"]:
+    """Create authenticated tweepy v1.1 API for media upload."""
+    if not TWEEPY_AVAILABLE:
+        return None
+    auth = tweepy.OAuth1UserHandler(api_key, api_secret, access_token, access_secret)
+    return tweepy.API(auth)
+
+
 def _get_client(api_key: str, api_secret: str,
                 access_token: str, access_secret: str) -> Optional["tweepy.Client"]:
     """Create authenticated tweepy v2 Client."""
@@ -636,6 +646,37 @@ async def post_tweet(api_key: str, api_secret: str,
         return False
     except Exception as e:
         logger.error(f"Twitter post error: {e}")
+        return False
+
+
+async def post_tweet_with_media(api_key: str, api_secret: str,
+                                access_token: str, access_secret: str,
+                                text: str, media_path: str) -> bool:
+    """Post a tweet with an image using API v1.1 for upload and v2 for tweet creation."""
+    if not TWEEPY_AVAILABLE or not os.path.exists(media_path):
+        return False
+
+    try:
+        api_v1 = _get_api_v1(api_key, api_secret, access_token, access_secret)
+        client = _get_client(api_key, api_secret, access_token, access_secret)
+        
+        if not api_v1 or not client:
+            return False
+
+        # 1. Upload media (v1.1)
+        media = api_v1.media_upload(filename=media_path)
+        media_id = media.media_id
+
+        # 2. Create tweet with media (v2)
+        response = client.create_tweet(text=text, media_ids=[media_id])
+        
+        if response and response.data:
+            logger.info(f"Media tweet posted: https://x.com/status/{response.data['id']}")
+            return True
+        return False
+
+    except Exception as e:
+        logger.error(f"Twitter media post error: {e}")
         return False
 
 

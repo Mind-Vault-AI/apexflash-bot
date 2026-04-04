@@ -144,7 +144,7 @@ async def get_subscriber_count() -> dict:
     counts = {"pro": 0, "elite": 0, "total": 0}
 
     for p in products:
-        permalink = p.get("custom_permalink") or p.get("short_url", "")
+        permalink = p.get("permalink") or p.get("short_url", "")
         subs = p.get("sales_count", 0)
         if GUMROAD_PRO_PRODUCT_ID and GUMROAD_PRO_PRODUCT_ID in permalink:
             counts["pro"] = subs
@@ -153,3 +153,49 @@ async def get_subscriber_count() -> dict:
         counts["total"] += subs
 
     return counts
+
+
+async def sync_gumroad_revenue() -> dict:
+    """
+    Fetch recent sales from Gumroad and update Redis revenue KPIs.
+    Returns: { "revenue_added": float, "conversions_added": int }
+    """
+    from persistence import _get_redis
+    r = _get_redis()
+    if not r:
+        return {"error": "Redis unavailable"}
+
+    sales = await get_recent_sales()
+    if not sales:
+        return {"revenue_added": 0, "conversions_added": 0}
+
+    new_revenue = 0.0
+    new_conversions = 0
+    
+    for sale in sales:
+        sale_id = sale.get("id")
+        if not sale_id: continue
+        
+        # Check if sale already processed
+        if r.sismember("kpi:processed_sales", sale_id):
+            continue
+            
+        # Extract price (Gumroad returns in cents)
+        price_cents = sale.get("price", 0)
+        price_usd = float(price_cents) / 100.0
+        
+        # Gumroad fee is roughly 10% (simplified)
+        net_usd = price_usd * 0.90
+        
+        new_revenue += net_usd
+        new_conversions += 1
+        
+        # Mark as processed
+        r.sadd("kpi:processed_sales", sale_id)
+        
+    if new_revenue > 0:
+        r.incrbyfloat("kpi:total_revenue_usd", new_revenue)
+        r.incrby("kpi:paid_conversions", new_conversions)
+        logger.info(f"Gumroad Sync: added ${new_revenue:.2f} and {new_conversions} conversion(s)")
+        
+    return {"revenue_added": new_revenue, "conversions_added": new_conversions}

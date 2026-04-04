@@ -20,17 +20,27 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
-# Tokens to monitor
-# ──────────────────────────────────────────────
-# Jupiter token mints (SOL mainnet)
+# Tokens to monitor (Categorized by Chain)
 SCALP_TOKENS = {
-    "SOL":  "So11111111111111111111111111111111111111112",
-    "BONK": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
-    "JUP":  "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
-    "WIF":  "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
-    "RAY":  "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
-    "PYTH": "HZ1JovNiVvGrG2Ths3BKd5cSuvU4cFuTxhkS3zM7Bqm",
+    "SOLANA": {
+        "SOL":  "So11111111111111111111111111111111111111112",
+        "BONK": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+        "JUP":  "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+        "WIF":  "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+        "RAY":  "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    },
+    "BASE": {
+        "BRETT": "0x532f27101965dd16442e59d40670faf5ebb142e4",
+        "DEGEN": "0x4ed4e2b910ca651c8ad242258d49ed07dcb2c3ee",
+        "COIN":  "0xbaac9cb009c9103890fca77224f8d689fb3558d4",
+    }
 }
+
+# Flatten for backward compatibility in price loops
+ALL_TOKENS = {}
+for chain, tokens in SCALP_TOKENS.items():
+    for sym, mint in tokens.items():
+        ALL_TOKENS[sym] = mint
 
 JUPITER_PRICE_URL = "https://price.jup.ag/v6/price"
 DEXPAPRIKA_URL = "https://api.dexpaprika.com/networks/solana/pools?order_by=volume_usd&sort=desc&limit=30"
@@ -39,7 +49,7 @@ DEXPAPRIKA_URL = "https://api.dexpaprika.com/networks/solana/pools?order_by=volu
 # Ring-buffer: last 30 price snapshots per token
 # Snapshot every 30s → 30 * 30s = 15-minute window
 # ──────────────────────────────────────────────
-_price_history: dict[str, deque] = {sym: deque(maxlen=30) for sym in SCALP_TOKENS}
+_price_history: dict[str, deque] = {sym: deque(maxlen=30) for sym in ALL_TOKENS}
 _last_volume_cache: dict[str, float] = {}
 _last_volume_ts: float = 0.0
 _VOLUME_TTL = 120  # seconds
@@ -55,7 +65,7 @@ async def _fetch_prices() -> dict[str, float]:
                 if resp.status == 200:
                     data = await resp.json()
                     prices = {}
-                    mint_to_sym = {v: k for k, v in SCALP_TOKENS.items()}
+                    mint_to_sym = {v: k for k, v in ALL_TOKENS.items()}
                     for mint, info in (data.get("data") or {}).items():
                         sym = mint_to_sym.get(mint)
                         if sym and info.get("price"):
@@ -210,12 +220,23 @@ async def check_scalp_signals() -> list[dict]:
     return signals
 
 
-def format_scalp_alert(s: dict) -> str:
-    """Format a scalp signal into a Telegram HTML message."""
-    from config import ADMIN_IDS, SCALP_TOKENS
+    from config import ADMIN_IDS
     ref_id = ADMIN_IDS[0] if ADMIN_IDS else 0
-    mint = SCALP_TOKENS.get(s["symbol"], "")
-    bot_url = f"https://t.me/ApexFlashBot?start=buy_{mint}_ref_{ref_id}" if mint else f"https://t.me/ApexFlashBot?start=ref_{ref_id}"
+    sym = s["symbol"]
+    mint = ALL_TOKENS.get(sym, "")
+    
+    # Detect chain
+    chain = "SOL"
+    for c, tokens in SCALP_TOKENS.items():
+        if sym in tokens:
+            chain = "SOL" if c == "SOLANA" else "BASE"
+            break
+            
+    if chain == "SOL":
+        bot_url = f"https://t.me/ApexFlashBot?start=buy_{mint}_ref_{ref_id}" if mint else f"https://t.me/ApexFlashBot?start=ref_{ref_id}"
+    else:
+        # Base Chain specific deep-link or generic referral
+        bot_url = f"https://t.me/ApexFlashBot?start=ref_{ref_id}"
     
     grade_emoji = {"A": "🚨", "B": "⚡", "C": "👀"}.get(s["grade"], "📡")
     grade_label = {"A": "STRONG SCALP", "B": "MOMENTUM", "C": "WATCH"}.get(s["grade"], "SIGNAL")
