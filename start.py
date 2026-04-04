@@ -46,22 +46,38 @@ def send_crash_report(msg: str):
         logger.error(f"Failed to send crash report: {e2}")
 
 
-# Pre-startup: clear stale Telegram connections
+# ─── Pre-startup: aggressively clear stale Telegram connections ───────────────
 try:
     import httpx
     tok = os.getenv("BOT_TOKEN", "")
     if tok:
+        # Step 1: Delete any active webhook
         resp = httpx.post(
             f"https://api.telegram.org/bot{tok}/deleteWebhook",
             json={"drop_pending_updates": True},
             timeout=10,
         )
-        logger.info(f"deleteWebhook: {resp.status_code}")
-        time.sleep(3)
+        logger.info(f"deleteWebhook: {resp.status_code} {resp.text[:120]}")
+
+        # Step 2: Close any active getUpdates session
+        resp2 = httpx.post(
+            f"https://api.telegram.org/bot{tok}/close",
+            timeout=10,
+        )
+        logger.info(f"close session: {resp2.status_code} {resp2.text[:120]}")
+
+        # Step 3: Wait for Telegram to release old polling connections
+        # Telegram needs ~7s to time out an old long-poll session
+        logger.info("Waiting 10s for Telegram to release old polling connections...")
+        time.sleep(10)
+
+        # Step 4: Confirm bot is reachable
+        resp3 = httpx.get(f"https://api.telegram.org/bot{tok}/getMe", timeout=10)
+        logger.info(f"getMe: {resp3.status_code} — bot identity confirmed")
 except Exception as e:
     logger.warning(f"Pre-startup cleanup failed: {e}")
 
-# Now try to import and run the bot
+# ─── Now try to import and run the bot ────────────────────────────────────────
 try:
     logger.info("Importing bot module...")
     import bot
