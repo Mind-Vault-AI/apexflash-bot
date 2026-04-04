@@ -400,7 +400,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         user["referred_by"] = referrer_id
                         referrer = get_user(referrer_id)
                         referrer["referral_count"] = referrer.get("referral_count", 0) + 1
-                        logger.info(f"Referral+Token: user {uid} referred by {referrer_id}, token={mint_part[:12]}")
+                        # KAIZEN: Viral Reward Loop (v3.15.2) - 24h Pro for every referral
+                        referrer["tier"] = "pro"
+                        referrer["tier_expires"] = (datetime.now(timezone.utc).timestamp() + 86400)
+                        logger.info(f"Referral+Reward: user {uid} referred by {referrer_id}. Referrer awarded 24h Pro.")
                 except (ValueError, IndexError):
                     pass
             else:
@@ -642,6 +645,69 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
+async def cmd_share(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Viral share command: Provides ref link + marketing copy."""
+    uid = update.effective_user.id
+    bot_info = await context.bot.get_me()
+    ref_link = f"https://t.me/{bot_info.username}?start=ref_{uid}"
+    
+    text = (
+        "\U0001f381 *ApexFlash: Share & Win Pro*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "Copy and share the message below to any crypto group. "
+        "When someone joins, you automatically get **24 HOURS OF PRO STATUS**! \U0001f680\n"
+        "\n"
+        "\U0001f4cb *Your Viral Message:*\n"
+        "```\n"
+        "\U0001f40b See what Solana whales are buying BEFORE the pump! \U0001f680\n"
+        "\n"
+        "\U0001f916 ApexFlash AI grades every signal A-D and buys in 1-tap.\n"
+        "\U0001f512 Breakeven-Lock ensures zero-loss trading.\n"
+        "\n"
+        "Join the 1% for FREE now: \n"
+        f"{ref_link}\n"
+        "```\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"Users referred: *{get_user(uid).get('referral_count', 0)}*"
+    )
+    
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def _cb_share(query, user, context):
+    """Callback version of share command."""
+    uid = query.from_user.id
+    bot_info = await context.bot.get_me()
+    ref_link = f"https://t.me/{bot_info.username}?start=ref_{uid}"
+    
+    text = (
+        "\U0001f381 *ApexFlash: Share & Win Pro*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "Copy and share the message below to any crypto group. "
+        "When someone joins, you automatically get **24 HOURS OF PRO STATUS**! \U0001f680\n"
+        "\n"
+        "\U0001f4cb *Your Viral Message:*\n"
+        "```\n"
+        "\U0001f40b See what Solana whales are buying BEFORE the pump! \U0001f680\n"
+        "\n"
+        "\U0001f916 ApexFlash AI grades every signal A-D and buys in 1-tap.\n"
+        "\U0001f512 Breakeven-Lock ensures zero-loss trading.\n"
+        "\n"
+        "Join the 1% for FREE now: \n"
+        f"{ref_link}\n"
+        "```\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"Users referred: *{get_user(uid).get('referral_count', 0)}*"
+    )
+    
+    await query.edit_message_text(text, parse_mode="Markdown")
+    await query.answer()
+
+
 async def cmd_tweetstats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show Twitter/X analytics dashboard. Admin only."""
     if not is_admin(update.effective_user.id):
@@ -853,6 +919,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "help_copy":     _cb_help_copy,
         "help_dca":      _cb_help_dca,
         "admin":         _cb_admin,
+        "share":         _cb_share,
+        "stats":         _cb_stats,
         "admin_stats":   _cb_admin_stats,
         "admin_users":   _cb_admin_users,
         "admin_broadcast": _cb_admin_broadcast,
@@ -5649,7 +5717,7 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
 
                 channel_kb = InlineKeyboardMarkup(ch_buttons)
                 await notify_telegram_channel(
-                    context.bot, channel_text, channel_kb,
+                    context.bot, alert, channel_text, channel_kb,
                 )
             except Exception as e:
                 logger.debug(f"Telegram channel notify error: {e}")
@@ -6673,6 +6741,7 @@ def main() -> None:
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("myid", cmd_myid))
     app.add_handler(CommandHandler("admin", cmd_admin))
+    app.add_handler(CommandHandler("share", cmd_share))
     app.add_handler(CommandHandler("admin_pause", cmd_admin_pause))
     app.add_handler(CommandHandler("admin_resume", cmd_admin_resume))
     app.add_handler(CommandHandler("broadcast", cmd_broadcast))

@@ -8,8 +8,9 @@ import aiohttp
 
 from config import (
     DISCORD_WEBHOOK_URL, DISCORD_TRADE_WEBHOOK_URL,
-    AFFILIATE_LINKS, WEBSITE_URL, CHANNEL_URL,
+    AFFILIATE_LINKS, WEBSITE_URL, CHANNEL_URL, ADMIN_IDS,
 )
+from social_manager import handle_viral_dispatch
 
 logger = logging.getLogger(__name__)
 
@@ -145,10 +146,16 @@ async def notify_discord_trade(user_name: str, action: str, amount: str,
 # TELEGRAM CHANNEL NOTIFICATIONS
 # ══════════════════════════════════════════════
 
-async def notify_telegram_channel(bot, alert_text: str, alert_kb=None,
+async def notify_telegram_channel(bot, alert: dict, alert_text: str, alert_kb=None,
                                   channel_id: str = "") -> bool:
     """Post an alert to the public Telegram channel (Gold Signals)."""
     from config import ALERT_CHANNEL_ID
+    # Trigger Social Manager for Viral Viral Drop (v3.15.2)
+    bot_info = await bot.get_me() if bot else None
+    bot_username = bot_info.username if bot_info else "ApexFlashBot"
+    admin_id = ADMIN_IDS[0] if ADMIN_IDS else 0
+    asyncio.create_task(handle_viral_dispatch(alert, bot_username, admin_id))
+
     target = channel_id or ALERT_CHANNEL_ID
     if not target:
         return False
