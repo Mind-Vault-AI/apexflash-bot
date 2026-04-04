@@ -21,6 +21,7 @@ Revenue model:
 Author: MindVault AI / Erik
 Version: 3.15.0 (THE AGENCY GATEWAY + INFINITY ENGINE + PY 3.14 FIX)
 """
+VERSION = "3.15.0"
 import logging
 import re
 import random
@@ -5710,7 +5711,7 @@ async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             f"Trades today: {platform_stats.get('trades_today', 0)} | "
             f"Total: {platform_stats.get('trades_total', 0)}\n"
             f"{_env_status}\n"
-            f"v3.12.3"
+            f"v{VERSION}"
         )
         for admin_id in ADMIN_IDS:
             try:
