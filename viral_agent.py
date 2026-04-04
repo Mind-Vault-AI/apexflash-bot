@@ -13,6 +13,8 @@ Logic:
 import asyncio
 import logging
 import os
+import google.generativeai as genai
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from persistence import get_recent_wins, _get_redis
 from config import BOT_TOKEN, ALERT_CHANNEL_ID, VERSION, TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET
 from video_agent import generate_viral_infographic

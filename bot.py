@@ -7123,7 +7123,7 @@ def main() -> None:
     app.add_handler(CommandHandler("admin_marketing", cmd_admin_marketing))
     app.add_handler(CommandHandler("advisor", cmd_advisor))
     app.add_handler(CommandHandler("language", cmd_language))
-    app.add_handler(CommandHandler("admin_studio", cmd_admin_studio))
+    # app.add_handler(CommandHandler("admin_studio", cmd_admin_studio)) # TEMPORARY FIX: Disabled until implemented
     app.add_handler(CommandHandler("path", cmd_path))
     app.add_handler(CommandHandler("winrate", cmd_winrate))
     app.add_handler(CommandHandler("deals", cmd_deals))
