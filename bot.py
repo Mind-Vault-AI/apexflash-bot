@@ -912,6 +912,17 @@ async def _verify_and_activate(chat_id: int, uid: int, user: dict, license_key: 
         pass
 
 
+async def _cb_switch_network(query, user, context):
+    """Callback to handle switching between SOL and Base/Arbitrum."""
+    user_chain = user.get("active_chain", "SOL")
+    if user_chain == "SOL":
+        await query.answer("🚀 Base & Arbitrum signals are launching in v3.16.0! Auto-trading remains on Solana.", show_alert=True)
+    else:
+        user["active_chain"] = "SOL"
+        _persist()
+        await query.answer("✅ Network switched back to Solana (Primary Engine).")
+
+
 # ══════════════════════════════════════════════
 # CALLBACK ROUTER
 # ══════════════════════════════════════════════
