@@ -6432,7 +6432,6 @@ async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show personalized AI trade analysis for Elite users."""
     from advisor_agent import analyze_trader_performance, get_advisor_intro
-    from persistence import get_user
     
     uid = update.effective_user.id
     user = get_user(uid)
