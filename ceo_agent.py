@@ -141,6 +141,45 @@ def check_win_rate_and_pause() -> dict:
         return {"action": "skip", "reason": str(e)}
 
 
+def check_and_tune_parameters() -> dict:
+    """
+    TIER 2 (Godmode): Adjust TP/SL based on win rate.
+    Pushes updates to Redis for the Bot to consume in real-time.
+    """
+    r = _get_redis()
+    if not r: return {"action": "skip"}
+
+    try:
+        total = _safe_int(r.get("winrate:total_trades"))
+        wins = _safe_int(r.get("winrate:wins"))
+        if total < 10: return {"action": "skip", "reason": "need 10 trades"}
+
+        wr = (wins / total) * 100
+        
+        # Load current or default
+        tp = _safe_float(r.get("tune:take_profit"), 2.0)
+        sl = _safe_float(r.get("tune:stop_loss"), 1.0)
+        
+        old_tp, old_sl = tp, sl
+        
+        if wr > 70:
+            tp = min(5.0, tp + 0.1) # Aggressive
+            sl = min(3.0, sl + 0.05) # Loose
+        elif wr < 60:
+            tp = max(0.5, tp - 0.1) # Conservative
+            sl = max(0.3, sl - 0.05) # Tight
+            
+        if tp != old_tp or sl != old_sl:
+            _redis_set("tune:take_profit", str(round(tp, 2)))
+            _redis_set("tune:stop_loss", str(round(sl, 2)))
+            return {"action": "tuned", "new_tp": tp, "new_sl": sl, "win_rate": wr}
+            
+        return {"action": "stable", "tp": tp, "sl": sl}
+    except Exception as e:
+        logger.error(f"Tuning failed: {e}")
+        return {"action": "error", "msg": str(e)}
+
+
 def _safe_int(val, fallback: int = 0) -> int:
     if val is None:
         return fallback
@@ -618,6 +657,12 @@ async def run_briefing() -> None:
     try:
         kpis = collect_kpis()
         priorities = gemini_prioritise(kpis)
+        
+        # Kaizen: Autonomous Tuning (Godmode)
+        tuning = check_and_tune_parameters()
+        if tuning.get("action") == "tuned":
+            logger.info(f"CEO Agent: Tuned parameters to TP={tuning['new_tp']}, SL={tuning['new_sl']}")
+
         success = await send_briefing(kpis, priorities)
         await send_discord_briefing(kpis, priorities)  # Mirror to Discord #apexflash
 

@@ -276,7 +276,18 @@ def _persist():
 
 
 def is_admin(user_id: int) -> bool:
+    """Check if user_id is in the ADMIN_IDS list from config."""
+    # Kaizen: Convert to list of ints for safe comparison
     return user_id in ADMIN_IDS
+
+async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Helper to find Telegram ID for admin setup."""
+    uid = update.effective_user.id
+    await update.message.reply_text(
+        f"\U0001f194 *Your Telegram ID:*\n`{uid}`\n\n"
+        "Add this to your `ADMIN_IDS` in `.env` to gain full access.",
+        parse_mode="Markdown",
+    )
 
 
 # ══════════════════════════════════════════════
@@ -4081,11 +4092,17 @@ async def _cb_portfolio(query, user, context):
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
     )
 
+    # Build keyboard
+    buy_btn = InlineKeyboardButton("\U0001f4b5 Buy", callback_data="trade_buy")
+    sell_btn = InlineKeyboardButton("\U0001f4b8 Sell", callback_data="trade_sell")
+    
+    # Kaizen: Show Sell button only if there are active positions
+    trade_row = [buy_btn]
+    if positions:
+        trade_row.append(sell_btn)
+
     kb = [
-        [
-            InlineKeyboardButton("\U0001f4b5 Buy", callback_data="trade_buy"),
-            InlineKeyboardButton("\U0001f4b8 Sell", callback_data="trade_sell"),
-        ],
+        trade_row,
         [InlineKeyboardButton("\U0001f6e1\ufe0f Positions (SL/TP)", callback_data="positions")],
         [InlineKeyboardButton("\U0001f504 Refresh", callback_data="portfolio")],
         [_back_main()[0]],

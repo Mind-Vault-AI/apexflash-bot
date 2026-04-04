@@ -86,9 +86,32 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 # <KAIZEN_AUTONOMOUS_START>
 AUTONOMOUS_TRADE_AMOUNT_SOL = float(os.getenv("AUTONOMOUS_TRADE_AMOUNT_SOL", "0.25"))
 BREAKEVEN_TRIGGER_PCT = float(os.getenv("BREAKEVEN_TRIGGER_PCT", "0.5"))
-TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "2.0"))
-STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "1.0"))
 AUTONOMOUS_COOLDOWN = int(os.getenv("AUTONOMOUS_COOLDOWN", "300"))
+
+def get_dynamic_tp() -> float:
+    """Get Take Profit % from Redis override, or fallback to ENV."""
+    from persistence import _get_redis
+    r = _get_redis()
+    if r:
+        try:
+            val = r.get("tune:take_profit")
+            if val: return float(val)
+        except Exception: pass
+    return float(os.getenv("TAKE_PROFIT_PCT", "2.0"))
+
+def get_dynamic_sl() -> float:
+    """Get Stop Loss % from Redis override, or fallback to ENV."""
+    from persistence import _get_redis
+    r = _get_redis()
+    if r:
+        try:
+            val = r.get("tune:stop_loss")
+            if val: return float(val)
+        except Exception: pass
+    return float(os.getenv("STOP_LOSS_PCT", "1.0"))
+
+TAKE_PROFIT_PCT = get_dynamic_tp()
+STOP_LOSS_PCT = get_dynamic_sl()
 # <KAIZEN_AUTONOMOUS_END>
 
 # === Affiliate Links — Exchanges ===
