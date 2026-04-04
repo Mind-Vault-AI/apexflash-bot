@@ -19,9 +19,9 @@ Revenue model:
   4. MIZAR copy trading referrals (future)
 
 Author: MindVault AI / Erik
-Version: 3.15.0 (THE AGENCY GATEWAY + INFINITY ENGINE + PY 3.14 FIX)
+Version: 3.15.2 (THE AGENCY GATEWAY + INFINITY ENGINE + PY 3.14 FIX)
 """
-VERSION = "3.15.0"
+VERSION = "3.15.2"
 import logging
 import re
 import random
