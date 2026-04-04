@@ -5,7 +5,11 @@ from datetime import datetime, timezone
 
 import aiohttp
 
-from config import ADMIN_IDS, SOL_MINT
+from config import (
+    ADMIN_IDS, SOL_MINT, 
+    AUTONOMOUS_TRADE_AMOUNT_SOL, BREAKEVEN_TRIGGER_PCT, 
+    TAKE_PROFIT_PCT, STOP_LOSS_PCT, AUTONOMOUS_COOLDOWN
+)
 from persistence import load_users
 from wallet import load_keypair, get_sol_balance, get_token_balances
 from jupiter import get_quote, execute_swap
@@ -16,12 +20,6 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger("ZeroLossManager")
-
-TRADE_AMOUNT_SOL = 0.05
-BREAKEVEN_TRIGGER_PCT = 0.5  # When up 0.5%, lock stop-loss at breakeven
-TAKE_PROFIT_PCT = 2.0        # Sell completely at 2.0% profit
-STOP_LOSS_PCT = 1.0          # Initial hard stop loss at 1.0%
-TRADE_COOLDOWN = 300         # 5 minutes cooldown per token
 
 # Active positions tracker
 # Format: { token_mint: { "entry_price": float, "amount": float, "sl_price": float, "tp_price": float } }
@@ -117,7 +115,7 @@ async def position_manager(keypair, symbol, mint, bot=None):
             continue
         
         current_amount_sol = int(quote.get("outAmount", 0)) / 1_000_000_000
-        original_amount_sol = TRADE_AMOUNT_SOL
+        original_amount_sol = AUTONOMOUS_TRADE_AMOUNT_SOL
         
         pct_change = ((current_amount_sol - original_amount_sol) / original_amount_sol) * 100
         current_price = pos['entry_price'] * (1 + (pct_change/100))
@@ -185,7 +183,7 @@ async def auto_trader_loop(bot=None):
     while True:
         try:
             sol_balance = await get_sol_balance(admin_wallet_pub)
-            if sol_balance is None or sol_balance < TRADE_AMOUNT_SOL + 0.01:
+            if sol_balance is None or sol_balance < AUTONOMOUS_TRADE_AMOUNT_SOL + 0.01:
                 logger.warning(f"⚠️ Low Balance: {sol_balance} SOL. Waiting...")
                 await asyncio.sleep(300)
                 continue
@@ -206,7 +204,7 @@ async def auto_trader_loop(bot=None):
                 now = time.time()
                 if sym in active_positions:
                     continue
-                if (now - last_trade_ts.get(sym, 0) < TRADE_COOLDOWN):
+                if (now - last_trade_ts.get(sym, 0) < AUTONOMOUS_COOLDOWN):
                     logger.debug(f"Skipping {sym} (Cooldown active)")
                     continue
                 
@@ -218,7 +216,7 @@ async def auto_trader_loop(bot=None):
 
                 logger.info(f"⚡ GODMODE SIGNAL TRIGGERED: {sym} Grade {grade} (Vol: ${vol/1e6:.1f}M)")
                 mint = SCALP_TOKENS.get(sym)
-                amount_lamports = int(TRADE_AMOUNT_SOL * 1_000_000_000)
+                amount_lamports = int(AUTONOMOUS_TRADE_AMOUNT_SOL * 1_000_000_000)
                 
                 sig, out_tokens = await execute_trade(keypair, "BUY", SOL_MINT, mint, amount_lamports)
                 
@@ -232,7 +230,7 @@ async def auto_trader_loop(bot=None):
                     last_trade_ts[sym] = time.time()
                     await _notify_admin(bot, (
                         f"⚡ *ZERO-LOSS BUY* — {sym}\n"
-                        f"Amt: *{TRADE_AMOUNT_SOL} SOL*\n"
+                        f"Amt: *{AUTONOMOUS_TRADE_AMOUNT_SOL} SOL*\n"
                         f"Tx: `{sig}`"
                     ))
                     asyncio.create_task(position_manager(keypair, sym, mint, bot=bot))
