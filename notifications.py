@@ -8,6 +8,7 @@ import asyncio
 import aiohttp
 
 from config import (
+    BOT_USERNAME,
     DISCORD_WEBHOOK_URL, DISCORD_TRADE_WEBHOOK_URL,
     AFFILIATE_LINKS, WEBSITE_URL, CHANNEL_URL, ADMIN_IDS,
 )
@@ -89,7 +90,7 @@ def _discord_whale_embed(alert: dict, prices: dict) -> dict:
     content = ""
     if aff:
         content = f"🔥 **Trade now on [{aff['name']}]({aff['url']})** — {aff['commission']} fee rebate!\n"
-    content += f"🤖 **Start trading**: https://t.me/ApexFlashBot"
+    content += f"🤖 **Start trading**: https://t.me/{BOT_USERNAME}"
 
     return {"content": content, "embeds": [embed]}
 
@@ -120,7 +121,7 @@ def _discord_trade_embed(user_name: str, action: str, amount: str,
             "inline": False,
         })
 
-    content = "🤖 **Trade on ApexFlash**: https://t.me/ApexFlashBot — best prices, 1% fee"
+    content = "🤖 **Trade on ApexFlash**: https://t.me/{BOT_USERNAME} — best prices, 1% fee"
 
     return {"content": content, "embeds": [embed]}
 
@@ -208,13 +209,13 @@ async def notify_channel_trade(bot, action: str, sol_amount: float,
         "\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "⚡ <b>ApexFlash</b> — Trade any Solana token\n"
-        "🤖 Start now → @ApexFlashBot"
+        "🤖 Start now → @{BOT_USERNAME}"
     )
 
     ref_id = ADMIN_IDS[0] if ADMIN_IDS else 0
     # USE DEEP LINKS IN CHANNEL (callback_data is NOT supported in channels!)
-    trade_url = f"https://t.me/ApexFlashBot?start=buy_{token_mint}" if token_mint else f"https://t.me/ApexFlashBot?start=ref_{ref_id}"
-    aff_url = "https://t.me/ApexFlashBot?start=aff_mexc"  # Default trackable deep link
+    trade_url = f"https://t.me/{BOT_USERNAME}?start=buy_{token_mint}" if token_mint else f"https://t.me/{BOT_USERNAME}?start=ref_{ref_id}"
+    aff_url = "https://t.me/{BOT_USERNAME}?start=aff_mexc"  # Default trackable deep link
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("⚡ 1-Tap Auto-Trade", url=trade_url)],
@@ -282,7 +283,7 @@ def _discord_digest_embed(stats: dict) -> dict:
 
     content = (
         "\U0001f4ca **Daily Digest** \u2014 Here's what happened on ApexFlash today!\n"
-        "\U0001f916 **Start trading**: https://t.me/ApexFlashBot"
+        "\U0001f916 **Start trading**: https://t.me/{BOT_USERNAME}"
     )
 
     return {"content": content, "embeds": [embed]}
@@ -325,11 +326,11 @@ async def notify_channel_digest(bot, stats: dict,
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\U0001f916 Trade any Solana token with 1% fee!\n"
-        "\U0001f449 @ApexFlashBot"
+        "\U0001f449 @{BOT_USERNAME}"
     )
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("\U0001f916 Start Trading", url="https://t.me/ApexFlashBot")],
+        [InlineKeyboardButton("\U0001f916 Start Trading", url="https://t.me/{BOT_USERNAME}")],
     ])
 
     try:

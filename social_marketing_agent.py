@@ -14,7 +14,7 @@ import argparse
 import sys
 import random
 from datetime import datetime
-from config import AFFILIATE_LINKS, ADMIN_IDS
+from config import BOT_USERNAME, AFFILIATE_LINKS, ADMIN_IDS
 from persistence import get_trade_history
 
 # Dummy Trade History (to be replaced with live persistence db hook)
@@ -28,7 +28,7 @@ REDDIT_SUBS = ["CryptoMoonShots", "Solana", "CryptoCurrencyTrading", "Daytrading
 def generate_reddit_post(asset: str, roi: str):
     """Berekent een Reddit titel en post body volgeladen met Affiliate en bewijs."""
     ref_id = ADMIN_IDS[0] if ADMIN_IDS else "7851853521"
-    bot_url = f"https://t.me/ApexFlashBot?start=ref_{ref_id}"
+    bot_url = f"https://t.me/{BOT_USERNAME}?start=ref_{ref_id}"
     
     titles = [
         f"Just automated {roi} profit on {asset} purely based on Geopolitics. Set and forget. 🤖",
@@ -92,7 +92,7 @@ Mijn AI Bot scant 24/7 het wereldnieuws, koopt in 1 milliseconde, en zet automat
 Zodra de trade 0.5% in de plus staat, draai je RISICOLOOS.
 De bot is live. Klik op de link in m'n bio en start met je eerste 5 cent."
 
-🔗 Bio Call to Action: "Start de AI Bot Nu: https://t.me/ApexFlashBot?start=ref_{ref_id}"
+🔗 Bio Call to Action: "Start de AI Bot Nu: https://t.me/{BOT_USERNAME}?start=ref_{ref_id}"
 #TradingBot #CryptoAI #Solana #{asset.replace('_', '')} #Daytrading
 """
     print(script)

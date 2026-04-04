@@ -1,0 +1,31 @@
+2026-04-04 10:02:13,296 [INFO] ApexFlash.start: Importing bot module...
+C:\Users\erik_\source\repos\apexflash-bot\whale_intent.py:12: FutureWarning: 
+
+All support for the `google.generativeai` package has ended. It will no longer be receiving 
+updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
+See README for more details:
+
+https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
+
+  import google.generativeai as genai
+2026-04-04 10:02:14,603 [INFO] persistence: Redis connected (Upstash)
+2026-04-04 10:02:14,626 [INFO] persistence: Loaded 5 users from Redis
+2026-04-04 10:02:14,648 [INFO] persistence: Loaded platform stats from Redis
+2026-04-04 10:02:14,649 [INFO] ApexFlash.start: Bot module imported OK, starting main()...
+2026-04-04 10:02:14,650 [INFO] ApexFlash: Env check OK: 14 critical vars present
+2026-04-04 10:02:15,367 [ERROR] ApexFlash: Failed to start Viral Agent: name 'genai' is not defined
+2026-04-04 10:02:15,370 [ERROR] ApexFlash.start: \U0001f534 BOT CRASH:
+
+NameError: name 'cmd_admin_studio' is not defined
+
+Traceback (most recent call last):
+  File "C:\Users\erik_\source\repos\apexflash-bot\start.py", line 85, in <module>
+    bot.main()
+    ~~~~~~~~^^
+  File "C:\Users\erik_\source\repos\apexflash-bot\bot.py", line 7126, in main
+    app.add_handler(CommandHandler("admin_studio", cmd_admin_studio))
+                                                   ^^^^^^^^^^^^^^^^
+NameError: name 'cmd_admin_studio' is not defined. Did you mean: 'cmd_admin_pause'?
+
+2026-04-04 10:02:15,771 [INFO] httpx: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/sendMessage "HTTP/1.1 200 OK"
+2026-04-04 10:02:15,772 [INFO] ApexFlash.start: Crash report sent to admin

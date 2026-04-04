@@ -283,7 +283,7 @@ async def analyze_impact_with_ai(headlines: list[str]) -> tuple[int, str]:
 
 def format_telegram_alert(signal: dict) -> str:
     """Format signal as Telegram Markdown message."""
-    from config import AFFILIATE_LINKS
+    from config import BOT_USERNAME, AFFILIATE_LINKS
     grade = signal["grade"]
     tag = signal.get("tag", "WAR_WATCH")
     direction = signal["direction"]
@@ -310,7 +310,7 @@ def format_telegram_alert(signal: dict) -> str:
         f"\n"
         f"🛡️ **Capital Preservation Active** | {aff_link}\n"
         f"{'━' * 22}\n"
-        f"🤖 ApexFlash Godmode | @ApexFlashBot"
+        f"🤖 ApexFlash Godmode | @{BOT_USERNAME}"
     )
 
 
@@ -343,7 +343,7 @@ def format_discord_embed(signal: dict) -> dict:
 
 async def notify_signal(signal: dict, bot=None) -> None:
     """Send War Watch signal to Telegram channel + Discord."""
-    from config import DISCORD_WEBHOOK_URL, ALERT_CHANNEL_ID
+    from config import BOT_USERNAME, DISCORD_WEBHOOK_URL, ALERT_CHANNEL_ID
 
     text = format_telegram_alert(signal)
 
@@ -352,7 +352,7 @@ async def notify_signal(signal: dict, bot=None) -> None:
         try:
             from telegram import InlineKeyboardMarkup, InlineKeyboardButton
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("⚡ Trade Now", url="https://t.me/ApexFlashBot"),
+                InlineKeyboardButton("⚡ Trade Now", url="https://t.me/{BOT_USERNAME}"),
                 InlineKeyboardButton("📊 More Signals", url="https://apexflash.pro"),
             ]])
             await bot.send_message(

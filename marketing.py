@@ -1,3 +1,4 @@
+from config import BOT_USERNAME
 """
 ApexFlash MEGA BOT - Marketing Auto-Poster
 Scheduled Telegram channel posts to drive growth.
@@ -26,14 +27,14 @@ POSTS = [
             "\u2022 Built-in encrypted wallet\n"
             "\u2022 1% flat fee (no hidden costs)\n"
             "\u2022 Real-time whale alerts\n\n"
-            "\U0001f449 Start free: @ApexFlashBot"
+            "\U0001f449 Start free: @{BOT_USERNAME}"
         ),
     },
     {
         "cat": "feature",
         "text": (
             "\u26a1 *Swap any Solana token in 3 taps*\n\n"
-            "1\ufe0f\u20e3 Open @ApexFlashBot\n"
+            "1\ufe0f\u20e3 Open @{BOT_USERNAME}\n"
             "2\ufe0f\u20e3 Tap Trade \u2192 Buy/Sell\n"
             "3\ufe0f\u20e3 Confirm & done\n\n"
             "Jupiter V6 aggregator. Best routes. Auto slippage.\n"
@@ -51,7 +52,7 @@ POSTS = [
             "\u2022 BonkBot: 1% + tip\n"
             "\u2022 Trojan: 0.9% + priority fee\n"
             "\u2022 ApexFlash: 1% all-in\n\n"
-            "Try it free \U0001f449 @ApexFlashBot"
+            "Try it free \U0001f449 @{BOT_USERNAME}"
         ),
     },
     {
@@ -63,7 +64,7 @@ POSTS = [
             "\u2022 SOL large transfers\n"
             "\u2022 Exchange inflow/outflow signals\n"
             "\u2022 AI-powered analysis (Elite)\n\n"
-            "Free alerts: @ApexFlashBot\n"
+            "Free alerts: @{BOT_USERNAME}\n"
             "Pro alerts: instant, multi-chain, custom thresholds"
         ),
     },
@@ -77,7 +78,7 @@ POSTS = [
             "\u2022 Export your key anytime\n"
             "\u2022 Backup sent to you after every trade\n"
             "\u2022 No custodial risk\n\n"
-            "Start: @ApexFlashBot"
+            "Start: @{BOT_USERNAME}"
         ),
     },
     # ── TRADING TIPS ──
@@ -90,7 +91,7 @@ POSTS = [
             "Low-cap memecoins: 5-10% needed\n"
             "Blue chips (SOL, JUP): 0.5-1% is fine\n\n"
             "Always check price impact before confirming.\n"
-            "\U0001f449 @ApexFlashBot"
+            "\U0001f449 @{BOT_USERNAME}"
         ),
     },
     {
@@ -102,7 +103,7 @@ POSTS = [
             "Confirm the token is legit.\n"
             "Then scale in with bigger size.\n\n"
             "ApexFlash supports custom SOL amounts on every trade.\n"
-            "\U0001f449 @ApexFlashBot"
+            "\U0001f449 @{BOT_USERNAME}"
         ),
     },
     {
@@ -115,7 +116,7 @@ POSTS = [
             "\u2022 Daily trade limit\n"
             "\u2022 Price impact warnings\n\n"
             "Trade smart. Not emotional.\n"
-            "\U0001f449 @ApexFlashBot"
+            "\U0001f449 @{BOT_USERNAME}"
         ),
     },
     # ── CALL TO ACTION ──
@@ -127,7 +128,7 @@ POSTS = [
             "No browser extensions. No gas estimation.\n"
             "No connecting wallets to random sites.\n\n"
             "Just fast, clean Solana swaps.\n"
-            "\U0001f449 @ApexFlashBot"
+            "\U0001f449 @{BOT_USERNAME}"
         ),
     },
     {
@@ -141,7 +142,7 @@ POSTS = [
             "\u2705 Portfolio balance check\n\n"
             "No credit card. No signup form.\n"
             "Just open Telegram:\n"
-            "\U0001f449 @ApexFlashBot"
+            "\U0001f449 @{BOT_USERNAME}"
         ),
     },
     {
@@ -154,7 +155,7 @@ POSTS = [
             "\u2022 Priority execution\n"
             "\u2022 Referral earnings (25% share)\n\n"
             "Pay with SOL or card.\n"
-            "\U0001f449 @ApexFlashBot \u2192 /upgrade"
+            "\U0001f449 @{BOT_USERNAME} \u2192 /upgrade"
         ),
     },
     {
@@ -167,7 +168,7 @@ POSTS = [
             "\u2022 DCA automation\n"
             "\u2022 1-on-1 onboarding\n\n"
             "Built for serious Solana traders.\n"
-            "\U0001f449 @ApexFlashBot \u2192 /upgrade"
+            "\U0001f449 @{BOT_USERNAME} \u2192 /upgrade"
         ),
     },
     # ── WHALE / MARKET ──
@@ -178,7 +179,7 @@ POSTS = [
             "When a whale moves 50K+ SOL to an exchange = potential sell.\n"
             "When a whale withdraws = potential accumulation.\n\n"
             "These signals precede price moves by minutes to hours.\n\n"
-            "Get free alerts: @ApexFlashBot"
+            "Get free alerts: @{BOT_USERNAME}"
         ),
     },
     {
@@ -190,7 +191,7 @@ POSTS = [
             "\u2022 OKX, Bitfinex, MEXC\n"
             "\u2022 Robinhood, Arbitrum Bridge\n\n"
             "See large transfers before the market reacts.\n"
-            "\U0001f449 @ApexFlashBot"
+            "\U0001f449 @{BOT_USERNAME}"
         ),
     },
     # ── REFERRAL ──
@@ -203,7 +204,7 @@ POSTS = [
             "\u2022 Friends trade using ApexFlash\n"
             "\u2022 You earn 25% of platform fees\n\n"
             "No limits. Lifetime earnings.\n"
-            "\U0001f449 @ApexFlashBot \u2192 /referral"
+            "\U0001f449 @{BOT_USERNAME} \u2192 /referral"
         ),
     },
     # ── EXCHANGE AFFILIATE ──
@@ -215,7 +216,7 @@ POSTS = [
             "\u2022 Bitunix \u2014 50% fee rebate\n"
             "\u2022 MEXC \u2014 70% fee rebate, zero spot fees\n"
             "\u2022 BloFin \u2014 Copy trading built-in\n\n"
-            "Check /exchanges in @ApexFlashBot for all deals."
+            "Check /exchanges in @{BOT_USERNAME} for all deals."
         ),
     },
     # ── TRUST / SAFETY ──
@@ -230,7 +231,7 @@ POSTS = [
             "\u2022 Global kill switch for emergencies\n"
             "\u2022 Open-source risk controls\n\n"
             "Your money, your control.\n"
-            "\U0001f449 @ApexFlashBot"
+            "\U0001f449 @{BOT_USERNAME}"
         ),
     },
     {
@@ -243,7 +244,7 @@ POSTS = [
             "\u2022 Helius RPC for reliability\n"
             "\u2022 24/7 uptime monitoring\n"
             "\u2022 Admin heartbeat every hour\n\n"
-            "Try it: @ApexFlashBot"
+            "Try it: @{BOT_USERNAME}"
         ),
     },
 ]
@@ -267,7 +268,7 @@ async def get_social_proof_post() -> str:
             f"💰 Total Referral Earnings: `{ref['total_sol']:.2f} SOL`\n"
             f"\n"
             f"They aren't even trading—just sharing the link.\n"
-            f"🚀 **Start your Affiliate Empire:** @ApexFlashBot"
+            f"🚀 **Start your Affiliate Empire:** @{BOT_USERNAME}"
         )
     
     # 2. Platform Volume Success (Fallback)
@@ -279,7 +280,7 @@ async def get_social_proof_post() -> str:
             f"ApexFlash users have traded over *${vol:,.0f}* in volume!\n"
             f"⚡ Proof that the fastest swaps are on Telegram.\n"
             f"\n"
-            f"Join the smart money: @ApexFlashBot"
+            f"Join the smart money: @{BOT_USERNAME}"
         )
 
     return random.choice(POSTS)["text"]

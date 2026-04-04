@@ -1,3 +1,4 @@
+from config import BOT_USERNAME
 """
 ApexFlash Viral Hook Generator (v3.18.0)
 ────────────────────────────────────────────────────────
@@ -14,12 +15,12 @@ logger = logging.getLogger("ViralHooks")
 # ── Hook Templates ────────────────────────────────────────────────────────────
 
 HOOK_TEMPLATES = [
-    "⚠️ {whale_move} just hit the market. The dump is coming. Are you ready? @ApexFlashBot",
-    "🚀 {token} is being accumulated by whales right now. 10x potential? Join the tracker. @ApexFlashBot",
-    "⚖️ FREE MONEY? found a {spread}% spread on {asset} between SOL and BASE. Move fast. @ApexFlashBot",
-    "🏛️ INSTITUTIONAL ALERT: {inst_move} detected. The smart money is buying. @ApexFlashBot",
-    "📈 I just made {amount} SOL in 24h doing NOTHING. The referral program is broken. 🚀 @ApexFlashBot",
-    "🛡️ RUG-GUARD TRAP: {token} just failed the safety scan. Saved 10 SOL. Don't trade blind. @ApexFlashBot"
+    "⚠️ {whale_move} just hit the market. The dump is coming. Are you ready? @{BOT_USERNAME}",
+    "🚀 {token} is being accumulated by whales right now. 10x potential? Join the tracker. @{BOT_USERNAME}",
+    "⚖️ FREE MONEY? found a {spread}% spread on {asset} between SOL and BASE. Move fast. @{BOT_USERNAME}",
+    "🏛️ INSTITUTIONAL ALERT: {inst_move} detected. The smart money is buying. @{BOT_USERNAME}",
+    "📈 I just made {amount} SOL in 24h doing NOTHING. The referral program is broken. 🚀 @{BOT_USERNAME}",
+    "🛡️ RUG-GUARD TRAP: {token} just failed the safety scan. Saved 10 SOL. Don't trade blind. @{BOT_USERNAME}"
 ]
 
 # ── Hook Engine ───────────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ def generate_viral_hook(data: dict) -> str:
         return hook.format(**placeholders)
     except Exception as e:
         logger.error(f"Hook generation failed: {e}")
-        return "⚠️ Massive crypto move detected! Follow the smart money at @ApexFlashBot 🚀"
+        return "⚠️ Massive crypto move detected! Follow the smart money at @{BOT_USERNAME} 🚀"
 
 def get_marketing_playbook() -> List[str]:
     """Return a list of viral hooks for the daily marketing playbook."""

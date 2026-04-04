@@ -1,3 +1,4 @@
+from config import BOT_USERNAME
 """
 ApexFlash MEGA BOT - Twitter/X Auto-Poster + Analytics
 Posts to @MindVault_ai via Twitter API v2 (tweepy).
@@ -64,7 +65,7 @@ TWEETS = [
             "Buy & sell Solana tokens directly from Telegram.\n\n"
             "No DEX UI. No seed phrase exposed.\n"
             "Jupiter V6 best routes. 1% flat fee.\n\n"
-            "Try it free \U0001f449 @ApexFlashBot\n\n"
+            "Try it free \U0001f449 @{BOT_USERNAME}\n\n"
             "#Solana #SOL #CryptoTrading #DeFi"
         ),
     },
@@ -72,7 +73,7 @@ TWEETS = [
         "cat": "feature",
         "text": (
             "Swap any Solana token in 3 taps:\n\n"
-            "1\ufe0f\u20e3 Open @ApexFlashBot\n"
+            "1\ufe0f\u20e3 Open @{BOT_USERNAME}\n"
             "2\ufe0f\u20e3 Tap Trade \u2192 Buy/Sell\n"
             "3\ufe0f\u20e3 Confirm & done\n\n"
             "Your keys, your wallet, your control.\n\n"
@@ -85,7 +86,7 @@ TWEETS = [
             "Stop paying 2-3% fees on other trading bots.\n\n"
             "ApexFlash: 1% flat. No subscription needed.\n"
             "Jupiter V6 aggregator. Best routes. Auto slippage.\n\n"
-            "Start free: @ApexFlashBot\n\n"
+            "Start free: @{BOT_USERNAME}\n\n"
             "#Solana #DeFi #CryptoTrading"
         ),
     },
@@ -95,7 +96,7 @@ TWEETS = [
             "Your keys never leave your device.\n\n"
             "ApexFlash creates an encrypted Solana wallet inside Telegram.\n"
             "Fernet encryption. Export anytime. Non-custodial.\n\n"
-            "@ApexFlashBot\n\n"
+            "@{BOT_USERNAME}\n\n"
             "#Solana #Security #Crypto"
         ),
     },
@@ -106,7 +107,7 @@ TWEETS = [
             "\U0001f40b Whale moves 50K+ SOL to exchange = potential sell.\n"
             "Whale withdraws = potential accumulation.\n\n"
             "These signals precede price moves by minutes.\n\n"
-            "Free alerts: @ApexFlashBot\n\n"
+            "Free alerts: @{BOT_USERNAME}\n\n"
             "#WhaleAlert #Solana #Crypto"
         ),
     },
@@ -116,7 +117,7 @@ TWEETS = [
             "Follow the smart money.\n\n"
             "ApexFlash tracks wallets from Binance, Coinbase, Kraken, OKX & more.\n\n"
             "See large transfers before the market reacts.\n\n"
-            "@ApexFlashBot\n\n"
+            "@{BOT_USERNAME}\n\n"
             "#WhaleTracking #Solana #ETH"
         ),
     },
@@ -127,7 +128,7 @@ TWEETS = [
             "\u2022 ETH whale wallet tracking\n"
             "\u2022 SOL large transfers\n"
             "\u2022 Exchange inflow/outflow signals\n\n"
-            "Free tier available \U0001f449 @ApexFlashBot\n\n"
+            "Free tier available \U0001f449 @{BOT_USERNAME}\n\n"
             "#WhaleAlert #Crypto #DeFi"
         ),
     },
@@ -172,7 +173,7 @@ TWEETS = [
             "Open Telegram. Tap buy. Done.\n"
             "No browser extensions. No connecting wallets to random sites.\n\n"
             "Just fast, clean Solana swaps.\n\n"
-            "\U0001f449 @ApexFlashBot\n\n"
+            "\U0001f449 @{BOT_USERNAME}\n\n"
             "#Solana #DeFi #Trading"
         ),
     },
@@ -186,7 +187,7 @@ TWEETS = [
             "\u2705 Token search\n"
             "\u2705 Portfolio balance\n\n"
             "No credit card. Just open Telegram.\n\n"
-            "@ApexFlashBot"
+            "@{BOT_USERNAME}"
         ),
     },
     {
@@ -198,7 +199,7 @@ TWEETS = [
             "\u2022 Copy trading\n"
             "\u2022 DCA bot\n"
             "\u2022 Earn up to 35% referral fees\n\n"
-            "@ApexFlashBot \u2192 /upgrade\n\n"
+            "@{BOT_USERNAME} \u2192 /upgrade\n\n"
             "#Solana #CryptoTrading"
         ),
     },
@@ -209,7 +210,7 @@ TWEETS = [
             "Earn from every trade your friends make.\n\n"
             "Share your referral link \u2192 friends trade \u2192 you earn up to 35% of fees.\n\n"
             "No limits. Lifetime earnings.\n\n"
-            "@ApexFlashBot \u2192 /referral\n\n"
+            "@{BOT_USERNAME} \u2192 /referral\n\n"
             "#PassiveIncome #Crypto #Solana"
         ),
     },
@@ -223,7 +224,7 @@ TWEETS = [
             "\u2022 Helius RPC for reliability\n"
             "\u2022 24/7 uptime monitoring\n"
             "\u2022 Non-custodial wallets\n\n"
-            "Try it: @ApexFlashBot\n\n"
+            "Try it: @{BOT_USERNAME}\n\n"
             "#Solana #Security #DeFi"
         ),
     },
@@ -237,7 +238,7 @@ TWEETS = [
             "\u2022 Auto backups to you\n"
             "\u2022 Global kill switch\n\n"
             "Your money, your control.\n\n"
-            "@ApexFlashBot\n\n"
+            "@{BOT_USERNAME}\n\n"
             "#CryptoSecurity #Solana"
         ),
     },
@@ -421,7 +422,7 @@ def _make_live_tweet(stats: dict) -> tuple[str, str] | None:
             f"\u2022 {win_rate}% win rate\n"
             f"\u2022 {wins} winning trades\n\n"
             f"AI-graded whale signals. Free on Telegram.\n\n"
-            f"\U0001f449 @ApexFlashBot\n"
+            f"\U0001f449 @{BOT_USERNAME}\n"
             f"apexflash.pro\n\n"
             f"#Solana #WhaleAlert #CryptoTrading"
         ),
@@ -431,7 +432,7 @@ def _make_live_tweet(stats: dict) -> tuple[str, str] | None:
             f"\u2022 Real-time ETH + SOL whale tracking\n"
             f"\u2022 AI signal grading (A-D)\n"
             f"\u2022 1-tap copy trading\n\n"
-            f"Free: @ApexFlashBot\n\n"
+            f"Free: @{BOT_USERNAME}\n\n"
             f"#Crypto #WhaleTracking #Solana"
         ),
         (
@@ -439,7 +440,7 @@ def _make_live_tweet(stats: dict) -> tuple[str, str] | None:
             f"\U0001f40b {total} signals tracked\n"
             f"\U0001f3af {win_rate}% accuracy\n"
             f"\U0001f4b0 {pnl:+.2f} SOL total P/L\n\n"
-            f"See for yourself \U0001f449 @ApexFlashBot\n\n"
+            f"See for yourself \U0001f449 @{BOT_USERNAME}\n\n"
             f"#WhaleAlert #Solana #DeFi"
         ),
     ]

@@ -1,5 +1,5 @@
 """
-ApexFlash MEGA BOT - @ApexFlashBot
+ApexFlash MEGA BOT - @{BOT_USERNAME}
 ═══════════════════════════════════════════════
 The all-in-one crypto whale tracking & trading bot.
 
@@ -43,6 +43,7 @@ from telegram.ext import (
 )
 
 from config import (
+    BOT_USERNAME,
     BOT_TOKEN, AFFILIATE_LINKS, AFFILIATE_LINKS_ACTIVE, TOOL_AFFILIATE_LINKS, ADMIN_IDS,
     GUMROAD_PRO_URL, GUMROAD_ELITE_URL, TIERS,
     GUMROAD_ACCESS_TOKEN,
@@ -525,7 +526,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 "\n"
                 "Sign up via our links = save on every trade.\n\n"
                 "━━━━━━━━━━━━━━━━━━━━━\n"
-                f"🤝 *Your referral link:*\n`{ref_link}`\n\n"
+                f"🤝 *Your referral link:*\n{ref_link}\n\n"
                 "_Share it — earn 25% of every trade your friends make. Forever._"
             )
 
@@ -2603,7 +2604,7 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                                 f"⏱ Trigger: {trigger_label}\n"
                                 f"{win_streak}\n\n"
                                 f"🔗 [Verify on Solscan](https://solscan.io/tx/{tx_sig})\n\n"
-                                "💡 _Get these signals free → @ApexFlashBot_\n"
+                                "💡 _Get these signals free → @{BOT_USERNAME}_\n"
                                 "🔥 _Copy top traders → apexflash.pro_"
                             )
                             await context.bot.send_message(
@@ -4937,9 +4938,9 @@ async def _cb_referral(query, user, context):
         text += f" (${earnings_usd:,.2f})"
     text += (
         "\n\n\U0001f517 *Your link:*\n"
-        f"`{ref_link}`\n"
+        f"{ref_link}\n"
         "\n"
-        "_Tap the link to copy it!_\n"
+        "_Forward this link to your friends!_\n"
         "\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
@@ -5800,13 +5801,13 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                     # Deep link: opens bot with this token ready to buy
                     ch_buttons.append([InlineKeyboardButton(
                         f"💰 Buy {token_symbol} Now",
-                        url=f"https://t.me/ApexFlashBot?start=buy_{token_mint}",
+                        url=f"https://t.me/{BOT_USERNAME}?start=buy_{token_mint}",
                     )])
                 ch_buttons.append([InlineKeyboardButton(
-                    "🔥 Trending Tokens", url="https://t.me/ApexFlashBot?start=hot",
+                    "🔥 Trending Tokens", url="https://t.me/{BOT_USERNAME}?start=hot",
                 )])
                 ch_buttons.append([InlineKeyboardButton(
-                    "⚡ Start Trading", url="https://t.me/ApexFlashBot",
+                    "⚡ Start Trading", url="https://t.me/{BOT_USERNAME}",
                 )])
 
                 channel_kb = InlineKeyboardMarkup(ch_buttons)
@@ -6647,7 +6648,7 @@ async def cmd_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         f"\u2022 Total Referrals: *{user.get('referral_count', 0)}*\n"
         f"\u2022 Total Earned: *{stats['earnings']:.4f} SOL*\n"
         f"\u2022 Global Rank: *#{stats['rank'] if stats['rank'] > 0 else 'N/A'}*\n\n"
-        f"\U0001f517 *Your Referral Link:*\n`{ref_link}`\n\n"
+        f"\U0001f517 *Your Referral Link:*\n{ref_link}\n\n"
         f"_Share this link to earn 25-40% of every trade fee your friends pay!_\n\n"
     )
     
@@ -7294,7 +7295,7 @@ def main() -> None:
             kb = [
                 [InlineKeyboardButton(
                     "⚡ Copy Trade Now",
-                    url=f"https://t.me/ApexFlashBot?start=buy_{mint}",
+                    url=f"https://t.me/{BOT_USERNAME}?start=buy_{mint}",
                 )],
                 [InlineKeyboardButton("📊 Chart", url=f"https://dexscreener.com/solana/{mint}")],
             ]

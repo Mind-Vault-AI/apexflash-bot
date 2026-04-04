@@ -1,3 +1,4 @@
+from config import BOT_USERNAME
 """
 ApexFlash AI Visual Producer (v3.21.0)
 ────────────────────────────────────────────────────────
@@ -111,7 +112,7 @@ def create_infographic(
 
         # Branding (Bottom Right)
         footer_font = ImageFont.load_default()
-        draw.text((width - 300, height - 100), "@ApexFlashBot | Godmode", font=footer_font, fill=(255, 255, 255, 180))
+        draw.text((width - 300, height - 100), "@{BOT_USERNAME} | Godmode", font=footer_font, fill=(255, 255, 255, 180))
 
         img = img.convert("RGB")
         img.save(output_path, "JPEG", quality=90)

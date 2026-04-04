@@ -1,0 +1,16 @@
+2026-04-04 09:56:23,250 [INFO] ApexFlash.start: Importing bot module...
+2026-04-04 09:56:23,820 [ERROR] ApexFlash.start: \U0001f534 BOT CRASH:
+
+ModuleNotFoundError: No module named 'google.generativeai'
+
+Traceback (most recent call last):
+  File "C:\Users\erik_\source\repos\apexflash-bot\start.py", line 83, in <module>
+    import bot
+  File "C:\Users\erik_\source\repos\apexflash-bot\bot.py", line 93, in <module>
+    from whale_intent import analyze_whale_intent, can_user_analyze
+  File "C:\Users\erik_\source\repos\apexflash-bot\whale_intent.py", line 12, in <module>
+    import google.generativeai as genai
+ModuleNotFoundError: No module named 'google.generativeai'
+
+2026-04-04 09:56:24,327 [INFO] httpx: HTTP Request: POST https://api.telegram.org/bot8309267954:AAHBs76muiNlr0RAnOcEFek9VzgWTX3AdeQ/sendMessage "HTTP/1.1 200 OK"
+2026-04-04 09:56:24,327 [INFO] ApexFlash.start: Crash report sent to admin

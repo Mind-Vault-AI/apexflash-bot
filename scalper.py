@@ -220,7 +220,7 @@ async def check_scalp_signals() -> list[dict]:
     return signals
 
 
-    from config import ADMIN_IDS
+    from config import BOT_USERNAME, ADMIN_IDS
     ref_id = ADMIN_IDS[0] if ADMIN_IDS else 0
     sym = s["symbol"]
     mint = ALL_TOKENS.get(sym, "")
@@ -233,10 +233,10 @@ async def check_scalp_signals() -> list[dict]:
             break
             
     if chain == "SOL":
-        bot_url = f"https://t.me/ApexFlashBot?start=buy_{mint}_ref_{ref_id}" if mint else f"https://t.me/ApexFlashBot?start=ref_{ref_id}"
+        bot_url = f"https://t.me/{BOT_USERNAME}?start=buy_{mint}_ref_{ref_id}" if mint else f"https://t.me/{BOT_USERNAME}?start=ref_{ref_id}"
     else:
         # Base Chain specific deep-link or generic referral
-        bot_url = f"https://t.me/ApexFlashBot?start=ref_{ref_id}"
+        bot_url = f"https://t.me/{BOT_USERNAME}?start=ref_{ref_id}"
     
     grade_emoji = {"A": "🚨", "B": "⚡", "C": "👀"}.get(s["grade"], "📡")
     grade_label = {"A": "STRONG SCALP", "B": "MOMENTUM", "C": "WATCH"}.get(s["grade"], "SIGNAL")
