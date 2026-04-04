@@ -1,3 +1,4 @@
+from __future__ import annotations
 from config import BOT_USERNAME
 """
 ApexFlash MEGA BOT - Twitter/X Auto-Poster + Analytics
@@ -10,7 +11,6 @@ Analytics features:
 - Smart content rotation: boosts categories that perform well
 - /tweetstats admin command for performance overview
 """
-from __future__ import annotations
 
 import random
 import logging
