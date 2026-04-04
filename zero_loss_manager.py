@@ -193,26 +193,28 @@ async def auto_trader_loop(bot=None):
     
     # ── 1. RESTORE STATE ──
     active_positions = load_active_positions()
-    
     admin_id = ADMIN_IDS[0] if isinstance(ADMIN_IDS, list) else ADMIN_IDS
-    users = load_users()
-    admin_user = users.get(str(admin_id))
-    if not admin_user or not admin_user.get("wallet_secret_enc"):
-        logger.error("❌ Admin wallet missing. /start first.")
-        return
-        
-    keypair = load_keypair(admin_user["wallet_secret_enc"])
     
-    # Resume tasks for existing positions
-    for sym, pos in active_positions.items():
-        mint = SCALP_TOKENS.get(sym)
-        if mint:
-            logger.info(f"🛡️ RESUMING MANAGER: {sym}")
-            _manager_tasks[sym] = asyncio.create_task(position_manager(keypair, sym, mint, bot=bot))
-
+    # ── 2. MAIN 24/7 LOOP ──
     while True:
         try:
-            # ── 2. SEARCH FOR ALPHA (FETCH UPDATED SELECTIVITY) ──
+            users = load_users()
+            admin_user = users.get(str(admin_id))
+            if not admin_user or not admin_user.get("wallet_secret_enc"):
+                logger.error("❌ Admin wallet missing. Auto Trader waiting for /start...")
+                await asyncio.sleep(60)
+                continue
+                
+            keypair = load_keypair(admin_user["wallet_secret_enc"])
+            
+            # Resume tasks for existing positions if not already running
+            for sym, pos in list(active_positions.items()):
+                mint = SCALP_TOKENS.get(sym)
+                if mint and sym not in _manager_tasks:
+                    logger.info(f"🛡️ RESUMING MANAGER: {sym}")
+                    _manager_tasks[sym] = asyncio.create_task(position_manager(keypair, sym, mint, bot=bot))
+
+            # ── 3. SEARCH FOR ALPHA (FETCH UPDATED SELECTIVITY) ──
             gov = get_governance_config()
             signals = await check_scalp_signals()
             for s in signals:
