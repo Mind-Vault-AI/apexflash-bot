@@ -7,6 +7,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# <KAIZEN_VERSION_START>
+VERSION = "3.15.0"
+# <KAIZEN_VERSION_END>
+
 # === Telegram ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8000))
@@ -79,13 +83,13 @@ TEST_TRADE_SOL = float(os.getenv("TEST_TRADE_SOL", "0"))  # 0 = disabled (produc
 # === OpenAI (for AI signals - Elite tier) ===
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-# === Autonomous (Zero-Loss) Engine Config ===
-# All these are now controllable via Render Environment variables
+# <KAIZEN_AUTONOMOUS_START>
 AUTONOMOUS_TRADE_AMOUNT_SOL = float(os.getenv("AUTONOMOUS_TRADE_AMOUNT_SOL", "0.25"))
 BREAKEVEN_TRIGGER_PCT = float(os.getenv("BREAKEVEN_TRIGGER_PCT", "0.5"))
 TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "2.0"))
 STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "1.0"))
-AUTONOMOUS_COOLDOWN = int(os.getenv("AUTONOMOUS_COOLDOWN", "300"))  # 5 minutes
+AUTONOMOUS_COOLDOWN = int(os.getenv("AUTONOMOUS_COOLDOWN", "300"))
+# <KAIZEN_AUTONOMOUS_END>
 
 # === Affiliate Links — Exchanges ===
 AFFILIATE_LINKS = {
@@ -189,6 +193,15 @@ AFFILIATE_LINKS = {
         "category": "exchange",
         "description": "Grootste Nederlandse crypto exchange — €10K fee-free trading bij signup",
         "promo": "€10 gratis crypto + €10.000 fee-vrij handelen",
+    },
+    "gmgn": {
+        "name": "GMGN.ai",
+        "url": f"https://gmgn.ai/?ref={os.getenv('GMGN_REF', 'cBB5zbUF')}",
+        "commission": "10% fee rebate",
+        "featured": True,
+        "category": "tool",
+        "description": "AI-powered Solana trading terminal, copy trading & sniper tools",
+        "promo": "10% Fee Rebate + AI Smart Money Tracking",
     },
 }
 
