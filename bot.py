@@ -5233,7 +5233,7 @@ async def _cb_admin(query, user, context):
     minutes = int((uptime.total_seconds() % 3600) // 60)
 
     text = (
-        "\U0001f451 *Admin Panel*\n"
+        "\U0001f451 *Admin Panel (v3.15.2)*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         f"\n"
@@ -5345,7 +5345,7 @@ async def _cb_admin_users(query, user, context):
         return
 
     text = (
-        "\U0001f465 *User List*\n"
+        "\U0001f465 *User List (v3.15.2)*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
     )
@@ -5357,6 +5357,8 @@ async def _cb_admin_users(query, user, context):
         t_emoji = TIERS.get(udata.get("tier", "free"), {}).get("emoji", "\U0001f193")
         alert = "\U0001f7e2" if udata.get("alerts_on") else "\U0001f534"
         name = f"@{udata['username']}" if udata.get("username") else str(uid)
+        # Escape for Markdown
+        name = name.replace("_", "\\_")
         text += f"{t_emoji} {alert} {name}\n"
 
     if len(users) > 20:
