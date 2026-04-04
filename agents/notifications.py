@@ -213,9 +213,12 @@ async def notify_channel_trade(bot, action: str, sol_amount: float,
     )
 
     ref_id = ADMIN_IDS[0] if ADMIN_IDS else 0
+    bot_info = await bot.get_me() if bot else None
+    bot_un = bot_info.username if bot_info else (BOT_USERNAME or "apexflash_bot")
+    
     # USE DEEP LINKS IN CHANNEL (callback_data is NOT supported in channels!)
-    trade_url = f"https://t.me/{BOT_USERNAME}?start=buy_{token_mint}" if token_mint else f"https://t.me/{BOT_USERNAME}?start=ref_{ref_id}"
-    aff_url = f"https://t.me/{BOT_USERNAME}?start=aff_mexc"  # Default trackable deep link
+    trade_url = f"https://t.me/{bot_un}?start=buy_{token_mint}" if token_mint else f"https://t.me/{bot_un}?start=ref_{ref_id}"
+    aff_url = f"https://t.me/{bot_un}?start=aff_mexc"  # Default trackable deep link
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("⚡ 1-Tap Auto-Trade", url=trade_url)],

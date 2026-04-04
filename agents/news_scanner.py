@@ -350,16 +350,19 @@ async def notify_signal(signal: dict, bot=None) -> None:
     # Telegram channel
     if bot and ALERT_CHANNEL_ID:
         try:
+            bot_info = await bot.get_me()
+            bot_un = bot_info.username if bot_info else (BOT_USERNAME or "apexflash_bot")
+            
             from telegram import InlineKeyboardMarkup, InlineKeyboardButton
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("⚡ Trade Now", url=f"https://t.me/{BOT_USERNAME}"),
+                InlineKeyboardButton("⚡ Trade Now", url=f"https://t.me/{bot_un}"),
                 InlineKeyboardButton("📊 More Signals", url="https://apexflash.pro"),
             ]])
             await bot.send_message(
                 chat_id=ALERT_CHANNEL_ID,
                 text=text,
-                parse_mode="Markdown",
                 reply_markup=kb,
+                parse_mode="Markdown",
                 disable_web_page_preview=True,
             )
             logger.info(f"War Watch: Telegram alert sent for '{signal['keyword']}'")
