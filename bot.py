@@ -340,9 +340,21 @@ def _back_main() -> list:
     return [InlineKeyboardButton("\U0001f3e0 Main Menu", callback_data="main")]
 
 
-# ══════════════════════════════════════════════
-# COMMAND HANDLERS
-# ══════════════════════════════════════════════
+async def cmd_admin_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Pause auto-trading signals (Admin only)."""
+    if not is_admin(update.effective_user.id): return
+    from persistence import _get_redis
+    r = _get_redis()
+    if r: r.set("signals:paused", "1")
+    await update.message.reply_text("⏸️ *Auto-Trading PAUSED*\nNew signals will be ignored.", parse_mode="Markdown")
+
+async def cmd_admin_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Resume auto-trading signals (Admin only)."""
+    if not is_admin(update.effective_user.id): return
+    from persistence import _get_redis
+    r = _get_redis()
+    if r: r.set("signals:paused", "0")
+    await update.message.reply_text("▶️ *Auto-Trading RESUMED*\nSearching for Grade A signals...", parse_mode="Markdown")
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Welcome message with main menu. Also handles referral deep links."""
@@ -843,7 +855,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "admin_stats":   _cb_admin_stats,
         "admin_users":   _cb_admin_users,
         "admin_broadcast": _cb_admin_broadcast,
-        "admin_resume_signals": _cb_admin_resume_signals,
+        "admin_pause":   _cb_admin_pause_logic,
+        "admin_resume":  _cb_admin_resume_logic,
         # Withdraw
         "withdraw_start":   _cb_withdraw_start,
         "withdraw_confirm": _cb_withdraw_confirm,
@@ -5161,15 +5174,40 @@ async def _cb_admin(query, user, context):
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
     )
+    from persistence import _get_redis
+    r = _get_redis()
+    is_paused = r.get("signals:paused") == "1" if r else False
+
     kb = [
         [InlineKeyboardButton("\U0001f4ca Revenue Stats", callback_data="admin_stats")],
         [InlineKeyboardButton("\U0001f465 User List", callback_data="admin_users")],
         [InlineKeyboardButton("\U0001f4e2 Broadcast Info", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("▶️ Resume Auto-Trading" if is_paused else "⏸️ Pause Auto-Trading", 
+                              callback_data="admin_resume" if is_paused else "admin_pause")],
         [_back_main()[0]],
     ]
     await query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
     )
+
+
+async def _cb_admin_resume_logic(query, user, context):
+    """Resume signals via callback."""
+    if not is_admin(query.from_user.id): return
+    from persistence import _get_redis
+    r = _get_redis()
+    if r: r.set("signals:paused", "0")
+    await query.answer("▶️ Auto-Trading RESUMED")
+    await _cb_admin(query, user, context)
+
+async def _cb_admin_pause_logic(query, user, context):
+    """Pause signals via callback."""
+    if not is_admin(query.from_user.id): return
+    from persistence import _get_redis
+    r = _get_redis()
+    if r: r.set("signals:paused", "1")
+    await query.answer("⏸️ Auto-Trading PAUSED")
+    await _cb_admin(query, user, context)
 
 
 async def _cb_admin_stats(query, user, context):
@@ -6634,6 +6672,8 @@ def main() -> None:
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("myid", cmd_myid))
     app.add_handler(CommandHandler("admin", cmd_admin))
+    app.add_handler(CommandHandler("admin_pause", cmd_admin_pause))
+    app.add_handler(CommandHandler("admin_resume", cmd_admin_resume))
     app.add_handler(CommandHandler("broadcast", cmd_broadcast))
     app.add_handler(CommandHandler("activate", cmd_activate))
     app.add_handler(CommandHandler("killswitch", cmd_killswitch))

@@ -182,6 +182,14 @@ async def auto_trader_loop(bot=None):
     
     while True:
         try:
+            # Kaizen: Block NEW signals if administrative pause is active
+            from persistence import _get_redis
+            r = _get_redis()
+            if r and r.get("signals:paused") == "1":
+                logger.info("⏸️ Signal Engine PAUSED. Skipping alpha search...")
+                await asyncio.sleep(60) 
+                continue
+
             sol_balance = await get_sol_balance(admin_wallet_pub)
             if sol_balance is None or sol_balance < AUTONOMOUS_TRADE_AMOUNT_SOL + 0.01:
                 logger.warning(f"⚠️ Low Balance: {sol_balance} SOL. Waiting...")
