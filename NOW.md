@@ -11,6 +11,8 @@
 
 ## RECENT IMPROVEMENTS
 - **Godmode Infinity (v3.15.0)**: Jumped multiple versions to reflect massive stability and feature leap.
+- **Telegram Crash-Loop Fix**: Added automated detection for `telegram.error.Conflict` to forcefully `/close` inactive getUpdates sessions blocking Render deployment.
+- **Frontend Sync**: Updated `apexflash-app` marketing copy to natively feature the 24/7 Zero-Loss Autonomous Engine over manual trading.
 - **Verbose Logging**: Added "Skipped" reason logs in `zero_loss_manager.py` for easier debugging.
 - **Optimization**: AI Sentiment 503 handling improved with automated exponential backoff.
 
