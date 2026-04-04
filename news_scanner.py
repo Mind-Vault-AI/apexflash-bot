@@ -25,6 +25,9 @@ import os
 from datetime import datetime, timezone, timedelta
 
 import aiohttp
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 

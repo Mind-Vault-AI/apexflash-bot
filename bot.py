@@ -22,7 +22,13 @@ Author: MindVault AI / Erik
 Version: 3.15.2 (THE AGENCY GATEWAY + INFINITY ENGINE + PY 3.14 FIX)
 """
 VERSION = "3.15.2"
-import logging
+import aiohttp
+from dotenv import load_dotenv
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
 import re
 import random
 from datetime import datetime, timezone, time as dt_time
@@ -2627,6 +2633,8 @@ async def _cb_trade_sell(query, user, context):
     await query.edit_message_text(
         "\U0001f50d *Scanning tokens...*", parse_mode="Markdown",
     )
+    
+    logger.info(f"Scanning tokens for user {query.from_user.id} ({user['wallet_pubkey']})")
 
     tokens = await get_token_balances(user["wallet_pubkey"])
 
