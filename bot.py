@@ -1000,6 +1000,20 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Activate premium with a Gumroad license key. Usage: /activate LICENSE_KEY"""
     uid = update.effective_user.id
     user = get_user(uid)
+    advisor_lock_key = f"apexflash:advisor:lock:{uid}"
+    redis_lock_acquired = False
+
+    # Cross-instance lock (prevents duplicate advisor runs during rolling deploy overlap).
+    try:
+        from core.persistence import _get_redis
+        _r = _get_redis()
+        if _r:
+            redis_lock_acquired = bool(_r.set(advisor_lock_key, "1", ex=25, nx=True))
+            if not redis_lock_acquired:
+                await _safe_send("⏳ *AI Advisor is already processing your previous request...*")
+                return
+    except Exception:
+        redis_lock_acquired = False
 
     # Poka-Yoke: prevent duplicate concurrent advisor runs on rapid multi-clicks.
     advisor_busy = bool(context.user_data.get("advisor_busy"))
@@ -1238,11 +1252,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         try:
             await routes[data](query, user, context)
         except Exception as e:
-            logger.error(f"Callback error [{data}]: {e}")
+            logger.error(f"Callback error [{data}] user={user_id}: {e}")
             from traceback import format_exc
             logger.error(format_exc())
             try:
-                await query.edit_message_text("\u26a0\ufe0f An error occurred. Please use /start.")
+                await query.edit_message_text("⚠️ Action failed. Try once more in a few seconds.")
             except Exception:
                 pass
         return
@@ -6729,6 +6743,14 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 await _safe_send(final_text[:3900], parse_mode=None)
     finally:
         context.user_data["advisor_busy"] = False
+        if redis_lock_acquired:
+            try:
+                from core.persistence import _get_redis
+                _r = _get_redis()
+                if _r:
+                    _r.delete(advisor_lock_key)
+            except Exception:
+                pass
 
 
 async def cmd_advisor_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
