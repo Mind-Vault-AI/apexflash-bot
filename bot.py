@@ -138,6 +138,9 @@ RUNTIME_HEALTH = {
     "last_smoke_ts": "",
     "last_watchdog_ts": "",
     "last_ops_autocheck_ts": "",
+    "ops_running": False,
+    "last_ops_status": "idle",
+    "last_ops_error": "",
 }
 
 # ══════════════════════════════════════════════
@@ -6643,6 +6646,8 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Last smoke: `{RUNTIME_HEALTH.get('last_smoke_ts', '-')}`\n"
         f"Last watchdog: `{RUNTIME_HEALTH.get('last_watchdog_ts', '-')}`\n"
         f"Last ops autocheck: `{RUNTIME_HEALTH.get('last_ops_autocheck_ts', '-')}`\n"
+        f"Ops status: `{'running' if RUNTIME_HEALTH.get('ops_running') else RUNTIME_HEALTH.get('last_ops_status', 'idle')}`\n"
+        f"Ops error: `{RUNTIME_HEALTH.get('last_ops_error', '') or '-'}`\n"
         f"Uptime: `{uptime_h}h {uptime_m}m`\n"
         "Tip: run `/ops_now` for immediate full autonomous health cycle."
     )
@@ -6659,12 +6664,27 @@ async def cmd_ops_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("⛔ Unauthorized.")
         return
 
+    if RUNTIME_HEALTH.get("ops_running"):
+        await update.message.reply_text("⏳ Ops check already running. Please wait for completion.")
+        return
+
     await update.message.reply_text("🛰️ Running full autonomous ops check now...")
 
-    # Reuse existing commands so behavior stays aligned with /smoke + /advisor_diag + /sla.
-    await cmd_smoke(update, context)
-    await cmd_advisor_diag(update, context)
-    await cmd_sla(update, context)
+    RUNTIME_HEALTH["ops_running"] = True
+    RUNTIME_HEALTH["last_ops_status"] = "running"
+    RUNTIME_HEALTH["last_ops_error"] = ""
+    try:
+        # Reuse existing commands so behavior stays aligned with /smoke + /advisor_diag + /sla.
+        await cmd_smoke(update, context)
+        await cmd_advisor_diag(update, context)
+        await cmd_sla(update, context)
+        RUNTIME_HEALTH["last_ops_status"] = "ok"
+    except Exception as e:
+        RUNTIME_HEALTH["last_ops_status"] = "failed"
+        RUNTIME_HEALTH["last_ops_error"] = str(e)
+        raise
+    finally:
+        RUNTIME_HEALTH["ops_running"] = False
 
 async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show language selection menu."""
@@ -7771,6 +7791,13 @@ def main() -> None:
 
     # Autonomous ops check — runs /sla + /smoke + /advisor_diag equivalent and pushes summary.
     async def ops_autocheck_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        if RUNTIME_HEALTH.get("ops_running"):
+            logger.info("ops_autocheck skipped: another ops cycle is running")
+            return
+
+        RUNTIME_HEALTH["ops_running"] = True
+        RUNTIME_HEALTH["last_ops_status"] = "running"
+        RUNTIME_HEALTH["last_ops_error"] = ""
         try:
             from agents.advisor_agent import advisor_live_probe
 
@@ -7838,8 +7865,13 @@ def main() -> None:
                     await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
                 except Exception:
                     pass
+            RUNTIME_HEALTH["last_ops_status"] = "ok"
         except Exception as e:
+            RUNTIME_HEALTH["last_ops_status"] = "failed"
+            RUNTIME_HEALTH["last_ops_error"] = str(e)
             logger.warning(f"ops_autocheck_job failed: {e}")
+        finally:
+            RUNTIME_HEALTH["ops_running"] = False
 
     app.job_queue.run_repeating(
         ops_autocheck_job,
