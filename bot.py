@@ -921,18 +921,12 @@ async def _cb_switch_network(query, user, context):
     user_chain = user.get("active_chain", "SOL")
 
     if user_chain == "SOL":
-        # Callback already acknowledged in callback_handler; avoid double answer errors.
+        # Callback already acknowledged in callback_handler; avoid double-answer errors.
         await query.edit_message_text(
-            "🌐 *BASE/SOL Network*
-"
-            "━━━━━━━━━━━━━━━━━━━━━
-
-"
-            "🚀 Base & Arbitrum signals are launching in v3.16.0.
-"
-            "✅ Auto-trading currently runs on Solana (primary engine).
-
-"
+            "🌐 *BASE/SOL Network*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🚀 Base & Arbitrum signals are launching in v3.16.0.\n"
+            "✅ Auto-trading currently runs on Solana (primary engine).\n\n"
             "Use Trade to continue on SOL.",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
@@ -947,10 +941,6 @@ async def _cb_switch_network(query, user, context):
         reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
     )
 
-
-# ══════════════════════════════════════════════
-# CALLBACK ROUTER
-# ══════════════════════════════════════════════
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Route all inline button presses to handlers."""
