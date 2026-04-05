@@ -6738,14 +6738,8 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await _safe_send("⚠️ AI Advisor tijdelijk niet beschikbaar. Probeer opnieuw over 30 sec.", parse_mode=None)
     finally:
         context.user_data["advisor_busy"] = False
-        if redis_lock_acquired:
-            try:
-                from core.persistence import _get_redis
-                _r = _get_redis()
-                if _r:
-                    _r.delete(advisor_lock_key)
-            except Exception:
-                pass
+        # Keep redis lock until TTL expires to absorb queued/double taps
+        # across rolling instances and delayed callback deliveries.
 
 
 async def cmd_advisor_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7228,6 +7222,21 @@ async def _cb_advisor(query, user, context):
     """Callback to show AI advisor analysis."""
     try:
         await query.answer("🤖 AI Coach starting...")
+    except Exception:
+        pass
+
+    # Fast callback-level lock on the tapped message (cross-instance safe when Redis is available).
+    try:
+        from core.persistence import _get_redis
+        _r = _get_redis()
+        if _r and query.message:
+            cb_lock_key = f"apexflash:advisor:cb:{query.message.chat.id}:{query.message.message_id}"
+            if not bool(_r.set(cb_lock_key, "1", ex=20, nx=True)):
+                try:
+                    await query.answer("⏳ AI Advisor is bezig met je vorige klik.", show_alert=False)
+                except Exception:
+                    pass
+                return
     except Exception:
         pass
 
