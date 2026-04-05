@@ -5646,8 +5646,10 @@ async def _send_admin_panel(chat_id: int, context: ContextTypes.DEFAULT_TYPE) ->
 # WHALE ALERT FORMATTER
 # ══════════════════════════════════════════════
 
-def format_whale_alert(alert: dict, prices: dict, sentiment: dict = None) -> str:
+def format_whale_alert(alert: dict, prices: dict, sentiment: dict | None = None) -> str:
     """Format a whale alert message with signal quality, affiliate CTA and AI sentiment."""
+    sentiment = sentiment or {}
+
     chain = alert["chain"]
     value = alert["value"]
     symbol = alert["symbol"]
@@ -8233,12 +8235,19 @@ def main() -> None:
                     continue
                 
                 # New sale detected!
-                tier = get_tier_from_product_id(product_id)
+                if not product_id:
+                    continue
+
+                tier = get_tier_from_product_id(str(product_id))
                 if tier == "unknown":
                     continue
                 
                 # 1. Track in Redis
-                price = sale.get("price", 0) / 100.0 # cents to dollars
+                raw_price_cents = sale.get("price", 0)
+                try:
+                    price = float(raw_price_cents or 0) / 100.0  # cents to dollars
+                except Exception:
+                    price = 0.0
                 track_paid_conversion(0, tier) 
                 track_revenue(price)
                 mark_purchase_synced(purchase_id)

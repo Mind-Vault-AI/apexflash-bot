@@ -946,11 +946,19 @@ def get_user_referral_stats(user_id: int) -> dict:
     if not r:
         return {"rank": 0, "earnings": 0}
     try:
-        earnings = float(r.get(f"user:referral_earnings:{user_id}") or 0)
+        raw_earnings = r.get(f"user:referral_earnings:{user_id}")
+        try:
+            earnings = float(raw_earnings or 0)
+        except Exception:
+            earnings = 0.0
         rank = r.zrevrank("apexflash:referral_leaderboard", str(user_id))
+        try:
+            rank_value = int(rank) + 1 if rank is not None else 0
+        except Exception:
+            rank_value = 0
         return {
             "earnings": round(earnings, 4),
-            "rank": (rank + 1) if rank is not None else 0
+            "rank": rank_value,
         }
     except Exception:
         return {"rank": 0, "earnings": 0}

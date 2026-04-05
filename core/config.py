@@ -305,6 +305,7 @@ DISCORD_TRADE_WEBHOOK_URL = os.getenv("DISCORD_TRADE_WEBHOOK_URL", "")  # Trade 
 # === Telegram Channel ===
 # Public channel for whale alerts — bot must be admin of this channel
 ALERT_CHANNEL_ID = os.getenv("ALERT_CHANNEL_ID", "")  # e.g. "@ApexFlashAlerts" or "-100xxxxx"
+ELITE_CHANNEL_ID = os.getenv("ELITE_CHANNEL_ID", "")
 
 # === Support & Links ===
 WEBSITE_URL = "https://apexflash.pro"
