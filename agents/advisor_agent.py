@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time
 from typing import List, Optional, Tuple
 
 import google.generativeai as genai
@@ -20,6 +21,11 @@ MODEL_CHAIN = [
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
+
+MODEL_RATE_LIMIT_COOLDOWN_SEC = int(os.getenv("GEMINI_RATE_LIMIT_COOLDOWN_SEC", "300"))
+MODEL_NOTFOUND_COOLDOWN_SEC = int(os.getenv("GEMINI_NOTFOUND_COOLDOWN_SEC", "3600"))
+_MODEL_BLOCKED_UNTIL: dict[str, float] = {}
+_LAST_WORKING_MODEL: Optional[str] = None
 
 
 def _discover_generate_models() -> List[str]:
@@ -83,22 +89,45 @@ def _build_prompt(history_summary: List[dict]) -> str:
 
 
 async def _try_gemini(prompt: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    global _LAST_WORKING_MODEL
+
     if not GEMINI_API_KEY:
         return None, None, "GEMINI_API_KEY missing"
 
     errors: List[str] = []
-    for model_name in _resolve_model_chain():
+    chain = _resolve_model_chain()
+
+    # Prefer last known working model to reduce latency/fallback risk.
+    if _LAST_WORKING_MODEL and _LAST_WORKING_MODEL in chain:
+        chain = [_LAST_WORKING_MODEL] + [m for m in chain if m != _LAST_WORKING_MODEL]
+
+    now_ts = time.time()
+
+    for model_name in chain:
+        blocked_until = _MODEL_BLOCKED_UNTIL.get(model_name, 0)
+        if blocked_until > now_ts:
+            remaining = int(blocked_until - now_ts)
+            errors.append(f"skip blocked model {model_name} ({remaining}s)")
+            continue
+
         try:
             model = genai.GenerativeModel(model_name)
             response = await model.generate_content_async(prompt)
             text = (response.text or "").strip()
             if text:
+                _LAST_WORKING_MODEL = model_name
                 return text, model_name, None
             errors.append(f"empty response: {model_name}")
         except Exception as e:
             msg = f"{model_name}: {type(e).__name__}: {e}"
             errors.append(msg)
             logger.warning("AI Advisor model failed: %s", msg)
+
+            low_msg = msg.lower()
+            if "429" in low_msg or "resourceexhausted" in low_msg or "rate" in low_msg:
+                _MODEL_BLOCKED_UNTIL[model_name] = time.time() + MODEL_RATE_LIMIT_COOLDOWN_SEC
+            elif "notfound" in low_msg or "is not found" in low_msg or "not supported" in low_msg:
+                _MODEL_BLOCKED_UNTIL[model_name] = time.time() + MODEL_NOTFOUND_COOLDOWN_SEC
 
     reason = " | ".join(errors[-3:]) if errors else "no model response"
     return None, None, reason
