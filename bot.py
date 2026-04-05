@@ -7479,6 +7479,67 @@ def main() -> None:
         name="advisor_watchdog",
     )
 
+    # Production endpoint watchdog — verifies key app/telegram links and alerts on state changes only.
+    endpoint_watchdog_last_ok = None
+    endpoint_watchdog_urls = [
+        WEBSITE_URL,
+        f"{WEBSITE_URL}/api/events?hours=24&latest=1",
+        f"{WEBSITE_URL}/api/subscribe",
+        f"https://t.me/{BOT_USERNAME}",
+        f"https://t.me/{BOT_USERNAME}?start=elite",
+    ]
+
+    async def endpoint_watchdog_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        nonlocal endpoint_watchdog_last_ok
+        try:
+            results = []
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+                for url in endpoint_watchdog_urls:
+                    ok = False
+                    status = 0
+                    try:
+                        async with session.get(url, allow_redirects=True) as resp:
+                            status = resp.status
+                            ok = 200 <= status < 400
+                    except Exception:
+                        ok = False
+                    results.append((url, ok, status))
+
+            all_ok = all(item[1] for item in results)
+
+            # Notify only on first run or when aggregate health changes.
+            if endpoint_watchdog_last_ok is None or endpoint_watchdog_last_ok != all_ok:
+                if all_ok:
+                    text = (
+                        "✅ *Endpoint Watchdog: ALL GREEN*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        "Core app/API/Telegram endpoints are reachable."
+                    )
+                else:
+                    failed = [f"• `{u}` → {s if s else 'ERR'}" for u, ok, s in results if not ok]
+                    text = (
+                        "⚠️ *Endpoint Watchdog: FAILURE*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        + "\n".join(failed[:8])
+                    )
+
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+                    except Exception:
+                        pass
+
+            endpoint_watchdog_last_ok = all_ok
+        except Exception as e:
+            logger.warning(f"endpoint_watchdog_job failed: {e}")
+
+    app.job_queue.run_repeating(
+        endpoint_watchdog_job,
+        interval=1800,  # every 30 minutes
+        first=240,      # first check after 4 minutes
+        name="endpoint_watchdog",
+    )
+
     logger.info("\u26a1 ApexFlash MEGA BOT v3.15.4 starting (Infinity Engine + The Agency Gateway)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
