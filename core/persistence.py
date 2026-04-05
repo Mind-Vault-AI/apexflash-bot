@@ -482,6 +482,7 @@ def get_funnel_stats(date_str: str | None = None) -> dict:
             "funded",
             "first_trade",
             "upgrade",
+            "advisor_used",
             "advisor_paywall_view",
             "advisor_upgrade_click",
             "advisor_pricing_click",

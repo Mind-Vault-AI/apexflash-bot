@@ -6622,6 +6622,7 @@ async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     affiliates = get_affiliate_stats()
 
     advisor_paywall_views = int(funnel.get("advisor_paywall_view", 0) or 0)
+    advisor_used = int(funnel.get("advisor_used", 0) or 0)
     advisor_upgrade_clicks = int(funnel.get("advisor_upgrade_click", 0) or 0)
     advisor_pricing_clicks = int(funnel.get("advisor_pricing_click", 0) or 0)
     advisor_upgrade_ctr = (advisor_upgrade_clicks / advisor_paywall_views * 100.0) if advisor_paywall_views else 0.0
@@ -6668,9 +6669,23 @@ async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
     # Simplified formatting for long outputs
-    funnel_text = "\U0001f4ca *Funnel Stats:*\n" + "\n".join([f"• {k}: {v}" for k,v in funnel.items()])
+    funnel_labels = [
+        ("start", "Start"),
+        ("wallet_created", "Wallet created"),
+        ("funded", "Funded"),
+        ("first_trade", "First trade"),
+        ("upgrade", "Upgrade"),
+        ("advisor_used", "Advisor used (Elite/Admin)"),
+        ("advisor_paywall_view", "Advisor paywall view"),
+        ("advisor_upgrade_click", "Advisor upgrade click"),
+        ("advisor_pricing_click", "Advisor pricing click"),
+    ]
+    funnel_text = "\U0001f4ca *Funnel Stats:*\n" + "\n".join(
+        [f"• {label}: {int(funnel.get(key, 0) or 0)}" for key, label in funnel_labels]
+    )
     advisor_conversion_text = (
         "\n\n🤖 *Advisor Paywall Conversion:*\n"
+        f"• Advisor used: *{advisor_used}*\n"
         f"• Views: *{advisor_paywall_views}*\n"
         f"• Upgrade clicks: *{advisor_upgrade_clicks}* ({advisor_upgrade_ctr:.2f}%)\n"
         f"• Pricing clicks: *{advisor_pricing_clicks}* ({advisor_pricing_ctr:.2f}%)\n"
@@ -6740,6 +6755,9 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 reply_markup=upgrade_kb,
             )
             return
+
+        track_funnel("advisor_used")
+        track_bucket_kpi(get_user_bucket(uid), "advisor_used")
 
         history = user.get("trade_history", [])
         if not history:
