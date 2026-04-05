@@ -7739,6 +7739,84 @@ def main() -> None:
         name="endpoint_watchdog",
     )
 
+    # Autonomous ops check — runs /sla + /smoke + /advisor_diag equivalent and pushes summary.
+    async def ops_autocheck_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        try:
+            from agents.advisor_agent import advisor_live_probe
+
+            # --- advisor probe (advisor_diag equivalent) ---
+            probe = await advisor_live_probe()
+            advisor_ok = bool(probe.get("ok"))
+            RUNTIME_HEALTH["advisor_ok"] = advisor_ok
+            RUNTIME_HEALTH["advisor_reason"] = str(probe.get("reason") or "")
+            RUNTIME_HEALTH["advisor_model"] = str(probe.get("model") or "")
+            RUNTIME_HEALTH["advisor_checks_total"] = int(RUNTIME_HEALTH.get("advisor_checks_total", 0)) + 1
+            if advisor_ok:
+                RUNTIME_HEALTH["advisor_checks_ok"] = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0)) + 1
+
+            # --- endpoint probe (smoke equivalent) ---
+            results = []
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+                for url in endpoint_watchdog_urls:
+                    ok = False
+                    status = 0
+                    try:
+                        async with session.get(url, allow_redirects=True) as resp:
+                            status = resp.status
+                            ok = 200 <= status < 400
+                    except Exception:
+                        ok = False
+                    results.append((url, ok, status))
+
+            endpoint_ok = all(item[1] for item in results)
+            RUNTIME_HEALTH["endpoint_ok"] = endpoint_ok
+            RUNTIME_HEALTH["endpoint_failed"] = [f"• `{u}` → {s if s else 'ERR'}" for u, ok, s in results if not ok][:8]
+            RUNTIME_HEALTH["endpoint_checks_total"] = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0)) + 1
+            if endpoint_ok:
+                RUNTIME_HEALTH["endpoint_checks_ok"] = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0)) + 1
+
+            now_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            RUNTIME_HEALTH["last_smoke_ts"] = now_stamp
+            RUNTIME_HEALTH["last_watchdog_ts"] = now_stamp
+
+            # --- sla summary (sla equivalent) ---
+            advisor_total = int(RUNTIME_HEALTH.get("advisor_checks_total", 0))
+            advisor_ok_count = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0))
+            endpoint_total = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0))
+            endpoint_ok_count = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0))
+            advisor_sla = (advisor_ok_count / advisor_total * 100.0) if advisor_total else 0.0
+            endpoint_sla = (endpoint_ok_count / endpoint_total * 100.0) if endpoint_total else 0.0
+
+            text = (
+                "🛰️ *ApexFlash Auto Ops Check*\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
+                f"Advisor: {'✅ online' if advisor_ok else '⚠️ fallback'}\n"
+                f"Endpoints: {'✅ healthy' if endpoint_ok else '⚠️ issues'}\n"
+                f"Model: `{RUNTIME_HEALTH.get('advisor_model', '') or '-'}`\n"
+                f"Fallback reason: `{RUNTIME_HEALTH.get('advisor_reason', '') or '-'}`\n"
+                f"Advisor SLA: `{advisor_ok_count}/{advisor_total}` ({advisor_sla:.2f}%)\n"
+                f"Endpoint SLA: `{endpoint_ok_count}/{endpoint_total}` ({endpoint_sla:.2f}%)\n"
+                f"Checked at: `{now_stamp}`"
+            )
+
+            if RUNTIME_HEALTH["endpoint_failed"]:
+                text += "\n\n❌ Failed:\n" + "\n".join(RUNTIME_HEALTH["endpoint_failed"][:6])
+
+            for admin_id in ADMIN_IDS:
+                try:
+                    await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"ops_autocheck_job failed: {e}")
+
+    app.job_queue.run_repeating(
+        ops_autocheck_job,
+        interval=7200,  # every 2 hours
+        first=420,      # first check after 7 minutes
+        name="ops_autocheck",
+    )
+
     logger.info("\u26a1 ApexFlash MEGA BOT v3.15.4 starting (Infinity Engine + The Agency Gateway)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
