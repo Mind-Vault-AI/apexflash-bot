@@ -127,8 +127,12 @@ RUNTIME_HEALTH = {
     "advisor_ok": None,
     "advisor_reason": "",
     "advisor_model": "",
+    "advisor_checks_total": 0,
+    "advisor_checks_ok": 0,
     "endpoint_ok": None,
     "endpoint_failed": [],
+    "endpoint_checks_total": 0,
+    "endpoint_checks_ok": 0,
     "last_smoke_ts": "",
 }
 
@@ -6572,8 +6576,16 @@ async def cmd_smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     RUNTIME_HEALTH["advisor_ok"] = bool(probe.get("ok"))
     RUNTIME_HEALTH["advisor_reason"] = str(probe.get("reason") or "")
     RUNTIME_HEALTH["advisor_model"] = str(probe.get("model") or "")
+    RUNTIME_HEALTH["advisor_checks_total"] = int(RUNTIME_HEALTH.get("advisor_checks_total", 0)) + 1
+    if probe.get("ok"):
+        RUNTIME_HEALTH["advisor_checks_ok"] = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0)) + 1
+
     RUNTIME_HEALTH["endpoint_ok"] = all(line.startswith("✅") for line in lines)
     RUNTIME_HEALTH["endpoint_failed"] = [line for line in lines if line.startswith("❌")][:8]
+    RUNTIME_HEALTH["endpoint_checks_total"] = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0)) + 1
+    if RUNTIME_HEALTH["endpoint_ok"]:
+        RUNTIME_HEALTH["endpoint_checks_ok"] = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0)) + 1
+
     RUNTIME_HEALTH["last_smoke_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     text = (
@@ -6599,6 +6611,14 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     endpoint_status = "✅ healthy" if endpoint_ok is True else "⚠️ issues" if endpoint_ok is False else "❔ unknown"
     failed = RUNTIME_HEALTH.get("endpoint_failed", []) or []
 
+    advisor_total = int(RUNTIME_HEALTH.get("advisor_checks_total", 0))
+    advisor_ok_count = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0))
+    endpoint_total = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0))
+    endpoint_ok_count = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0))
+
+    advisor_sla = (advisor_ok_count / advisor_total * 100.0) if advisor_total else 0.0
+    endpoint_sla = (endpoint_ok_count / endpoint_total * 100.0) if endpoint_total else 0.0
+
     uptime = datetime.now(timezone.utc) - bot_start_time
     uptime_h = int(uptime.total_seconds() // 3600)
     uptime_m = int((uptime.total_seconds() % 3600) // 60)
@@ -6610,6 +6630,8 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Endpoints: {endpoint_status}\n"
         f"Model: `{RUNTIME_HEALTH.get('advisor_model', '') or '-'}" + "`\n"
         f"Fallback reason: `{RUNTIME_HEALTH.get('advisor_reason', '') or '-'}" + "`\n"
+        f"Advisor SLA window: `{advisor_ok_count}/{advisor_total}` ({advisor_sla:.2f}%)\n"
+        f"Endpoint SLA window: `{endpoint_ok_count}/{endpoint_total}` ({endpoint_sla:.2f}%)\n"
         f"Last smoke: `{RUNTIME_HEALTH.get('last_smoke_ts', '-')}`\n"
         f"Uptime: `{uptime_h}h {uptime_m}m`"
     )
@@ -7551,6 +7573,9 @@ def main() -> None:
             RUNTIME_HEALTH["advisor_ok"] = current_ok
             RUNTIME_HEALTH["advisor_reason"] = str(probe.get("reason") or "")
             RUNTIME_HEALTH["advisor_model"] = str(probe.get("model") or "")
+            RUNTIME_HEALTH["advisor_checks_total"] = int(RUNTIME_HEALTH.get("advisor_checks_total", 0)) + 1
+            if current_ok:
+                RUNTIME_HEALTH["advisor_checks_ok"] = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0)) + 1
 
             # Notify only on first run or when state changes (LEAN: avoid noisy spam)
             if advisor_probe_last_ok is None or advisor_probe_last_ok != current_ok:
@@ -7613,6 +7638,9 @@ def main() -> None:
             all_ok = all(item[1] for item in results)
             RUNTIME_HEALTH["endpoint_ok"] = all_ok
             RUNTIME_HEALTH["endpoint_failed"] = [f"• `{u}` → {s if s else 'ERR'}" for u, ok, s in results if not ok][:8]
+            RUNTIME_HEALTH["endpoint_checks_total"] = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0)) + 1
+            if all_ok:
+                RUNTIME_HEALTH["endpoint_checks_ok"] = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0)) + 1
 
             # Notify only on first run or when aggregate health changes.
             if endpoint_watchdog_last_ok is None or endpoint_watchdog_last_ok != all_ok:
