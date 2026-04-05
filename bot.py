@@ -6742,16 +6742,33 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     context.user_data["advisor_last_ts"] = now_ts
     try:
         if user.get("tier", "free") not in ("elite", "admin"):
+            bucket = get_user_bucket(uid)
             track_funnel("advisor_paywall_view")
-            track_bucket_kpi(get_user_bucket(uid), "advisor_paywall_view")
-            upgrade_kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("💎 Upgrade to Elite", callback_data="advisor_upgrade_elite")],
-                [InlineKeyboardButton("📈 View Pricing", callback_data="advisor_view_pricing")],
-            ])
+            track_bucket_kpi(bucket, "advisor_paywall_view")
+
+            if bucket == 0:
+                paywall_text = (
+                    "💎 *ApexFlash AI Advisor (Elite)*\n\n"
+                    "This professional feature is reserved for **Elite** members.\n"
+                    "Upgrade now to unlock personalized Gemini trade coaching."
+                )
+                upgrade_kb = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💎 Upgrade to Elite", callback_data="advisor_upgrade_elite")],
+                    [InlineKeyboardButton("📈 View Pricing", callback_data="advisor_view_pricing")],
+                ])
+            else:
+                paywall_text = (
+                    "🚀 *AI Coach Pro Access (Elite)*\n\n"
+                    "You reached the highest-intent advisor path.\n"
+                    "Activate Elite to access full AI coaching and faster execution guidance."
+                )
+                upgrade_kb = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📈 View Pricing", callback_data="advisor_view_pricing")],
+                    [InlineKeyboardButton("💎 Activate Elite", callback_data="advisor_upgrade_elite")],
+                ])
+
             await _safe_send(
-                "💎 *ApexFlash AI Advisor (Elite)*\n\n"
-                "This professional feature is reserved for **Elite** members.\n"
-                "Upgrade to receive personalized Gemini trade coaching.",
+                paywall_text,
                 reply_markup=upgrade_kb,
             )
             return
