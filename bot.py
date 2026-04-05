@@ -6671,13 +6671,14 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """Show personalized AI trade analysis for Elite users."""
     from agents.advisor_agent import analyze_trader_performance, get_advisor_intro
 
-    async def _safe_send(text: str, *, parse_mode: str | None = "Markdown"):
+    async def _safe_send(text: str, *, parse_mode: str | None = "Markdown", reply_markup=None):
         if update.message:
-            return await update.message.reply_text(text, parse_mode=parse_mode)
+            return await update.message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
         return await context.bot.send_message(
             chat_id=update.effective_user.id,
             text=text,
             parse_mode=parse_mode,
+            reply_markup=reply_markup,
         )
 
     uid = update.effective_user.id
@@ -6709,10 +6710,15 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     context.user_data["advisor_last_ts"] = now_ts
     try:
         if user.get("tier", "free") not in ("elite", "admin"):
+            upgrade_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("💎 Upgrade to Elite", url=f"https://t.me/{BOT_USERNAME}?start=elite")],
+                [InlineKeyboardButton("📈 View Pricing", url=f"{WEBSITE_URL}#pricing")],
+            ])
             await _safe_send(
                 "💎 *ApexFlash AI Advisor (Elite)*\n\n"
                 "This professional feature is reserved for **Elite** members.\n"
                 "Upgrade to receive personalized Gemini trade coaching.",
+                reply_markup=upgrade_kb,
             )
             return
 
