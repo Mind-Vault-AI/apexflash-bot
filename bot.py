@@ -129,10 +129,12 @@ RUNTIME_HEALTH = {
     "advisor_model": "",
     "advisor_checks_total": 0,
     "advisor_checks_ok": 0,
+    "advisor_sla_breach": False,
     "endpoint_ok": None,
     "endpoint_failed": [],
     "endpoint_checks_total": 0,
     "endpoint_checks_ok": 0,
+    "endpoint_sla_breach": False,
     "last_smoke_ts": "",
 }
 
@@ -6618,6 +6620,8 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     advisor_sla = (advisor_ok_count / advisor_total * 100.0) if advisor_total else 0.0
     endpoint_sla = (endpoint_ok_count / endpoint_total * 100.0) if endpoint_total else 0.0
+    advisor_breach = bool(RUNTIME_HEALTH.get("advisor_sla_breach"))
+    endpoint_breach = bool(RUNTIME_HEALTH.get("endpoint_sla_breach"))
 
     uptime = datetime.now(timezone.utc) - bot_start_time
     uptime_h = int(uptime.total_seconds() // 3600)
@@ -6632,6 +6636,8 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Fallback reason: `{RUNTIME_HEALTH.get('advisor_reason', '') or '-'}" + "`\n"
         f"Advisor SLA window: `{advisor_ok_count}/{advisor_total}` ({advisor_sla:.2f}%)\n"
         f"Endpoint SLA window: `{endpoint_ok_count}/{endpoint_total}` ({endpoint_sla:.2f}%)\n"
+        f"Advisor SLA state: `{'BREACH' if advisor_breach else 'OK'}`\n"
+        f"Endpoint SLA state: `{'BREACH' if endpoint_breach else 'OK'}`\n"
         f"Last smoke: `{RUNTIME_HEALTH.get('last_smoke_ts', '-')}`\n"
         f"Uptime: `{uptime_h}h {uptime_m}m`"
     )
@@ -7577,6 +7583,33 @@ def main() -> None:
             if current_ok:
                 RUNTIME_HEALTH["advisor_checks_ok"] = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0)) + 1
 
+            advisor_total = int(RUNTIME_HEALTH.get("advisor_checks_total", 0))
+            advisor_ok_count = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0))
+            advisor_sla = (advisor_ok_count / advisor_total * 100.0) if advisor_total else 0.0
+            prev_breach = bool(RUNTIME_HEALTH.get("advisor_sla_breach"))
+            curr_breach = advisor_total >= 10 and advisor_sla < 99.9
+            RUNTIME_HEALTH["advisor_sla_breach"] = curr_breach
+
+            if curr_breach != prev_breach:
+                if curr_breach:
+                    sla_text = (
+                        "🚨 *Advisor SLA BREACH*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"Window: `{advisor_ok_count}/{advisor_total}` ({advisor_sla:.2f}%)\n"
+                        "Target: `99.90%`"
+                    )
+                else:
+                    sla_text = (
+                        "✅ *Advisor SLA RECOVERED*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"Window: `{advisor_ok_count}/{advisor_total}` ({advisor_sla:.2f}%)"
+                    )
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await context.bot.send_message(chat_id=admin_id, text=sla_text, parse_mode="Markdown")
+                    except Exception:
+                        pass
+
             # Notify only on first run or when state changes (LEAN: avoid noisy spam)
             if advisor_probe_last_ok is None or advisor_probe_last_ok != current_ok:
                 if current_ok:
@@ -7641,6 +7674,33 @@ def main() -> None:
             RUNTIME_HEALTH["endpoint_checks_total"] = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0)) + 1
             if all_ok:
                 RUNTIME_HEALTH["endpoint_checks_ok"] = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0)) + 1
+
+            endpoint_total = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0))
+            endpoint_ok_count = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0))
+            endpoint_sla = (endpoint_ok_count / endpoint_total * 100.0) if endpoint_total else 0.0
+            prev_ep_breach = bool(RUNTIME_HEALTH.get("endpoint_sla_breach"))
+            curr_ep_breach = endpoint_total >= 10 and endpoint_sla < 99.9
+            RUNTIME_HEALTH["endpoint_sla_breach"] = curr_ep_breach
+
+            if curr_ep_breach != prev_ep_breach:
+                if curr_ep_breach:
+                    sla_text = (
+                        "🚨 *Endpoint SLA BREACH*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"Window: `{endpoint_ok_count}/{endpoint_total}` ({endpoint_sla:.2f}%)\n"
+                        "Target: `99.90%`"
+                    )
+                else:
+                    sla_text = (
+                        "✅ *Endpoint SLA RECOVERED*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"Window: `{endpoint_ok_count}/{endpoint_total}` ({endpoint_sla:.2f}%)"
+                    )
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await context.bot.send_message(chat_id=admin_id, text=sla_text, parse_mode="Markdown")
+                    except Exception:
+                        pass
 
             # Notify only on first run or when aggregate health changes.
             if endpoint_watchdog_last_ok is None or endpoint_watchdog_last_ok != all_ok:
