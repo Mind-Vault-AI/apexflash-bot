@@ -919,12 +919,33 @@ async def _verify_and_activate(chat_id: int, uid: int, user: dict, license_key: 
 async def _cb_switch_network(query, user, context):
     """Callback to handle switching between SOL and Base/Arbitrum."""
     user_chain = user.get("active_chain", "SOL")
+
     if user_chain == "SOL":
-        await query.answer("🚀 Base & Arbitrum signals are launching in v3.16.0! Auto-trading remains on Solana.", show_alert=True)
-    else:
-        user["active_chain"] = "SOL"
-        _persist()
-        await query.answer("✅ Network switched back to Solana (Primary Engine).")
+        # Callback already acknowledged in callback_handler; avoid double answer errors.
+        await query.edit_message_text(
+            "🌐 *BASE/SOL Network*
+"
+            "━━━━━━━━━━━━━━━━━━━━━
+
+"
+            "🚀 Base & Arbitrum signals are launching in v3.16.0.
+"
+            "✅ Auto-trading currently runs on Solana (primary engine).
+
+"
+            "Use Trade to continue on SOL.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+        )
+        return
+
+    user["active_chain"] = "SOL"
+    _persist()
+    await query.edit_message_text(
+        "✅ *Network switched back to Solana (Primary Engine).*",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+    )
 
 
 # ══════════════════════════════════════════════
