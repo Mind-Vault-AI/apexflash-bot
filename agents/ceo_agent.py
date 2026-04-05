@@ -1,6 +1,6 @@
 """
 ceo_agent.py — Autonomous CEO Agent (TIER 1)
-VERSION = "3.15.7"
+VERSION = "3.22.0"
 =============================================
 Runs daily at 08:00 Amsterdam time (Europe/Amsterdam).
 Reads all KPIs from Redis, uses Gemini 2.5 Flash to prioritise issues,

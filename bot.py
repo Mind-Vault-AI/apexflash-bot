@@ -600,14 +600,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if bucket_id == 1:
         # Variant B: Revenue & Speed Focus
         welcome_header = (
-            "\u26a1 *ApexFlash MEGA BOT v3.15.5*\n"
+            f"\u26a1 *ApexFlash MEGA BOT v{VERSION}*\n"
             "━━━━━ Institutional Speed ━━━━━\n"
         )
         tagline = "The world's fastest autonomous scalp engine. Your path to financial immunity starts here."
     else:
         # Variant A: Safety & Zero-Loss Focus
         welcome_header = (
-            "\u26a1 *ApexFlash MEGA BOT v3.15.5*\n"
+            f"\u26a1 *ApexFlash MEGA BOT v{VERSION}*\n"
             "━━━━━ Godmode Zero-Loss ━━━━━\n"
         )
         tagline = "Protect your capital with the only bot that has a built-in Breakeven Lock. Zero-loss philosophy active."
@@ -770,7 +770,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Help command."""
     text = (
-        "\U0001f4d6 *Help & FAQ (v3.15.4)*\n"
+        f"\U0001f4d6 *Help & FAQ (v{VERSION})*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
@@ -5459,7 +5459,7 @@ async def _cb_admin(query, user, context):
     minutes = int((uptime.total_seconds() % 3600) // 60)
 
     text = (
-        "\U0001f451 *Admin Panel (v3.15.2)*\n"
+        f"\U0001f451 *Admin Panel (v{VERSION})*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         f"\n"
@@ -5530,7 +5530,7 @@ async def _cb_admin_stats(query, user, context):
     total_ref_earnings = sum(u.get("referral_earnings", 0) for u in users.values())
 
     text = (
-        "\U0001f4ca *Revenue & Growth (v3.15.2)*\n"
+        f"\U0001f4ca *Revenue & Growth (v{VERSION})*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         f"\n"
@@ -5571,7 +5571,7 @@ async def _cb_admin_users(query, user, context):
         return
 
     text = (
-        "\U0001f465 *User List (v3.15.2)*\n"
+        f"\U0001f465 *User List (v{VERSION})*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
     )
@@ -5606,7 +5606,7 @@ async def _cb_admin_broadcast(query, user, context):
         return
 
     text = (
-        "\U0001f4e2 *Broadcast (v3.15.2)*\n"
+        f"\U0001f4e2 *Broadcast (v{VERSION})*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
@@ -8106,7 +8106,7 @@ def main() -> None:
         name="daily_self_check",
     )
 
-    logger.info("\u26a1 ApexFlash MEGA BOT v3.15.4 starting (Infinity Engine + The Agency Gateway)...")
+    logger.info(f"\u26a1 ApexFlash MEGA BOT v{VERSION} starting (Infinity Engine + The Agency Gateway)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
     logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
@@ -8188,7 +8188,7 @@ def main() -> None:
                 await application.bot.send_message(
                     chat_id=ALERT_CHANNEL_ID,
                     text=(
-                        "\u26a1 *ApexFlash MEGA BOT Godmode Infinity (v3.15.4) is LIVE*\n\n"
+                        f"\u26a1 *ApexFlash MEGA BOT Godmode Infinity (v{VERSION}) is LIVE*\n\n"
                         "\u2705 All systems operational\n"
                         "\u2705 Whale tracking active\n"
                         "\u2705 Trading engine ready\n"

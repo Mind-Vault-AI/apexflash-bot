@@ -1,5 +1,5 @@
 """
-viral_agent.py — The ApexFlash Viral Growth Engine (v3.15.9)
+viral_agent.py — The ApexFlash Viral Growth Engine (v3.22.0)
 =========================================================
 Automatically transforms real trading wins into social proof.
 Drives user acquisition toward the €1,000,000 target.
@@ -57,7 +57,7 @@ async def generate_viral_hook(trade: dict) -> str:
 async def viral_poster_job(context):
     """Scan and post high-performing wins periodically (JobQueue compatible)."""
     bot = context.bot
-    logger.info("📱 Viral Agent v3.15.9: ACTIVE")
+    logger.info("📱 Viral Agent v3.22.0: ACTIVE")
     r = _get_redis()
     
     while True:

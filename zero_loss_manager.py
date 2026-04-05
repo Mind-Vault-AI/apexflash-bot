@@ -189,7 +189,7 @@ async def auto_trader_loop(bot=None):
     from core.persistence import load_active_positions, save_active_positions
     global active_positions
     
-    logger.info("🚀 ZERO-LOSS ENGINE v3.15.3: ENGAGED")
+    logger.info("🚀 ZERO-LOSS ENGINE v3.22.0: ENGAGED")
     
     # ── 1. RESTORE STATE ──
     active_positions = load_active_positions()

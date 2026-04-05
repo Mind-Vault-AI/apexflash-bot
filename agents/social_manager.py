@@ -1,5 +1,5 @@
 """
-ApexFlash v3.15.2 - Viral Social Manager
+ApexFlash v3.22.0 - Viral Social Manager
 Automates the 'pride of work' by posting high-value alerts to Twitter/X and groups.
 Main Goal: Customer Acquisition & Brand Authority.
 """
@@ -68,4 +68,4 @@ async def handle_viral_dispatch(alert: dict, bot_username: str, admin_id: int):
     await post_to_twitter(tweet_text)
     
     # 2. Log 'Marketing Drop' for the admin to see in the logs
-    logger.info(f"📢 Viral Marketing Drop triggered for {alert['symbol']} (v3.15.2)")
+    logger.info(f"📢 Viral Marketing Drop triggered for {alert['symbol']} (v3.22.0)")
