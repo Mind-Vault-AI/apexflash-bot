@@ -1001,6 +1001,14 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     uid = update.effective_user.id
     user = get_user(uid)
 
+    # Poka-Yoke: prevent duplicate concurrent advisor runs on rapid multi-clicks.
+    advisor_busy = bool(context.user_data.get("advisor_busy"))
+    last_advisor_ts = float(context.user_data.get("advisor_last_ts", 0.0) or 0.0)
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if advisor_busy or (now_ts - last_advisor_ts) < 8.0:
+        await _safe_send("⏳ *AI Advisor is already processing your previous request...*")
+        return
+
     if context.args:
         # Direct activation: /activate XXXX-XXXX-XXXX-XXXX
         license_key = context.args[0].strip()
@@ -6696,18 +6704,23 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await _safe_send("📈 *No Trade History Found.*")
         return
 
-    msg = await _safe_send("🤖 *AI Advisor is analyzing your stats...*")
-    analysis = await analyze_trader_performance(uid, history)
-    use_fallback_intro = "(Fallback Model)" in analysis or analysis.startswith("Fallback reason:")
-    final_text = f"{get_advisor_intro(use_fallback=use_fallback_intro)}{analysis}"
+    context.user_data["advisor_busy"] = True
+    context.user_data["advisor_last_ts"] = now_ts
     try:
-        await msg.edit_text(final_text[:3900], parse_mode="Markdown")
-    except Exception:
-        # Fallback for markdown parse issues or message edit constraints.
+        msg = await _safe_send("🤖 *AI Advisor is analyzing your stats...*")
+        analysis = await analyze_trader_performance(uid, history)
+        use_fallback_intro = "(Fallback Model)" in analysis or analysis.startswith("Fallback reason:")
+        final_text = f"{get_advisor_intro(use_fallback=use_fallback_intro)}{analysis}"
         try:
-            await msg.edit_text(final_text[:3900])
+            await msg.edit_text(final_text[:3900], parse_mode="Markdown")
         except Exception:
-            await _safe_send(final_text[:3900], parse_mode=None)
+            # Fallback for markdown parse issues or message edit constraints.
+            try:
+                await msg.edit_text(final_text[:3900])
+            except Exception:
+                await _safe_send(final_text[:3900], parse_mode=None)
+    finally:
+        context.user_data["advisor_busy"] = False
 
 
 async def cmd_advisor_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7188,6 +7201,11 @@ async def _cb_language_menu(query, user, context):
 
 async def _cb_advisor(query, user, context):
     """Callback to show AI advisor analysis."""
+    try:
+        await query.answer("🤖 AI Coach starting...")
+    except Exception:
+        pass
+
     class FakeUpdate:
         effective_user = query.from_user
         message = query.message
