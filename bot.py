@@ -6620,6 +6620,14 @@ async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     funnel = get_funnel_stats()
     popular = get_popular_tokens("alltime", 5)
     affiliates = get_affiliate_stats()
+
+    advisor_paywall_views = int(funnel.get("advisor_paywall_view", 0) or 0)
+    advisor_upgrade_clicks = int(funnel.get("advisor_upgrade_click", 0) or 0)
+    advisor_pricing_clicks = int(funnel.get("advisor_pricing_click", 0) or 0)
+    advisor_upgrade_ctr = (advisor_upgrade_clicks / advisor_paywall_views * 100.0) if advisor_paywall_views else 0.0
+    advisor_pricing_ctr = (advisor_pricing_clicks / advisor_paywall_views * 100.0) if advisor_paywall_views else 0.0
+    advisor_total_intent = advisor_upgrade_clicks + advisor_pricing_clicks
+    advisor_total_intent_ctr = (advisor_total_intent / advisor_paywall_views * 100.0) if advisor_paywall_views else 0.0
     
     r = _get_redis()
     referral_payouts_sol = float(r.get("kpi:total_referral_payouts_sol") or 0) if r else 0
@@ -6661,10 +6669,17 @@ async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     # Simplified formatting for long outputs
     funnel_text = "\U0001f4ca *Funnel Stats:*\n" + "\n".join([f"• {k}: {v}" for k,v in funnel.items()])
+    advisor_conversion_text = (
+        "\n\n🤖 *Advisor Paywall Conversion:*\n"
+        f"• Views: *{advisor_paywall_views}*\n"
+        f"• Upgrade clicks: *{advisor_upgrade_clicks}* ({advisor_upgrade_ctr:.2f}%)\n"
+        f"• Pricing clicks: *{advisor_pricing_clicks}* ({advisor_pricing_ctr:.2f}%)\n"
+        f"• Total intent CTR: *{advisor_total_intent_ctr:.2f}%*"
+    )
     popular_text = "\n\n🔥 *Popular Tokens:*\n" + "\n".join([f"• {t['symbol']}" for t in popular])
     
     await update.message.reply_text(
-        f"{revenue_text}\n{funnel_text}{popular_text}",
+        f"{revenue_text}\n{funnel_text}{advisor_conversion_text}{popular_text}",
         parse_mode="Markdown",
     )
 
