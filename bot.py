@@ -6705,22 +6705,22 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await _safe_send("⏳ *AI Advisor is already processing your previous request...*")
         return
 
-    if user.get("tier", "free") not in ("elite", "admin"):
-        await _safe_send(
-            "💎 *ApexFlash AI Advisor (Elite)*\n\n"
-            "This professional feature is reserved for **Elite** members.\n"
-            "Upgrade to receive personalized Gemini trade coaching.",
-        )
-        return
-
-    history = user.get("trade_history", [])
-    if not history:
-        await _safe_send("📈 *No Trade History Found.*")
-        return
-
     context.user_data["advisor_busy"] = True
     context.user_data["advisor_last_ts"] = now_ts
     try:
+        if user.get("tier", "free") not in ("elite", "admin"):
+            await _safe_send(
+                "💎 *ApexFlash AI Advisor (Elite)*\n\n"
+                "This professional feature is reserved for **Elite** members.\n"
+                "Upgrade to receive personalized Gemini trade coaching.",
+            )
+            return
+
+        history = user.get("trade_history", [])
+        if not history:
+            await _safe_send("📈 *No Trade History Found.*")
+            return
+
         msg = await _safe_send("🤖 *AI Advisor is analyzing your stats...*")
         analysis = await analyze_trader_performance(uid, history)
         use_fallback_intro = "(Fallback Model)" in analysis or analysis.startswith("Fallback reason:")
@@ -6733,6 +6733,9 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 await msg.edit_text(final_text[:3900])
             except Exception:
                 await _safe_send(final_text[:3900], parse_mode=None)
+    except Exception as e:
+        logger.error(f"cmd_advisor error user={uid}: {e}")
+        await _safe_send("⚠️ AI Advisor tijdelijk niet beschikbaar. Probeer opnieuw over 30 sec.", parse_mode=None)
     finally:
         context.user_data["advisor_busy"] = False
         if redis_lock_acquired:
@@ -7227,6 +7230,13 @@ async def _cb_advisor(query, user, context):
         await query.answer("🤖 AI Coach starting...")
     except Exception:
         pass
+
+    if context.user_data.get("advisor_busy"):
+        try:
+            await query.answer("⏳ AI Advisor is bezig met je vorige request.", show_alert=False)
+        except Exception:
+            pass
+        return
 
     class FakeUpdate:
         effective_user = query.from_user
