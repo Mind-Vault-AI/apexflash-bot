@@ -429,7 +429,7 @@ def is_admin(user_id: int) -> bool:
     # Kaizen: Convert to list of ints for safe comparison
     return user_id in ADMIN_IDS
 
-async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _legacy_cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Helper to find Telegram ID for admin setup."""
     uid = update.effective_user.id
     await update.message.reply_text(
@@ -443,7 +443,7 @@ async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # KEYBOARD BUILDERS
 # ══════════════════════════════════════════════
 
-async def cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _legacy_cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Display the top profitable ApexFlash traders."""
     from core.persistence import get_leaderboard_stats
     stats = get_leaderboard_stats(limit=10)
@@ -745,7 +745,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     aff_key = context.user_data.pop("_auto_aff", None)
     if aff_key:
         try:
-            aff_info = AFFILIATE_LINKS.get(aff_key, AFFILIATE_LINKS.get("mexc"))
+            aff_info = AFFILIATE_LINKS.get(aff_key) or AFFILIATE_LINKS.get("mexc")
+            if not isinstance(aff_info, dict):
+                raise ValueError("affiliate config missing")
             text = (
                 f"🚀 <b>Affiliate Redirect</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -1176,7 +1178,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             context.user_data["target_mint"] = token_info.get("address", mint)
             context.user_data["target_name"] = symbol
             context.user_data["target_decimals"] = token_info.get("decimals", 0)
-            sol_bal = await get_sol_balance(user.get("wallet_pubkey", ""))
+            sol_bal = float(await get_sol_balance(user.get("wallet_pubkey", "")) or 0.0)
             bal_str = f"{sol_bal:.4f}" if sol_bal is not None else "N/A"
             await query.edit_message_text(
                 f"🔥 *{token_info.get('name', symbol)}* ({symbol})\n"
@@ -1242,7 +1244,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             context.user_data["target_decimals"] = decimals
             sol_bal = await get_sol_balance(user.get("wallet_pubkey", ""))
             prices = await get_crypto_prices()
-            sol_price = prices.get("SOL", 0)
+            sol_price = float(prices.get("SOL") or 0.0)
             msg = (
                 f"\U0001f3af *{name}* ({symbol})\n"
                 "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
@@ -1452,7 +1454,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         try:
             exchange = data.replace("aff_click_", "")
             track_affiliate_click(user_id, exchange)
-            aff_info = AFFILIATE_LINKS.get(exchange, AFFILIATE_LINKS.get("mexc"))
+            aff_info = AFFILIATE_LINKS.get(exchange) or AFFILIATE_LINKS.get("mexc")
+            if not isinstance(aff_info, dict):
+                raise ValueError("affiliate config missing")
             
             text = (
                 f"🚀 *Affiliate Redirect*\n"
@@ -1873,7 +1877,7 @@ async def _cb_trade_wallet(query, user, context):
     )
 
     pubkey = user["wallet_pubkey"]
-    sol_bal = await get_sol_balance(pubkey)
+    sol_bal = float(await get_sol_balance(pubkey) or 0.0)
     tokens = await get_token_balances(pubkey)
     prices = await get_crypto_prices()
     sol_price = prices.get("SOL", 0)
@@ -1984,7 +1988,7 @@ async def _cb_withdraw_start(query, user, context):
         )
         return
 
-    sol_bal = await get_sol_balance(pubkey)
+    sol_bal = float(await get_sol_balance(pubkey) or 0.0)
     available = sol_bal - MIN_SOL_RESERVE
     if available <= 0:
         await query.edit_message_text(
@@ -2036,7 +2040,7 @@ async def _cb_withdraw_amount(update_or_query, user, context):
         return
 
     # Fresh balance check (security)
-    sol_bal = await get_sol_balance(pubkey)
+    sol_bal = float(await get_sol_balance(pubkey) or 0.0)
     available = sol_bal - MIN_SOL_RESERVE
     if available <= 0:
         context.user_data.pop("withdraw_dest", None)
@@ -2096,7 +2100,7 @@ async def _cb_withdraw_confirm(query, user, context):
         return
 
     # Final balance safety check
-    sol_bal = await get_sol_balance(pubkey)
+    sol_bal = float(await get_sol_balance(pubkey) or 0.0)
     available = sol_bal - MIN_SOL_RESERVE
     needed_sol = lamports / 1_000_000_000
     if needed_sol > available:
@@ -4117,7 +4121,7 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
 
         # Store destination and show amount options
         context.user_data["withdraw_dest"] = text
-        sol_bal = await get_sol_balance(user["wallet_pubkey"])
+        sol_bal = float(await get_sol_balance(user["wallet_pubkey"]) or 0.0)
         available = sol_bal - MIN_SOL_RESERVE
         if available <= 0:
             context.user_data.pop("withdraw_dest", None)
@@ -5039,7 +5043,7 @@ async def _execute_sol_payment(query, user, context, tier: str, price_sol: float
 # REFERRAL SECTION
 # ══════════════════════════════════════════════
 
-async def _cb_referral(query, user, context):
+async def _legacy_cb_referral(query, user, context):
     """Referral program main menu."""
     uid = query.from_user.id
     bot_username = (await context.bot.get_me()).username
@@ -8050,6 +8054,14 @@ def main() -> None:
 
             current = _build_daily_kpi_snapshot()
             previous = snapshots.get(yesterday_key)
+            previous_volume = None
+            if isinstance(previous, dict) and previous.get("volume_total_usd") is not None:
+                try:
+                    raw_prev_volume = previous.get("volume_total_usd")
+                    if isinstance(raw_prev_volume, (int, float, str)):
+                        previous_volume = round(float(raw_prev_volume), 2)
+                except Exception:
+                    previous_volume = None
 
             snapshots[today_key] = current
             # Keep only latest N days.
@@ -8071,9 +8083,7 @@ def main() -> None:
                 + _delta_line(
                     "Volume total",
                     round(float(current["volume_total_usd"]), 2),
-                    round(float(previous.get("volume_total_usd")), 2)
-                    if isinstance(previous, dict) and previous.get("volume_total_usd") is not None
-                    else None,
+                    previous_volume,
                     " USD",
                 )
                 + "\n"

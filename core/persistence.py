@@ -467,7 +467,7 @@ def get_popular_tokens(timeframe: str = "alltime", top_n: int = 10) -> list:
         return []
 
 
-def get_funnel_stats(date_str: str = None) -> dict:
+def get_funnel_stats(date_str: str | None = None) -> dict:
     """Get funnel metrics for a given date (default today)."""
     r = _get_redis()
     if not r:
@@ -485,14 +485,6 @@ def get_funnel_stats(date_str: str = None) -> dict:
     except Exception as e:
         logger.debug(f"Get funnel stats failed: {e}")
         return {}
-
-
-def get_affiliate_stats() -> dict:
-    """Get affiliate click counts per exchange."""
-    r = _get_redis()
-    if not r:
-        return {}
-
 
 def get_governance_config() -> dict:
     """
