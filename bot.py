@@ -147,6 +147,10 @@ RUNTIME_HEALTH = {
     "daily_kpi_snapshots": {},
     "daily_drift_alert_active": False,
     "last_daily_drift_alert_ts": "",
+    "integrity_ok": None,
+    "integrity_missing_env": [],
+    "integrity_affiliate_invalid": [],
+    "last_integrity_ts": "",
 }
 
 RUNTIME_HEALTH_FILE = Path("data") / "runtime_health.json"
@@ -283,6 +287,43 @@ def _drift_signals(current: dict, previous: dict | None) -> list[str]:
             triggered.append(f"• Volume drop: `{drop_pct:.2f}%` (`${prev_volume:,.2f} -> ${curr_volume:,.2f}`)")
 
     return triggered
+
+
+def _runtime_integrity_snapshot() -> dict:
+    """Run lightweight runtime integrity checks (env + affiliate link sanity)."""
+    critical_env_keys = [
+        "BOT_TOKEN",
+        "ADMIN_IDS",
+        "UPSTASH_REDIS_URL",
+        "FEE_COLLECT_WALLET",
+        "WALLET_ENCRYPTION_KEY",
+        "HELIUS_API_KEY",
+        "ETHERSCAN_API_KEY",
+    ]
+
+    missing_env = [k for k in critical_env_keys if not os.getenv(k, "").strip()]
+
+    affiliate_invalid = []
+    for key, aff in AFFILIATE_LINKS.items():
+        if not isinstance(aff, dict):
+            affiliate_invalid.append(f"{key}:not_dict")
+            continue
+        url = str(aff.get("url") or "").strip()
+        name = str(aff.get("name") or "").strip()
+        commission = str(aff.get("commission") or "").strip()
+        if not name:
+            affiliate_invalid.append(f"{key}:missing_name")
+        if not commission:
+            affiliate_invalid.append(f"{key}:missing_commission")
+        if not url or not url.startswith("https://"):
+            affiliate_invalid.append(f"{key}:invalid_url")
+
+    return {
+        "ok": len(missing_env) == 0 and len(affiliate_invalid) == 0,
+        "missing_env": missing_env[:16],
+        "affiliate_invalid": affiliate_invalid[:16],
+        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+    }
 
 
 _load_runtime_health()
@@ -6808,6 +6849,8 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Last smoke: `{RUNTIME_HEALTH.get('last_smoke_ts', '-')}`\n"
         f"Last watchdog: `{RUNTIME_HEALTH.get('last_watchdog_ts', '-')}`\n"
         f"Last ops autocheck: `{RUNTIME_HEALTH.get('last_ops_autocheck_ts', '-')}`\n"
+        f"Integrity: `{'OK' if RUNTIME_HEALTH.get('integrity_ok') else 'ISSUES' if RUNTIME_HEALTH.get('integrity_ok') is False else 'unknown'}`\n"
+        f"Last integrity check: `{RUNTIME_HEALTH.get('last_integrity_ts', '-')}`\n"
         f"Daily drift alert: `{'ACTIVE' if RUNTIME_HEALTH.get('daily_drift_alert_active') else 'OK'}`\n"
         f"Last drift alert: `{RUNTIME_HEALTH.get('last_daily_drift_alert_ts', '-')}`\n"
         f"Ops status: `{'running' if RUNTIME_HEALTH.get('ops_running') else RUNTIME_HEALTH.get('last_ops_status', 'idle')}`\n"
@@ -6818,6 +6861,13 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if failed:
         text += "\n\n❌ Failed endpoints:\n" + "\n".join(failed[:6])
+
+    missing_env = RUNTIME_HEALTH.get("integrity_missing_env", []) or []
+    invalid_aff = RUNTIME_HEALTH.get("integrity_affiliate_invalid", []) or []
+    if missing_env:
+        text += "\n\n⚠️ Missing critical env:\n" + "\n".join([f"• `{k}`" for k in missing_env[:8]])
+    if invalid_aff:
+        text += "\n\n⚠️ Affiliate config issues:\n" + "\n".join([f"• `{k}`" for k in invalid_aff[:8]])
 
     if recent:
         text += "\n\n📈 Recent trend (last 12 points):\n"
@@ -7799,6 +7849,56 @@ def main() -> None:
         interval=14400, # every 4 hours
         first=300,      # first run 5 min after startup
         name="heartbeat_job",
+    )
+
+    integrity_last_ok = None
+
+    async def runtime_integrity_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        nonlocal integrity_last_ok
+        try:
+            snap = _runtime_integrity_snapshot()
+            current_ok = bool(snap.get("ok"))
+
+            RUNTIME_HEALTH["integrity_ok"] = current_ok
+            RUNTIME_HEALTH["integrity_missing_env"] = snap.get("missing_env", [])
+            RUNTIME_HEALTH["integrity_affiliate_invalid"] = snap.get("affiliate_invalid", [])
+            RUNTIME_HEALTH["last_integrity_ts"] = str(snap.get("ts") or "")
+            _save_runtime_health()
+
+            if integrity_last_ok is None or integrity_last_ok != current_ok:
+                if current_ok:
+                    text = (
+                        "✅ *Runtime Integrity: OK*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        "Critical env + affiliate/referral config are valid."
+                    )
+                else:
+                    lines = []
+                    for k in (snap.get("missing_env", []) or [])[:8]:
+                        lines.append(f"• missing env: `{k}`")
+                    for k in (snap.get("affiliate_invalid", []) or [])[:8]:
+                        lines.append(f"• affiliate: `{k}`")
+                    text = (
+                        "⚠️ *Runtime Integrity: ISSUES*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        + ("\n".join(lines) if lines else "Unknown integrity issue")
+                    )
+
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+                    except Exception:
+                        pass
+
+            integrity_last_ok = current_ok
+        except Exception as e:
+            logger.warning(f"runtime_integrity_job failed: {e}")
+
+    app.job_queue.run_repeating(
+        runtime_integrity_job,
+        interval=21600,  # every 6 hours
+        first=120,       # first run 2 min after startup
+        name="runtime_integrity",
     )
 
     # Advisor runtime watchdog — checks Gemini health every 30 min and only alerts on state changes
