@@ -35,6 +35,8 @@ import re
 import random
 from datetime import datetime, timezone, time as dt_time
 import asyncio
+import json
+from pathlib import Path
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
@@ -142,6 +144,39 @@ RUNTIME_HEALTH = {
     "last_ops_status": "idle",
     "last_ops_error": "",
 }
+
+RUNTIME_HEALTH_FILE = Path("data") / "runtime_health.json"
+
+
+def _load_runtime_health() -> None:
+    """Load runtime SLA/health snapshot from disk if available."""
+    try:
+        if not RUNTIME_HEALTH_FILE.exists():
+            return
+        with open(RUNTIME_HEALTH_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        if not isinstance(raw, dict):
+            return
+        for key in RUNTIME_HEALTH.keys():
+            if key in raw:
+                RUNTIME_HEALTH[key] = raw[key]
+    except Exception as e:
+        logger.warning(f"load runtime health failed: {e}")
+
+
+def _save_runtime_health() -> None:
+    """Persist runtime SLA/health snapshot to disk (atomic write)."""
+    try:
+        RUNTIME_HEALTH_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = RUNTIME_HEALTH_FILE.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(RUNTIME_HEALTH, f, ensure_ascii=False)
+        tmp.replace(RUNTIME_HEALTH_FILE)
+    except Exception as e:
+        logger.warning(f"save runtime health failed: {e}")
+
+
+_load_runtime_health()
 
 # ══════════════════════════════════════════════
 # DISCLAIMER TEXT
@@ -6594,6 +6629,7 @@ async def cmd_smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         RUNTIME_HEALTH["endpoint_checks_ok"] = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0)) + 1
 
     RUNTIME_HEALTH["last_smoke_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    _save_runtime_health()
 
     text = (
         "🧪 *ApexFlash Live Smoke Test*\n"
@@ -6685,6 +6721,7 @@ async def cmd_ops_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         raise
     finally:
         RUNTIME_HEALTH["ops_running"] = False
+        _save_runtime_health()
 
 async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show language selection menu."""
@@ -7685,6 +7722,7 @@ def main() -> None:
                         pass
 
             advisor_probe_last_ok = current_ok
+            _save_runtime_health()
         except Exception as e:
             logger.warning(f"advisor_watchdog_job failed: {e}")
 
@@ -7779,6 +7817,7 @@ def main() -> None:
                         pass
 
             endpoint_watchdog_last_ok = all_ok
+            _save_runtime_health()
         except Exception as e:
             logger.warning(f"endpoint_watchdog_job failed: {e}")
 
@@ -7866,12 +7905,15 @@ def main() -> None:
                 except Exception:
                     pass
             RUNTIME_HEALTH["last_ops_status"] = "ok"
+            _save_runtime_health()
         except Exception as e:
             RUNTIME_HEALTH["last_ops_status"] = "failed"
             RUNTIME_HEALTH["last_ops_error"] = str(e)
             logger.warning(f"ops_autocheck_job failed: {e}")
+            _save_runtime_health()
         finally:
             RUNTIME_HEALTH["ops_running"] = False
+            _save_runtime_health()
 
     app.job_queue.run_repeating(
         ops_autocheck_job,
@@ -7920,6 +7962,7 @@ def main() -> None:
             if probe_ok:
                 RUNTIME_HEALTH["advisor_checks_ok"] = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0)) + 1
             RUNTIME_HEALTH["last_watchdog_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            _save_runtime_health()
 
             if probe.get("ok"):
                 text = (
