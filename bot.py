@@ -1242,7 +1242,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             context.user_data["target_mint"] = token_info.get("address", mint)
             context.user_data["target_name"] = symbol
             context.user_data["target_decimals"] = decimals
-            sol_bal = await get_sol_balance(user.get("wallet_pubkey", ""))
+            sol_bal = float(await get_sol_balance(user.get("wallet_pubkey", "")) or 0.0)
             prices = await get_crypto_prices()
             sol_price = float(prices.get("SOL") or 0.0)
             msg = (
