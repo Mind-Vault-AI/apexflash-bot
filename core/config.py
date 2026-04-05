@@ -13,7 +13,7 @@ VERSION = "3.22.0"
 
 # === Telegram ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-BOT_USERNAME = os.getenv("BOT_USERNAME", "apexflash_bot")
+BOT_USERNAME = os.getenv("BOT_USERNAME", "apexflashbot")
 PORT = int(os.getenv("PORT", 8000))
 
 # === Admin ===
