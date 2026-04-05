@@ -476,7 +476,16 @@ def get_funnel_stats(date_str: str | None = None) -> dict:
         if not date_str:
             from datetime import date
             date_str = date.today().isoformat()
-        steps = ["start", "wallet_created", "funded", "first_trade", "upgrade"]
+        steps = [
+            "start",
+            "wallet_created",
+            "funded",
+            "first_trade",
+            "upgrade",
+            "advisor_paywall_view",
+            "advisor_upgrade_click",
+            "advisor_pricing_click",
+        ]
         stats = {}
         for step in steps:
             val = r.get(f"funnel:{step}:{date_str}")

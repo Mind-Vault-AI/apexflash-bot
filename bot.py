@@ -1223,6 +1223,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "set_lang_zh":    _cb_set_lang_zh,
         "set_lang_nl":    _cb_set_lang_nl,
         "cmd_advisor":    _cb_advisor,
+        "advisor_upgrade_elite": _cb_advisor_upgrade_elite,
+        "advisor_view_pricing": _cb_advisor_view_pricing,
     }
 
     # Basic dispatch for exact matches in the routes dictionary
@@ -6710,9 +6712,11 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     context.user_data["advisor_last_ts"] = now_ts
     try:
         if user.get("tier", "free") not in ("elite", "admin"):
+            track_funnel("advisor_paywall_view")
+            track_bucket_kpi(get_user_bucket(uid), "advisor_paywall_view")
             upgrade_kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("💎 Upgrade to Elite", url=f"https://t.me/{BOT_USERNAME}?start=elite")],
-                [InlineKeyboardButton("📈 View Pricing", url=f"{WEBSITE_URL}#pricing")],
+                [InlineKeyboardButton("💎 Upgrade to Elite", callback_data="advisor_upgrade_elite")],
+                [InlineKeyboardButton("📈 View Pricing", callback_data="advisor_view_pricing")],
             ])
             await _safe_send(
                 "💎 *ApexFlash AI Advisor (Elite)*\n\n"
@@ -7257,6 +7261,45 @@ async def _cb_advisor(query, user, context):
         effective_user = query.from_user
         message = query.message
     await cmd_advisor(FakeUpdate(), context)
+
+
+async def _cb_advisor_upgrade_elite(query, user, context):
+    """Track advisor paywall upgrade intent and provide direct conversion links."""
+    uid = query.from_user.id
+    track_funnel("advisor_upgrade_click")
+    track_bucket_kpi(get_user_bucket(uid), "advisor_upgrade_click")
+
+    text = (
+        "💎 *Upgrade to ApexFlash Elite*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "Unlock full AI Advisor, advanced signals, and conversion-grade tooling.\n\n"
+        "Choose your upgrade path below:"
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 Open Elite Upgrade", url=f"https://t.me/{BOT_USERNAME}?start=elite")],
+        [InlineKeyboardButton("📈 Compare Plans", url=f"{WEBSITE_URL}#pricing")],
+        [_back_main()[0]],
+    ])
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
+
+
+async def _cb_advisor_view_pricing(query, user, context):
+    """Track advisor paywall pricing intent."""
+    uid = query.from_user.id
+    track_funnel("advisor_pricing_click")
+    track_bucket_kpi(get_user_bucket(uid), "advisor_pricing_click")
+
+    text = (
+        "📈 *ApexFlash Pricing*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "Review Pro vs Elite and choose the best growth path."
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 Open Pricing Page", url=f"{WEBSITE_URL}#pricing")],
+        [InlineKeyboardButton("💎 Go Elite in Telegram", url=f"https://t.me/{BOT_USERNAME}?start=elite")],
+        [_back_main()[0]],
+    ])
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
 
 async def _cb_set_lang_en(query, user, context): await _set_lang(query, user, "en")
 async def _cb_set_lang_es(query, user, context): await _set_lang(query, user, "es")
