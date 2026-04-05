@@ -145,11 +145,17 @@ RUNTIME_HEALTH = {
     "last_ops_error": "",
     "sla_history": [],
     "daily_kpi_snapshots": {},
+    "daily_drift_alert_active": False,
+    "last_daily_drift_alert_ts": "",
 }
 
 RUNTIME_HEALTH_FILE = Path("data") / "runtime_health.json"
 SLA_HISTORY_MAX = 120
 DAILY_KPI_HISTORY_MAX_DAYS = 14
+DRIFT_ADVISOR_SLA_DROP_PCT = 0.30
+DRIFT_ENDPOINT_SLA_DROP_PCT = 0.30
+DRIFT_VOLUME_DROP_PCT = 35.0
+
 
 
 def _load_runtime_health() -> None:
@@ -248,6 +254,35 @@ def _delta_line(label: str, current: float | int, previous: float | int | None, 
     delta = current - previous
     sign = "+" if delta >= 0 else ""
     return f"• {label}: `{current}{suffix}` ({sign}{delta}{suffix} vs yesterday)"
+
+
+def _drift_signals(current: dict, previous: dict | None) -> list[str]:
+    """Evaluate day-over-day KPI drift and return triggered signal lines."""
+    if not isinstance(previous, dict):
+        return []
+
+    triggered = []
+
+    prev_advisor = previous.get("advisor_sla")
+    curr_advisor = current.get("advisor_sla")
+    if isinstance(prev_advisor, (int, float)) and isinstance(curr_advisor, (int, float)):
+        if curr_advisor < prev_advisor - DRIFT_ADVISOR_SLA_DROP_PCT:
+            triggered.append(f"• Advisor SLA drop: `{prev_advisor:.2f}% -> {curr_advisor:.2f}%`")
+
+    prev_endpoint = previous.get("endpoint_sla")
+    curr_endpoint = current.get("endpoint_sla")
+    if isinstance(prev_endpoint, (int, float)) and isinstance(curr_endpoint, (int, float)):
+        if curr_endpoint < prev_endpoint - DRIFT_ENDPOINT_SLA_DROP_PCT:
+            triggered.append(f"• Endpoint SLA drop: `{prev_endpoint:.2f}% -> {curr_endpoint:.2f}%`")
+
+    prev_volume = previous.get("volume_total_usd")
+    curr_volume = current.get("volume_total_usd")
+    if isinstance(prev_volume, (int, float)) and isinstance(curr_volume, (int, float)) and prev_volume > 0:
+        drop_pct = (prev_volume - curr_volume) / prev_volume * 100.0
+        if drop_pct >= DRIFT_VOLUME_DROP_PCT:
+            triggered.append(f"• Volume drop: `{drop_pct:.2f}%` (`${prev_volume:,.2f} -> ${curr_volume:,.2f}`)")
+
+    return triggered
 
 
 _load_runtime_health()
@@ -6773,6 +6808,8 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Last smoke: `{RUNTIME_HEALTH.get('last_smoke_ts', '-')}`\n"
         f"Last watchdog: `{RUNTIME_HEALTH.get('last_watchdog_ts', '-')}`\n"
         f"Last ops autocheck: `{RUNTIME_HEALTH.get('last_ops_autocheck_ts', '-')}`\n"
+        f"Daily drift alert: `{'ACTIVE' if RUNTIME_HEALTH.get('daily_drift_alert_active') else 'OK'}`\n"
+        f"Last drift alert: `{RUNTIME_HEALTH.get('last_daily_drift_alert_ts', '-')}`\n"
         f"Ops status: `{'running' if RUNTIME_HEALTH.get('ops_running') else RUNTIME_HEALTH.get('last_ops_status', 'idle')}`\n"
         f"Ops error: `{RUNTIME_HEALTH.get('last_ops_error', '') or '-'}`\n"
         f"Uptime: `{uptime_h}h {uptime_m}m`\n"
@@ -8070,6 +8107,14 @@ def main() -> None:
             RUNTIME_HEALTH["daily_kpi_snapshots"] = snapshots
             _save_runtime_health()
 
+            drift_hits = _drift_signals(current, previous if isinstance(previous, dict) else None)
+            is_drift_alert = len(drift_hits) > 0
+            prev_drift_state = bool(RUNTIME_HEALTH.get("daily_drift_alert_active"))
+            RUNTIME_HEALTH["daily_drift_alert_active"] = is_drift_alert
+            if is_drift_alert:
+                RUNTIME_HEALTH["last_daily_drift_alert_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            _save_runtime_health()
+
             text = (
                 "📅 *Daily Self-Check (KPI Drift)*\n"
                 "━━━━━━━━━━━━━━━━━━━━━\n"
@@ -8091,6 +8136,11 @@ def main() -> None:
                 + "\n"
                 + _delta_line("Endpoint SLA", current["endpoint_sla"], previous.get("endpoint_sla") if isinstance(previous, dict) else None, "%")
             )
+
+            if is_drift_alert:
+                text += "\n\n🚨 *Drift Escalation Triggered*\n" + "\n".join(drift_hits)
+            elif prev_drift_state:
+                text += "\n\n✅ *Drift state recovered* (back within thresholds)."
 
             for admin_id in ADMIN_IDS:
                 try:
