@@ -143,9 +143,11 @@ RUNTIME_HEALTH = {
     "ops_running": False,
     "last_ops_status": "idle",
     "last_ops_error": "",
+    "sla_history": [],
 }
 
 RUNTIME_HEALTH_FILE = Path("data") / "runtime_health.json"
+SLA_HISTORY_MAX = 120
 
 
 def _load_runtime_health() -> None:
@@ -160,6 +162,8 @@ def _load_runtime_health() -> None:
         for key in RUNTIME_HEALTH.keys():
             if key in raw:
                 RUNTIME_HEALTH[key] = raw[key]
+        if not isinstance(RUNTIME_HEALTH.get("sla_history"), list):
+            RUNTIME_HEALTH["sla_history"] = []
     except Exception as e:
         logger.warning(f"load runtime health failed: {e}")
 
@@ -174,6 +178,36 @@ def _save_runtime_health() -> None:
         tmp.replace(RUNTIME_HEALTH_FILE)
     except Exception as e:
         logger.warning(f"save runtime health failed: {e}")
+
+
+def _record_sla_history(source: str) -> None:
+    """Append a compact SLA point to in-memory history ring buffer."""
+    advisor_total = int(RUNTIME_HEALTH.get("advisor_checks_total", 0))
+    advisor_ok_count = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0))
+    endpoint_total = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0))
+    endpoint_ok_count = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0))
+
+    advisor_sla = (advisor_ok_count / advisor_total * 100.0) if advisor_total else 0.0
+    endpoint_sla = (endpoint_ok_count / endpoint_total * 100.0) if endpoint_total else 0.0
+
+    point = {
+        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "source": source,
+        "advisor_ok": bool(RUNTIME_HEALTH.get("advisor_ok")) if RUNTIME_HEALTH.get("advisor_ok") is not None else None,
+        "endpoint_ok": bool(RUNTIME_HEALTH.get("endpoint_ok")) if RUNTIME_HEALTH.get("endpoint_ok") is not None else None,
+        "advisor_sla": round(advisor_sla, 2),
+        "endpoint_sla": round(endpoint_sla, 2),
+        "advisor_state": "BREACH" if RUNTIME_HEALTH.get("advisor_sla_breach") else "OK",
+        "endpoint_state": "BREACH" if RUNTIME_HEALTH.get("endpoint_sla_breach") else "OK",
+    }
+
+    history = RUNTIME_HEALTH.get("sla_history", [])
+    if not isinstance(history, list):
+        history = []
+    history.append(point)
+    if len(history) > SLA_HISTORY_MAX:
+        history = history[-SLA_HISTORY_MAX:]
+    RUNTIME_HEALTH["sla_history"] = history
 
 
 _load_runtime_health()
@@ -6629,6 +6663,7 @@ async def cmd_smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         RUNTIME_HEALTH["endpoint_checks_ok"] = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0)) + 1
 
     RUNTIME_HEALTH["last_smoke_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    _record_sla_history("smoke")
     _save_runtime_health()
 
     text = (
@@ -6664,6 +6699,16 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     advisor_breach = bool(RUNTIME_HEALTH.get("advisor_sla_breach"))
     endpoint_breach = bool(RUNTIME_HEALTH.get("endpoint_sla_breach"))
 
+    history = RUNTIME_HEALTH.get("sla_history", [])
+    if not isinstance(history, list):
+        history = []
+    recent = history[-12:]
+    incident_points = [
+        h for h in history[-20:]
+        if (h.get("advisor_state") == "BREACH" or h.get("endpoint_state") == "BREACH"
+            or h.get("advisor_ok") is False or h.get("endpoint_ok") is False)
+    ]
+
     uptime = datetime.now(timezone.utc) - bot_start_time
     uptime_h = int(uptime.total_seconds() // 3600)
     uptime_m = int((uptime.total_seconds() % 3600) // 60)
@@ -6690,6 +6735,23 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if failed:
         text += "\n\n❌ Failed endpoints:\n" + "\n".join(failed[:6])
+
+    if recent:
+        text += "\n\n📈 Recent trend (last 12 points):\n"
+        for h in recent[-6:]:
+            text += (
+                f"• `{h.get('ts','-')}` [{h.get('source','-')}] "
+                f"A:{h.get('advisor_sla','-')}% ({h.get('advisor_state','-')}) | "
+                f"E:{h.get('endpoint_sla','-')}% ({h.get('endpoint_state','-')})\n"
+            )
+
+    if incident_points:
+        text += "\n🧯 Mini incident timeline:\n"
+        for h in incident_points[-4:]:
+            text += (
+                f"• `{h.get('ts','-')}` [{h.get('source','-')}] "
+                f"advisor_ok={h.get('advisor_ok')} endpoint_ok={h.get('endpoint_ok')}\n"
+            )
 
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
 
@@ -6721,6 +6783,7 @@ async def cmd_ops_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         raise
     finally:
         RUNTIME_HEALTH["ops_running"] = False
+        _record_sla_history("ops_now")
         _save_runtime_health()
 
 async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7722,6 +7785,7 @@ def main() -> None:
                         pass
 
             advisor_probe_last_ok = current_ok
+            _record_sla_history("advisor_watchdog")
             _save_runtime_health()
         except Exception as e:
             logger.warning(f"advisor_watchdog_job failed: {e}")
@@ -7817,6 +7881,7 @@ def main() -> None:
                         pass
 
             endpoint_watchdog_last_ok = all_ok
+            _record_sla_history("endpoint_watchdog")
             _save_runtime_health()
         except Exception as e:
             logger.warning(f"endpoint_watchdog_job failed: {e}")
@@ -7905,11 +7970,13 @@ def main() -> None:
                 except Exception:
                     pass
             RUNTIME_HEALTH["last_ops_status"] = "ok"
+            _record_sla_history("ops_autocheck")
             _save_runtime_health()
         except Exception as e:
             RUNTIME_HEALTH["last_ops_status"] = "failed"
             RUNTIME_HEALTH["last_ops_error"] = str(e)
             logger.warning(f"ops_autocheck_job failed: {e}")
+            _record_sla_history("ops_autocheck_error")
             _save_runtime_health()
         finally:
             RUNTIME_HEALTH["ops_running"] = False
@@ -7962,6 +8029,7 @@ def main() -> None:
             if probe_ok:
                 RUNTIME_HEALTH["advisor_checks_ok"] = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0)) + 1
             RUNTIME_HEALTH["last_watchdog_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            _record_sla_history("startup_probe")
             _save_runtime_health()
 
             if probe.get("ok"):
