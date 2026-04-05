@@ -258,6 +258,9 @@ def get_user(user_id: int) -> dict:
         }
     # Migrate old users missing wallet/referral fields
     u = users[user_id]
+    # Owner/admin must always keep full internal access
+    if user_id in ADMIN_IDS:
+        u["tier"] = "admin"
     if "wallet_pubkey" not in u:
         u["wallet_pubkey"] = ""
         u["wallet_secret_enc"] = ""
@@ -6699,7 +6702,7 @@ async def arbitrage_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                 await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
             except: pass
 
-async def _cb_switch_network(query, user, context):
+async def _cb_switch_network_v320_legacy(query, user, context):
     """Toggle between Solana and Base networks."""
     current = user.get("active_chain", "SOL")
     new_chain = "BASE" if current == "SOL" else "SOL"
