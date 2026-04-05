@@ -7437,6 +7437,48 @@ def main() -> None:
         name="heartbeat_job",
     )
 
+    # Advisor runtime watchdog — checks Gemini health every 30 min and only alerts on state changes
+    advisor_probe_last_ok = None
+
+    async def advisor_watchdog_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        nonlocal advisor_probe_last_ok
+        try:
+            from agents.advisor_agent import advisor_live_probe
+            probe = await advisor_live_probe()
+            current_ok = bool(probe.get("ok"))
+
+            # Notify only on first run or when state changes (LEAN: avoid noisy spam)
+            if advisor_probe_last_ok is None or advisor_probe_last_ok != current_ok:
+                if current_ok:
+                    text = (
+                        "✅ *Advisor Watchdog: RECOVERED*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"Model: `{probe.get('model')}`"
+                    )
+                else:
+                    text = (
+                        "⚠️ *Advisor Watchdog: FALLBACK ACTIVE*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"Reason: `{probe.get('reason', 'unknown')}`"
+                    )
+
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+                    except Exception:
+                        pass
+
+            advisor_probe_last_ok = current_ok
+        except Exception as e:
+            logger.warning(f"advisor_watchdog_job failed: {e}")
+
+    app.job_queue.run_repeating(
+        advisor_watchdog_job,
+        interval=1800,  # every 30 minutes
+        first=180,      # first check after 3 minutes
+        name="advisor_watchdog",
+    )
+
     logger.info("\u26a1 ApexFlash MEGA BOT v3.15.4 starting (Infinity Engine + The Agency Gateway)...")
     logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
     logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
