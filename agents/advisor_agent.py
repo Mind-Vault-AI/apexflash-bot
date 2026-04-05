@@ -1,6 +1,4 @@
-"""
-ApexFlash AI Trading Advisor
-"""
+# ApexFlash AI Trading Advisor
 
 import json
 import logging
@@ -13,12 +11,54 @@ logger = logging.getLogger("AIAdvisor")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 MODEL_CHAIN = [
     m.strip()
-    for m in os.getenv("GEMINI_MODEL_CHAIN", "gemini-2.0-flash,gemini-1.5-flash,gemini-1.5-pro").split(",")
+    for m in os.getenv(
+        "GEMINI_MODEL_CHAIN",
+        "models/gemini-2.0-flash,models/gemini-2.0-flash-lite,models/gemini-1.5-flash-latest,models/gemini-1.5-pro-latest",
+    ).split(",")
     if m.strip()
 ]
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
+
+
+def _discover_generate_models() -> List[str]:
+    try:
+        discovered = []
+        for model in genai.list_models():
+            methods = getattr(model, "supported_generation_methods", []) or []
+            if "generateContent" in methods:
+                name = getattr(model, "name", "")
+                if name:
+                    discovered.append(name)
+        return discovered
+    except Exception as e:
+        logger.warning("AI Advisor list_models failed: %s", e)
+        return []
+
+
+def _resolve_model_chain() -> List[str]:
+    discovered = _discover_generate_models()
+    if not discovered:
+        return MODEL_CHAIN
+
+    discovered_set = set(discovered)
+    resolved: List[str] = []
+
+    for configured in MODEL_CHAIN:
+        direct = configured
+        prefixed = configured if configured.startswith("models/") else f"models/{configured}"
+        if direct in discovered_set:
+            resolved.append(direct)
+        elif prefixed in discovered_set:
+            resolved.append(prefixed)
+
+    # Append any remaining discovered models as last resort.
+    for model in discovered:
+        if model not in resolved:
+            resolved.append(model)
+
+    return resolved
 
 
 def _build_prompt(history_summary: List[dict]) -> str:
@@ -37,20 +77,22 @@ async def _try_gemini(prompt: str) -> Tuple[Optional[str], Optional[str], Option
     if not GEMINI_API_KEY:
         return None, None, "GEMINI_API_KEY missing"
 
-    last_error: Optional[str] = None
-    for model_name in MODEL_CHAIN:
+    errors: List[str] = []
+    for model_name in _resolve_model_chain():
         try:
             model = genai.GenerativeModel(model_name)
             response = await model.generate_content_async(prompt)
             text = (response.text or "").strip()
             if text:
                 return text, model_name, None
-            last_error = f"empty response: {model_name}"
+            errors.append(f"empty response: {model_name}")
         except Exception as e:
-            last_error = f"{model_name}: {type(e).__name__}: {e}"
-            logger.warning("AI Advisor model failed: %s", last_error)
+            msg = f"{model_name}: {type(e).__name__}: {e}"
+            errors.append(msg)
+            logger.warning("AI Advisor model failed: %s", msg)
 
-    return None, None, last_error or "no model response"
+    reason = " | ".join(errors[-3:]) if errors else "no model response"
+    return None, None, reason
 
 
 async def analyze_trader_performance(user_id: int, history: List[dict]) -> str:
