@@ -136,6 +136,7 @@ RUNTIME_HEALTH = {
     "endpoint_checks_ok": 0,
     "endpoint_sla_breach": False,
     "last_smoke_ts": "",
+    "last_watchdog_ts": "",
 }
 
 # ══════════════════════════════════════════════
@@ -6639,6 +6640,7 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Advisor SLA state: `{'BREACH' if advisor_breach else 'OK'}`\n"
         f"Endpoint SLA state: `{'BREACH' if endpoint_breach else 'OK'}`\n"
         f"Last smoke: `{RUNTIME_HEALTH.get('last_smoke_ts', '-')}`\n"
+        f"Last watchdog: `{RUNTIME_HEALTH.get('last_watchdog_ts', '-')}`\n"
         f"Uptime: `{uptime_h}h {uptime_m}m`"
     )
 
@@ -7575,6 +7577,7 @@ def main() -> None:
             from agents.advisor_agent import advisor_live_probe
             probe = await advisor_live_probe()
             current_ok = bool(probe.get("ok"))
+            RUNTIME_HEALTH["last_watchdog_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
             RUNTIME_HEALTH["advisor_ok"] = current_ok
             RUNTIME_HEALTH["advisor_reason"] = str(probe.get("reason") or "")
@@ -7671,6 +7674,7 @@ def main() -> None:
             all_ok = all(item[1] for item in results)
             RUNTIME_HEALTH["endpoint_ok"] = all_ok
             RUNTIME_HEALTH["endpoint_failed"] = [f"• `{u}` → {s if s else 'ERR'}" for u, ok, s in results if not ok][:8]
+            RUNTIME_HEALTH["last_watchdog_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
             RUNTIME_HEALTH["endpoint_checks_total"] = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0)) + 1
             if all_ok:
                 RUNTIME_HEALTH["endpoint_checks_ok"] = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0)) + 1
