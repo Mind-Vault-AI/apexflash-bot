@@ -7650,10 +7650,8 @@ def main() -> None:
         auto_backup_job, interval=30 * 60, first=300, name="auto_backup",
     )
 
-    # Heartbeat monitor — hourly ping to admin (24/7 uptime awareness)
-    app.job_queue.run_repeating(
-        heartbeat_job, interval=3600, first=120, name="heartbeat",
-    )
+    # Heartbeat monitor (legacy compact pulse) disabled to prevent duplicate heartbeat spam.
+    # Use `system_heartbeat_job` below as single heartbeat channel.
 
     # SL/TP monitor — checks positions every 15s for stop loss / take profit triggers
     # Fast enough for scalping (-3% SL can trigger quickly)
@@ -7851,7 +7849,7 @@ def main() -> None:
         name="heartbeat_job",
     )
 
-    integrity_last_ok = None
+    integrity_last_ok = RUNTIME_HEALTH.get("integrity_ok")
 
     async def runtime_integrity_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         nonlocal integrity_last_ok
@@ -7902,7 +7900,7 @@ def main() -> None:
     )
 
     # Advisor runtime watchdog — checks Gemini health every 30 min and only alerts on state changes
-    advisor_probe_last_ok = None
+    advisor_probe_last_ok = RUNTIME_HEALTH.get("advisor_ok")
 
     async def advisor_watchdog_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         nonlocal advisor_probe_last_ok
@@ -7981,7 +7979,7 @@ def main() -> None:
     )
 
     # Production endpoint watchdog — verifies key app/telegram links and alerts on state changes only.
-    endpoint_watchdog_last_ok = None
+    endpoint_watchdog_last_ok = RUNTIME_HEALTH.get("endpoint_ok")
     endpoint_watchdog_urls = [
         WEBSITE_URL,
         f"{WEBSITE_URL}/api/events?hours=24&latest=1",
@@ -8356,11 +8354,7 @@ def main() -> None:
 
         # 🚀 START GODMODE AGENTS
         try:
-            # 1. Zero-Loss Autonomous Scalper (24/7 background task)
-            asyncio.create_task(auto_trader_loop(application.bot))
-            logger.info("🛡️ Zero-Loss Manager: task started")
-
-            # 2. CEO Agent Scheduler (Daily 08:00 Amsterdam)
+            # CEO Agent Scheduler (Daily 08:00 Amsterdam)
             start_ceo_scheduler(application.job_queue.scheduler)
             logger.info("🤖 CEO Agent: scheduler hooked to JobQueue")
             
