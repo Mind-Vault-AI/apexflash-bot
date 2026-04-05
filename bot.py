@@ -6671,27 +6671,43 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """Show personalized AI trade analysis for Elite users."""
     from agents.advisor_agent import analyze_trader_performance, get_advisor_intro
 
+    async def _safe_send(text: str, *, parse_mode: str | None = "Markdown"):
+        if update.message:
+            return await update.message.reply_text(text, parse_mode=parse_mode)
+        return await context.bot.send_message(
+            chat_id=update.effective_user.id,
+            text=text,
+            parse_mode=parse_mode,
+        )
+
     uid = update.effective_user.id
     user = get_user(uid)
 
     if user.get("tier", "free") not in ("elite", "admin"):
-        await update.message.reply_text(
+        await _safe_send(
             "💎 *ApexFlash AI Advisor (Elite)*\n\n"
             "This professional feature is reserved for **Elite** members.\n"
             "Upgrade to receive personalized Gemini trade coaching.",
-            parse_mode="Markdown"
         )
         return
 
     history = user.get("trade_history", [])
     if not history:
-        await update.message.reply_text("📈 *No Trade History Found.*", parse_mode="Markdown")
+        await _safe_send("📈 *No Trade History Found.*")
         return
 
-    msg = await update.message.reply_text("🤖 *AI Advisor is analyzing your stats...*", parse_mode="Markdown")
+    msg = await _safe_send("🤖 *AI Advisor is analyzing your stats...*")
     analysis = await analyze_trader_performance(uid, history)
     use_fallback_intro = "(Fallback Model)" in analysis or analysis.startswith("Fallback reason:")
-    await msg.edit_text(f"{get_advisor_intro(use_fallback=use_fallback_intro)}{analysis}", parse_mode="Markdown")
+    final_text = f"{get_advisor_intro(use_fallback=use_fallback_intro)}{analysis}"
+    try:
+        await msg.edit_text(final_text[:3900], parse_mode="Markdown")
+    except Exception:
+        # Fallback for markdown parse issues or message edit constraints.
+        try:
+            await msg.edit_text(final_text[:3900])
+        except Exception:
+            await _safe_send(final_text[:3900], parse_mode=None)
 
 
 async def cmd_advisor_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
