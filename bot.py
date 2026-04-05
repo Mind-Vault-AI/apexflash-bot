@@ -1001,6 +1001,14 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     uid = update.effective_user.id
     user = get_user(uid)
 
+    # Poka-Yoke: prevent duplicate concurrent advisor runs on rapid multi-clicks.
+    advisor_busy = bool(context.user_data.get("advisor_busy"))
+    last_advisor_ts = float(context.user_data.get("advisor_last_ts", 0.0) or 0.0)
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if advisor_busy or (now_ts - last_advisor_ts) < 8.0:
+        await _safe_send("⏳ *AI Advisor is already processing your previous request...*")
+        return
+
     if context.args:
         # Direct activation: /activate XXXX-XXXX-XXXX-XXXX
         license_key = context.args[0].strip()
