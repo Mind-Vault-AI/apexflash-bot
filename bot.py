@@ -6641,13 +6641,28 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Endpoint SLA state: `{'BREACH' if endpoint_breach else 'OK'}`\n"
         f"Last smoke: `{RUNTIME_HEALTH.get('last_smoke_ts', '-')}`\n"
         f"Last watchdog: `{RUNTIME_HEALTH.get('last_watchdog_ts', '-')}`\n"
-        f"Uptime: `{uptime_h}h {uptime_m}m`"
+        f"Uptime: `{uptime_h}h {uptime_m}m`\n"
+        "Tip: run `/ops_now` for immediate full autonomous health cycle."
     )
 
     if failed:
         text += "\n\n❌ Failed endpoints:\n" + "\n".join(failed[:6])
 
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+
+
+async def cmd_ops_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin-only trigger to force immediate autonomous ops checks."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    await update.message.reply_text("🛰️ Running full autonomous ops check now...")
+
+    # Reuse existing commands so behavior stays aligned with /smoke + /advisor_diag + /sla.
+    await cmd_smoke(update, context)
+    await cmd_advisor_diag(update, context)
+    await cmd_sla(update, context)
 
 async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show language selection menu."""
@@ -7319,6 +7334,7 @@ def main() -> None:
     app.add_handler(CommandHandler("advisor_diag", cmd_advisor_diag))
     app.add_handler(CommandHandler("smoke", cmd_smoke))
     app.add_handler(CommandHandler("sla", cmd_sla))
+    app.add_handler(CommandHandler("ops_now", cmd_ops_now))
     app.add_handler(CommandHandler("language", cmd_language))
     # app.add_handler(CommandHandler("admin_studio", cmd_admin_studio)) # TEMPORARY FIX: Disabled until implemented
     app.add_handler(CommandHandler("path", cmd_path))
