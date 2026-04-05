@@ -104,6 +104,32 @@ async def _try_gemini(prompt: str) -> Tuple[Optional[str], Optional[str], Option
     return None, None, reason
 
 
+async def advisor_live_probe() -> dict:
+    """Run a minimal live probe to verify Gemini availability at runtime."""
+    if not GEMINI_API_KEY:
+        return {
+            "ok": False,
+            "reason": "GEMINI_API_KEY missing",
+            "model": None,
+        }
+
+    probe_prompt = "Reply with exactly: APEXFLASH_OK"
+    text, model_name, reason = await _try_gemini(probe_prompt)
+    if text:
+        return {
+            "ok": True,
+            "reason": None,
+            "model": model_name,
+            "preview": text[:120],
+        }
+
+    return {
+        "ok": False,
+        "reason": reason,
+        "model": None,
+    }
+
+
 async def analyze_trader_performance(user_id: int, history: List[dict]) -> str:
     if not history:
         return "No trade history found. Start trading to receive AI coaching!"

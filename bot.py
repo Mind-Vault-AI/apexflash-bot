@@ -6488,7 +6488,7 @@ async def cmd_advisor_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("⛔ Unauthorized.")
         return
 
-    from agents.advisor_agent import advisor_runtime_snapshot
+    from agents.advisor_agent import advisor_runtime_snapshot, advisor_live_probe
 
     snap = advisor_runtime_snapshot()
     configured = snap.get("configured_chain", [])
@@ -6504,6 +6504,19 @@ async def cmd_advisor_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         + f"Resolved chain ({len(resolved)}):\n"
         + "\n".join([f"• `{m}`" for m in resolved[:12]])
     )
+
+    probe = await advisor_live_probe()
+    if probe.get("ok"):
+        text += (
+            "\n\n✅ *Live probe:* Gemini reachable\n"
+            f"Model: `{probe.get('model')}`\n"
+            f"Preview: `{str(probe.get('preview', ''))[:90]}`"
+        )
+    else:
+        text += (
+            "\n\n⚠️ *Live probe:* Gemini unavailable\n"
+            f"Reason: `{probe.get('reason', 'unknown')}`"
+        )
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
