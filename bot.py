@@ -1000,28 +1000,6 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Activate premium with a Gumroad license key. Usage: /activate LICENSE_KEY"""
     uid = update.effective_user.id
     user = get_user(uid)
-    advisor_lock_key = f"apexflash:advisor:lock:{uid}"
-    redis_lock_acquired = False
-
-    # Cross-instance lock (prevents duplicate advisor runs during rolling deploy overlap).
-    try:
-        from core.persistence import _get_redis
-        _r = _get_redis()
-        if _r:
-            redis_lock_acquired = bool(_r.set(advisor_lock_key, "1", ex=25, nx=True))
-            if not redis_lock_acquired:
-                await _safe_send("⏳ *AI Advisor is already processing your previous request...*")
-                return
-    except Exception:
-        redis_lock_acquired = False
-
-    # Poka-Yoke: prevent duplicate concurrent advisor runs on rapid multi-clicks.
-    advisor_busy = bool(context.user_data.get("advisor_busy"))
-    last_advisor_ts = float(context.user_data.get("advisor_last_ts", 0.0) or 0.0)
-    now_ts = datetime.now(timezone.utc).timestamp()
-    if advisor_busy or (now_ts - last_advisor_ts) < 8.0:
-        await _safe_send("⏳ *AI Advisor is already processing your previous request...*")
-        return
 
     if context.args:
         # Direct activation: /activate XXXX-XXXX-XXXX-XXXX
@@ -6474,14 +6452,6 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Show portfolio — wrapper for /portfolio command."""
     uid = update.effective_user.id
     user = get_user(uid)
-
-    # Poka-Yoke: prevent duplicate concurrent advisor runs on rapid multi-clicks.
-    advisor_busy = bool(context.user_data.get("advisor_busy"))
-    last_advisor_ts = float(context.user_data.get("advisor_last_ts", 0.0) or 0.0)
-    now_ts = datetime.now(timezone.utc).timestamp()
-    if advisor_busy or (now_ts - last_advisor_ts) < 8.0:
-        await _safe_send("⏳ *AI Advisor is already processing your previous request...*")
-        return
     # Fake a query-like object to reuse _cb_portfolio
     class FakeQuery:
         from_user = update.effective_user
@@ -6712,6 +6682,28 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     uid = update.effective_user.id
     user = get_user(uid)
+    advisor_lock_key = f"apexflash:advisor:lock:{uid}"
+    redis_lock_acquired = False
+
+    # Cross-instance lock (prevents duplicate advisor runs during rolling deploy overlap).
+    try:
+        from core.persistence import _get_redis
+        _r = _get_redis()
+        if _r:
+            redis_lock_acquired = bool(_r.set(advisor_lock_key, "1", ex=25, nx=True))
+            if not redis_lock_acquired:
+                await _safe_send("⏳ *AI Advisor is already processing your previous request...*")
+                return
+    except Exception:
+        redis_lock_acquired = False
+
+    # Local debounce for rapid repeated taps in same client session.
+    advisor_busy = bool(context.user_data.get("advisor_busy"))
+    last_advisor_ts = float(context.user_data.get("advisor_last_ts", 0.0) or 0.0)
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if advisor_busy or (now_ts - last_advisor_ts) < 8.0:
+        await _safe_send("⏳ *AI Advisor is already processing your previous request...*")
+        return
 
     if user.get("tier", "free") not in ("elite", "admin"):
         await _safe_send(
