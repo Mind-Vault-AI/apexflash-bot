@@ -137,6 +137,7 @@ RUNTIME_HEALTH = {
     "endpoint_sla_breach": False,
     "last_smoke_ts": "",
     "last_watchdog_ts": "",
+    "last_ops_autocheck_ts": "",
 }
 
 # ══════════════════════════════════════════════
@@ -6641,6 +6642,7 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Endpoint SLA state: `{'BREACH' if endpoint_breach else 'OK'}`\n"
         f"Last smoke: `{RUNTIME_HEALTH.get('last_smoke_ts', '-')}`\n"
         f"Last watchdog: `{RUNTIME_HEALTH.get('last_watchdog_ts', '-')}`\n"
+        f"Last ops autocheck: `{RUNTIME_HEALTH.get('last_ops_autocheck_ts', '-')}`\n"
         f"Uptime: `{uptime_h}h {uptime_m}m`\n"
         "Tip: run `/ops_now` for immediate full autonomous health cycle."
     )
@@ -7806,6 +7808,7 @@ def main() -> None:
             now_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
             RUNTIME_HEALTH["last_smoke_ts"] = now_stamp
             RUNTIME_HEALTH["last_watchdog_ts"] = now_stamp
+            RUNTIME_HEALTH["last_ops_autocheck_ts"] = now_stamp
 
             # --- sla summary (sla equivalent) ---
             advisor_total = int(RUNTIME_HEALTH.get("advisor_checks_total", 0))
@@ -7843,6 +7846,13 @@ def main() -> None:
         interval=7200,  # every 2 hours
         first=420,      # first check after 7 minutes
         name="ops_autocheck",
+    )
+
+    # Also trigger one early autonomous ops cycle shortly after startup.
+    app.job_queue.run_once(
+        ops_autocheck_job,
+        when=90,        # first full check after 90 seconds
+        name="ops_autocheck_bootstrap",
     )
 
     logger.info("\u26a1 ApexFlash MEGA BOT v3.15.4 starting (Infinity Engine + The Agency Gateway)...")
