@@ -6520,6 +6520,54 @@ async def cmd_advisor_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
+
+async def cmd_smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin-only live smoke test for core app/bot endpoints."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    from agents.advisor_agent import advisor_live_probe
+
+    urls = [
+        WEBSITE_URL,
+        f"{WEBSITE_URL}/api/events?hours=24&latest=1",
+        f"{WEBSITE_URL}/api/subscribe",
+        f"https://t.me/{BOT_USERNAME}",
+        f"https://t.me/{BOT_USERNAME}?start=elite",
+    ]
+
+    lines = []
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+        for url in urls:
+            status = 0
+            ok = False
+            try:
+                async with session.get(url, allow_redirects=True) as resp:
+                    status = resp.status
+                    ok = 200 <= status < 400
+            except Exception:
+                ok = False
+
+            emoji = "✅" if ok else "❌"
+            lines.append(f"{emoji} `{status if status else 'ERR'}` {url}")
+
+    probe = await advisor_live_probe()
+    if probe.get("ok"):
+        advisor_line = f"✅ Advisor probe: `{probe.get('model')}`"
+    else:
+        advisor_line = f"⚠️ Advisor probe fallback: `{probe.get('reason', 'unknown')}`"
+
+    text = (
+        "🧪 *ApexFlash Live Smoke Test*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        + "\n".join(lines)
+        + "\n\n"
+        + advisor_line
+    )
+
+    await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+
 async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show language selection menu."""
     from core.i18n import get_text
@@ -7188,6 +7236,7 @@ def main() -> None:
     app.add_handler(CommandHandler("admin_marketing", cmd_admin_marketing))
     app.add_handler(CommandHandler("advisor", cmd_advisor))
     app.add_handler(CommandHandler("advisor_diag", cmd_advisor_diag))
+    app.add_handler(CommandHandler("smoke", cmd_smoke))
     app.add_handler(CommandHandler("language", cmd_language))
     # app.add_handler(CommandHandler("admin_studio", cmd_admin_studio)) # TEMPORARY FIX: Disabled until implemented
     app.add_handler(CommandHandler("path", cmd_path))
