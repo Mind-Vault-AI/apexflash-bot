@@ -1236,7 +1236,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             from traceback import format_exc
             logger.error(format_exc())
             try:
-                await query.edit_message_text("⚠️ Action failed. Try once more in a few seconds.")
+                await query.answer("⚠️ Action failed. Try once more in a few seconds.", show_alert=False)
             except Exception:
                 pass
         return
@@ -6925,6 +6925,16 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uptime = datetime.now(timezone.utc) - bot_start_time
     uptime_h = int(uptime.total_seconds() // 3600)
     uptime_m = int((uptime.total_seconds() % 3600) // 60)
+
+    admin_id = ADMIN_IDS[0] if isinstance(ADMIN_IDS, list) and ADMIN_IDS else (ADMIN_IDS if isinstance(ADMIN_IDS, int) else 0)
+    admin_user = users.get(admin_id) if isinstance(admin_id, int) else None
+    autotrade_wallet_ready = bool(admin_user and admin_user.get("wallet_secret_enc"))
+    autotrade_positions = 0
+    try:
+        from zero_loss_manager import active_positions
+        autotrade_positions = len(active_positions) if isinstance(active_positions, dict) else 0
+    except Exception:
+        autotrade_positions = 0
 
     text = (
         "📡 *ApexFlash SLA Snapshot*\n"
