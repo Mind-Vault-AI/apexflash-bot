@@ -6481,6 +6481,32 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     use_fallback_intro = "(Fallback Model)" in analysis or analysis.startswith("Fallback reason:")
     await msg.edit_text(f"{get_advisor_intro(use_fallback=use_fallback_intro)}{analysis}", parse_mode="Markdown")
 
+
+async def cmd_advisor_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin diagnostics for advisor runtime state."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    from agents.advisor_agent import advisor_runtime_snapshot
+
+    snap = advisor_runtime_snapshot()
+    configured = snap.get("configured_chain", [])
+    resolved = snap.get("resolved_chain", [])
+
+    text = (
+        "🧪 *Advisor Runtime Diagnostics*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        f"GEMINI_API_KEY: {'✅ present' if snap.get('gemini_key_present') else '❌ missing'}\n"
+        f"Configured chain ({len(configured)}):\n"
+        + "\n".join([f"• `{m}`" for m in configured[:8]])
+        + "\n\n"
+        + f"Resolved chain ({len(resolved)}):\n"
+        + "\n".join([f"• `{m}`" for m in resolved[:12]])
+    )
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
 async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show language selection menu."""
     from core.i18n import get_text
@@ -7148,6 +7174,7 @@ def main() -> None:
     app.add_handler(CommandHandler("analytics", cmd_analytics))
     app.add_handler(CommandHandler("admin_marketing", cmd_admin_marketing))
     app.add_handler(CommandHandler("advisor", cmd_advisor))
+    app.add_handler(CommandHandler("advisor_diag", cmd_advisor_diag))
     app.add_handler(CommandHandler("language", cmd_language))
     # app.add_handler(CommandHandler("admin_studio", cmd_admin_studio)) # TEMPORARY FIX: Disabled until implemented
     app.add_handler(CommandHandler("path", cmd_path))

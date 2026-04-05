@@ -61,6 +61,15 @@ def _resolve_model_chain() -> List[str]:
     return resolved
 
 
+def advisor_runtime_snapshot() -> dict:
+    resolved_chain = _resolve_model_chain()
+    return {
+        "gemini_key_present": bool(GEMINI_API_KEY),
+        "configured_chain": MODEL_CHAIN,
+        "resolved_chain": resolved_chain,
+    }
+
+
 def _build_prompt(history_summary: List[dict]) -> str:
     return (
         "You are the ApexFlash Pro Advisor. Analyze the following 15 crypto trades. "
