@@ -7455,6 +7455,33 @@ def main() -> None:
         except Exception as e:
             logger.warning(f"set_my_commands failed: {e}")
 
+        # Advisor runtime health probe (Gemini availability) for fast PDCA visibility.
+        try:
+            from agents.advisor_agent import advisor_live_probe
+
+            probe = await advisor_live_probe()
+            if probe.get("ok"):
+                text = (
+                    "🤖 *Advisor Probe: ONLINE*\n"
+                    "━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"Model: `{probe.get('model')}`\n"
+                    f"Preview: `{str(probe.get('preview', ''))[:90]}`"
+                )
+            else:
+                text = (
+                    "⚠️ *Advisor Probe: FALLBACK MODE*\n"
+                    "━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"Reason: `{probe.get('reason', 'unknown')}`"
+                )
+
+            for admin_id in ADMIN_IDS:
+                try:
+                    await application.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"advisor_live_probe on startup failed: {e}")
+
         # CRITICAL: Alert admin if data was lost on restart
         if not users:
             for admin_id in ADMIN_IDS:
