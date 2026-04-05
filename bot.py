@@ -7560,12 +7560,24 @@ def main() -> None:
             from zero_loss_manager import check_market_trend
             trend = await check_market_trend()
             emoji = "\U0001f7e2" if trend >= 0 else "\U0001f534"
+
+            advisor_total = int(RUNTIME_HEALTH.get("advisor_checks_total", 0))
+            advisor_ok_count = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0))
+            endpoint_total = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0))
+            endpoint_ok_count = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0))
+            advisor_sla = (advisor_ok_count / advisor_total * 100.0) if advisor_total else 0.0
+            endpoint_sla = (endpoint_ok_count / endpoint_total * 100.0) if endpoint_total else 0.0
+            advisor_state = "OK" if not RUNTIME_HEALTH.get("advisor_sla_breach") else "BREACH"
+            endpoint_state = "OK" if not RUNTIME_HEALTH.get("endpoint_sla_breach") else "BREACH"
+
             msg = (
                 f"\U0001f493 *APEXFLASH HEARTBEAT*\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"Status: **System Healthy**\n"
                 f"{emoji} SOL Trend: **{trend:+.2f}%**\n"
                 f"📡 Scanning: **Grade A/B+ active**\n"
+                f"🤖 Advisor SLA: **{advisor_sla:.2f}%** ({advisor_state})\n"
+                f"🌐 Endpoint SLA: **{endpoint_sla:.2f}%** ({endpoint_state})\n"
                 f"\n"
                 f"_Bot is monitoring markets 24/7._"
             )
@@ -7856,6 +7868,17 @@ def main() -> None:
             from agents.advisor_agent import advisor_live_probe
 
             probe = await advisor_live_probe()
+            probe_ok = bool(probe.get("ok"))
+
+            # Seed runtime health snapshot immediately after startup.
+            RUNTIME_HEALTH["advisor_ok"] = probe_ok
+            RUNTIME_HEALTH["advisor_reason"] = str(probe.get("reason") or "")
+            RUNTIME_HEALTH["advisor_model"] = str(probe.get("model") or "")
+            RUNTIME_HEALTH["advisor_checks_total"] = int(RUNTIME_HEALTH.get("advisor_checks_total", 0)) + 1
+            if probe_ok:
+                RUNTIME_HEALTH["advisor_checks_ok"] = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0)) + 1
+            RUNTIME_HEALTH["last_watchdog_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
             if probe.get("ok"):
                 text = (
                     "🤖 *Advisor Probe: ONLINE*\n"
