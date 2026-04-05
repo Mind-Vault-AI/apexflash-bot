@@ -1067,7 +1067,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             )
         else:
             await query.edit_message_text(
-                "⚠️ Could not load token info.",
+                f"⚠️ Could not load token info for `{mint[:20]}...`",
                 reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
                 parse_mode="Markdown",
             )
@@ -1333,7 +1333,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             )
             kb = [
                 [InlineKeyboardButton(f"🔗 Open {aff_info['name']}", url=aff_info["url"])],
-                [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]
+                [_back_main()[0]]
             ]
             await query.edit_message_text(
                 text, reply_markup=InlineKeyboardMarkup(kb),
@@ -1572,7 +1572,7 @@ async def _cb_trade(query, user, context):
     if not trading_enabled:
         await query.edit_message_text(
             "\U0001f6d1 *Trading Paused*\n\n"
-            "Trading is temporarily disabled by admin.\n"
+            "Trading is temporarily disabled.\n"
             "Please try again later.",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
             parse_mode="Markdown",
@@ -1822,7 +1822,7 @@ async def _cb_trade_wallet(query, user, context):
         ],
         [InlineKeyboardButton("📤 Withdraw SOL", callback_data="withdraw_start")],
         [InlineKeyboardButton("📊 Positions (SL/TP)", callback_data="positions")],
-        [InlineKeyboardButton("\U0001f504 Refresh", callback_data="portfolio")],
+        [InlineKeyboardButton("\U0001f504 Refresh", callback_data="trade_refresh")],
         [InlineKeyboardButton("\U0001f3c6 Leaderboard", callback_data="leaderboard")],
         [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
         [_back_main()[0]],
@@ -1830,6 +1830,2466 @@ async def _cb_trade_wallet(query, user, context):
 
     await query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+async def _cb_trade_refresh_balance(query, user, context):
+    """Alias for wallet view (refresh)."""
+    await _cb_trade_wallet(query, user, context)
+
+
+# ── Withdraw SOL ──────────────────────────────
+
+async def _cb_withdraw_start(query, user, context):
+    """Prompt user to enter destination address for withdrawal."""
+    pubkey = user.get("wallet_pubkey")
+    if not pubkey:
+        await query.edit_message_text(
+            "⚠️ No wallet found. Create one first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔐 Create Wallet", callback_data="trade_create")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    sol_bal = await get_sol_balance(pubkey)
+    available = sol_bal - MIN_SOL_RESERVE
+    if available <= 0:
+        await query.edit_message_text(
+            f"⚠️ *Insufficient balance*\n\n"
+            f"◎ Balance: {sol_bal:.4f} SOL\n"
+            f"🔒 Reserved for fees: {MIN_SOL_RESERVE} SOL\n\n"
+            f"You need more than {MIN_SOL_RESERVE} SOL to withdraw.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    context.user_data["awaiting_input"] = "withdraw_address"
+    await query.edit_message_text(
+        "📤 *Withdraw SOL*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"◎ Available: *{available:.4f} SOL*\n"
+        f"🔒 Reserved: {MIN_SOL_RESERVE} SOL (tx fees)\n\n"
+        "📤 *Send me the destination SOL address:*",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Cancel", callback_data="trade_wallet")],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_withdraw_amount(update_or_query, user, context):
+    """Show confirmation after user selects withdraw percentage."""
+    query = update_or_query
+    data = query.data  # withdraw_amt_25, withdraw_amt_50, withdraw_amt_100
+    pct_str = data.replace("withdraw_amt_", "")
+    try:
+        pct = int(pct_str)
+    except ValueError:
+        await query.edit_message_text("⚠️ Invalid amount. Use /start to return.", parse_mode="Markdown")
+        return
+
+    dest = context.user_data.get("withdraw_dest")
+    pubkey = user.get("wallet_pubkey")
+    if not dest or not pubkey:
+        await query.edit_message_text(
+            "⚠️ Session expired. Start a new withdrawal from your wallet.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Fresh balance check (security)
+    sol_bal = await get_sol_balance(pubkey)
+    available = sol_bal - MIN_SOL_RESERVE
+    if available <= 0:
+        context.user_data.pop("withdraw_dest", None)
+        await query.edit_message_text(
+            "⚠️ *Insufficient balance* — cannot withdraw.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    import math
+    send_sol = available * (pct / 100.0)
+    send_lamports = math.floor(send_sol * 1_000_000_000)
+    send_display = send_lamports / 1_000_000_000
+
+    context.user_data["withdraw_lamports"] = send_lamports
+
+    dest_short = f"{dest[:6]}...{dest[-4:]}"
+    await query.edit_message_text(
+        "📤 *Confirm Withdrawal*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"💰 Amount: *{send_display:.4f} SOL*\n"
+        f"📤 To: `{dest_short}`\n"
+        f"📋 Full: `{dest}`\n\n"
+        "⚠️ This action cannot be undone!",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Confirm Send", callback_data="withdraw_confirm")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="withdraw_cancel")],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_withdraw_confirm(query, user, context):
+    """Execute the SOL withdrawal or cancel."""
+    dest = context.user_data.get("withdraw_dest")
+    lamports = context.user_data.get("withdraw_lamports")
+    pubkey = user.get("wallet_pubkey")
+    encrypted = user.get("wallet_secret")
+
+    # Clean up session data regardless of outcome
+    def _clear_withdraw():
+        context.user_data.pop("withdraw_dest", None)
+        context.user_data.pop("withdraw_lamports", None)
+
+    if not all([dest, lamports, pubkey, encrypted]):
+        _clear_withdraw()
+        await query.edit_message_text(
+            "⚠️ Session expired. Start a new withdrawal from your wallet.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Final balance safety check
+    sol_bal = await get_sol_balance(pubkey)
+    available = sol_bal - MIN_SOL_RESERVE
+    needed_sol = lamports / 1_000_000_000
+    if needed_sol > available:
+        _clear_withdraw()
+        await query.edit_message_text(
+            f"⚠️ *Balance changed!*\n\n"
+            f"Requested: {needed_sol:.4f} SOL\n"
+            f"Available: {available:.4f} SOL\n\n"
+            "Try again with updated balance.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    await query.edit_message_text("⏳ *Processing withdrawal...*", parse_mode="Markdown")
+
+    try:
+        keypair = load_keypair(encrypted)
+        tx_sig = await transfer_sol(keypair, dest, lamports)
+    except Exception as e:
+        logger.error(f"Withdraw error for user {user.get('user_id')}: {e}")
+        _clear_withdraw()
+        await query.edit_message_text(
+            "❌ *Withdrawal failed*\n\n"
+            f"Error: {str(e)[:100]}\n\n"
+            "Please try again or contact support.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Try Again", callback_data="withdraw_start")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    _clear_withdraw()
+
+    if tx_sig:
+        sol_sent = lamports / 1_000_000_000
+        new_bal = await get_sol_balance(pubkey)
+        dest_short = f"{dest[:6]}...{dest[-4:]}"
+        await query.edit_message_text(
+            "✅ *Withdrawal Successful!*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💰 Sent: *{sol_sent:.4f} SOL*\n"
+            f"📤 To: `{dest_short}`\n"
+            f"◎ Remaining: *{new_bal:.4f} SOL*\n\n"
+            f"🔗 [View on Solscan](https://solscan.io/tx/{tx_sig})",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+        )
+        logger.info(f"Withdraw OK: user={user.get('user_id')} amount={sol_sent:.4f} tx={tx_sig}")
+    else:
+        await query.edit_message_text(
+            "❌ *Withdrawal failed*\n\n"
+            "Transaction could not be confirmed.\n"
+            "Your SOL is safe — please try again.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Try Again", callback_data="withdraw_start")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            ]),
+            parse_mode="Markdown",
+        )
+
+
+# ══════════════════════════════════════════════
+# STOP LOSS / TAKE PROFIT (SL/TP)
+# ══════════════════════════════════════════════
+
+_sl_tp_lock = False  # prevents overlapping monitor cycles
+
+
+async def _ask_sl_tp(chat_id, user, context, bot,
+                     mint: str, token_name: str, entry_sol: float,
+                     token_amount_raw: str, token_decimals: int, tx_sig: str,
+                     signal_grade: str = ""):
+    """After a successful buy, ask user if they want SL/TP protection."""
+    # Store pending position data in context for the callbacks
+    context.user_data["pending_position"] = {
+        "mint": mint,
+        "token": token_name,
+        "entry_sol": entry_sol,
+        "token_amount_raw": token_amount_raw,
+        "token_decimals": token_decimals,
+        "buy_tx": tx_sig,
+        "signal_grade": signal_grade,  # A/B/C/D — for win rate KPI breakdown
+    }
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            "🛡️ *Protect your trade?*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🎯 {token_name} | Entry: *{entry_sol:.4f} SOL*\n\n"
+            "Set stop loss & take profit to auto-sell\n"
+            "when price hits your targets. 24/7 monitoring."
+        ),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🛡️ Set SL/TP", callback_data="set_sl_tp")],
+            [InlineKeyboardButton("⏭️ Skip", callback_data="skip_sl_tp")],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_sl_select_start(query, user, context):
+    """Start SL selection — show stop loss percentage options."""
+    pending = context.user_data.get("pending_position")
+    if not pending:
+        await query.edit_message_text(
+            "⚠️ No pending trade found. Buy a token first!",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    token = pending.get("token", "Token")
+    await query.edit_message_text(
+        f"🔴 *Set Stop Loss for {token}*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "Auto-sell if your position drops by:\n\n"
+        "• -3% → scalp (tight)\n"
+        "• -5% → scalp (loose)\n"
+        "• -10% → conservative\n"
+        "• -15% → balanced\n"
+        "• -25% → aggressive\n",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("-3% 🎯", callback_data="sl_3"),
+                InlineKeyboardButton("-5% ⚡", callback_data="sl_5"),
+            ],
+            [
+                InlineKeyboardButton("-10%", callback_data="sl_10"),
+                InlineKeyboardButton("-15%", callback_data="sl_15"),
+                InlineKeyboardButton("-25%", callback_data="sl_25"),
+            ],
+            [InlineKeyboardButton("⏭️ No Stop Loss", callback_data="sl_none")],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_sl_select(query, user, context):
+    """Handle SL selection, then ask for TP."""
+    data = query.data  # sl_10, sl_15, sl_25, sl_none
+    pending = context.user_data.get("pending_position")
+    if not pending:
+        await query.edit_message_text(
+            "⚠️ Session expired. Buy a token first!",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    sl_map = {"sl_3": 3, "sl_5": 5, "sl_10": 10, "sl_15": 15, "sl_25": 25, "sl_none": 0}
+    sl_pct = sl_map.get(data, 0)
+    context.user_data["pending_sl"] = sl_pct
+
+    token = pending.get("token", "Token")
+    sl_text = f"-{sl_pct}%" if sl_pct > 0 else "None"
+
+    await query.edit_message_text(
+        f"🟢 *Set Take Profit for {token}*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Stop Loss: *{sl_text}* ✓\n\n"
+        "Auto-sell when your position gains:\n\n"
+        "• +25% → quick scalp\n"
+        "• +50% → balanced\n"
+        "• +100% → moon bag\n",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("+25%", callback_data="tp_25"),
+                InlineKeyboardButton("+50%", callback_data="tp_50"),
+                InlineKeyboardButton("+100%", callback_data="tp_100"),
+            ],
+            [InlineKeyboardButton("⏭️ No Take Profit", callback_data="tp_none")],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_tp_select(query, user, context):
+    """Handle TP selection — save position with SL/TP."""
+    data = query.data  # tp_25, tp_50, tp_100, tp_none
+    pending = context.user_data.get("pending_position")
+    if not pending:
+        await query.edit_message_text(
+            "⚠️ Session expired. Buy a token first!",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    tp_map = {"tp_25": 25, "tp_50": 50, "tp_100": 100, "tp_none": 0}
+    tp_pct = tp_map.get(data, 0)
+    sl_pct = context.user_data.get("pending_sl", 0)
+
+    # Both zero = user chose no SL and no TP → skip saving
+    if sl_pct == 0 and tp_pct == 0:
+        context.user_data.pop("pending_position", None)
+        context.user_data.pop("pending_sl", None)
+        await query.edit_message_text(
+            "⏭️ No SL/TP set — trade is unprotected.\n"
+            "You can always set protection later from your positions.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Save position
+    position = {
+        "mint": pending["mint"],
+        "token": pending["token"],
+        "entry_sol": pending["entry_sol"],
+        "token_amount_raw": pending["token_amount_raw"],
+        "token_decimals": pending["token_decimals"],
+        "sl_pct": sl_pct,
+        "tp_pct": tp_pct,
+        "created": datetime.now(timezone.utc).isoformat(),
+        "buy_tx": pending.get("buy_tx", ""),
+        "signal_grade": pending.get("signal_grade", ""),  # A/B/C/D — win rate tracking
+    }
+
+    if "active_positions" not in user:
+        user["active_positions"] = []
+    user["active_positions"].append(position)
+    _persist()
+
+    # Clean up
+    context.user_data.pop("pending_position", None)
+    context.user_data.pop("pending_sl", None)
+
+    sl_text = f"-{sl_pct}%" if sl_pct > 0 else "Off"
+    tp_text = f"+{tp_pct}%" if tp_pct > 0 else "Off"
+    entry = position["entry_sol"]
+    sl_val = f"{entry * (1 - sl_pct / 100):.4f}" if sl_pct > 0 else "—"
+    tp_val = f"{entry * (1 + tp_pct / 100):.4f}" if tp_pct > 0 else "—"
+
+    await query.edit_message_text(
+        "✅ *Position Protected!*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🎯 {position['token']}\n"
+        f"📥 Entry: *{entry:.4f} SOL*\n\n"
+        f"🔴 Stop Loss: *{sl_text}* (trigger: {sl_val} SOL)\n"
+        f"🟢 Take Profit: *{tp_text}* (trigger: {tp_val} SOL)\n\n"
+        "🤖 Bot monitors 24/7 — auto-sells when triggered.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 My Positions", callback_data="positions")],
+            [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            [_back_main()[0]],
+        ]),
+        parse_mode="Markdown",
+    )
+    logger.info(f"SL/TP set: user={query.from_user.id} token={position['token']} SL={sl_pct}% TP={tp_pct}%")
+
+
+async def _cb_skip_sl_tp(query, user, context):
+    """User chose to skip SL/TP."""
+    context.user_data.pop("pending_position", None)
+    context.user_data.pop("pending_sl", None)
+    await query.edit_message_text(
+        "⏭️ No SL/TP set — trade is unprotected.\n\n"
+        "You can set protection anytime from 📊 Positions.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            [_back_main()[0]],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+# ── View & Cancel Positions ──────────────────
+
+async def _cb_positions(query, user, context):
+    """Show all active SL/TP positions."""
+    positions = user.get("active_positions", [])
+
+    if not positions:
+        await query.edit_message_text(
+            "📊 *My Positions*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "No active SL/TP positions.\n\n"
+            "Buy a token and set SL/TP to start!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    text = (
+        "📊 *My Positions (SL/TP)*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+    )
+
+    kb = []
+    for i, pos in enumerate(positions):
+        sl_text = f"-{pos['sl_pct']}%" if pos.get("sl_pct", 0) > 0 else "Off"
+        tp_text = f"+{pos['tp_pct']}%" if pos.get("tp_pct", 0) > 0 else "Off"
+        entry = pos.get("entry_sol", 0)
+
+        # Try to get current value via Jupiter quote
+        current_text = "⏳"
+        try:
+            raw_amount = int(pos["token_amount_raw"])
+            quote = await get_quote(
+                input_mint=pos["mint"],
+                output_mint=SOL_MINT,
+                amount_raw=raw_amount,
+                slippage_bps=DEFAULT_SLIPPAGE_BPS,
+            )
+            if quote and quote.get("outAmount"):
+                current_sol = int(quote["outAmount"]) / 1_000_000_000
+                pnl_pct = ((current_sol - entry) / entry * 100) if entry > 0 else 0
+                pnl_emoji = "🟢" if pnl_pct >= 0 else "🔴"
+                current_text = f"{current_sol:.4f} SOL ({pnl_emoji} {pnl_pct:+.1f}%)"
+        except Exception:
+            current_text = "⚠️ Price unavailable"
+
+        text += (
+            f"\n*{i + 1}. {pos['token']}*\n"
+            f"   📥 Entry: {entry:.4f} SOL\n"
+            f"   📈 Now: {current_text}\n"
+            f"   🔴 SL: {sl_text} | 🟢 TP: {tp_text}\n"
+        )
+        kb.append([InlineKeyboardButton(
+            f"❌ Cancel #{i + 1} ({pos['token']})",
+            callback_data=f"cancel_pos_{i}",
+        )])
+
+    kb.append([InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")])
+    kb.append([_back_main()[0]])
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_cancel_position(query, user, context, index: int):
+    """Cancel SL/TP for a position (keeps tokens, removes auto-sell)."""
+    positions = user.get("active_positions", [])
+    if index < 0 or index >= len(positions):
+        await query.edit_message_text(
+            "⚠️ Position not found.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    removed = positions.pop(index)
+    _persist()
+
+    await query.edit_message_text(
+        f"❌ *SL/TP Cancelled for {removed['token']}*\n\n"
+        "Your tokens are safe — only the auto-sell was removed.\n"
+        "You can still sell manually from the Trade menu.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 My Positions", callback_data="positions")],
+            [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+            [_back_main()[0]],
+        ]),
+        parse_mode="Markdown",
+    )
+    logger.info(f"SL/TP cancelled: user={query.from_user.id} token={removed['token']}")
+
+
+# ── Background SL/TP Monitor ─────────────────
+
+async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
+    """Check all active SL/TP positions every 30s.
+
+    Logic: For each position, get Jupiter quote (sell token → SOL).
+    If current_sol <= entry × (1 - sl_pct/100) → stop loss triggered.
+    If current_sol >= entry × (1 + tp_pct/100) → take profit triggered.
+    """
+    global _sl_tp_lock
+    import asyncio
+
+    if _sl_tp_lock:
+        return  # previous cycle still running
+    _sl_tp_lock = True
+
+    try:
+        # Collect all positions across all users
+        all_positions = []  # (chat_id, user, pos_index, position)
+        for chat_id, user in users.items():
+            for i, pos in enumerate(user.get("active_positions", [])):
+                all_positions.append((chat_id, user, i, pos))
+
+        if not all_positions:
+            return
+
+        # Group by mint to minimize API calls (1 quote per unique mint+amount combo)
+        # But each position can have different token amounts, so we check individually
+        # Rate limit: max 10 checks per cycle
+        checked = 0
+        triggered = []  # (chat_id, user, pos_index, position, trigger_type, current_sol)
+
+        for chat_id, user, pos_index, pos in all_positions:
+            if checked >= 10:
+                break  # rate limit — continue next cycle
+
+            try:
+                raw_amount = int(pos["token_amount_raw"])
+                if raw_amount <= 0:
+                    continue
+
+                entry_sol = pos.get("entry_sol", 0)
+                if entry_sol <= 0:
+                    continue
+
+                sl_pct = pos.get("sl_pct", 0)
+                tp_pct = pos.get("tp_pct", 0)
+                if sl_pct == 0 and tp_pct == 0:
+                    continue  # nothing to monitor
+
+                # Get current value: "if I sell all my tokens now, how much SOL?"
+                quote = await get_quote(
+                    input_mint=pos["mint"],
+                    output_mint=SOL_MINT,
+                    amount_raw=raw_amount,
+                    slippage_bps=DEFAULT_SLIPPAGE_BPS,
+                )
+                checked += 1
+
+                if not quote or not quote.get("outAmount"):
+                    continue
+
+                current_sol = int(quote["outAmount"]) / 1_000_000_000
+
+                # ── Trailing SL: update peak and move SL floor up ──
+                # Logic: lock in profits as price rises.
+                #   +10% gain → SL moves to break-even (0%)
+                #   +25% gain → SL moves to +10% (never lose this)
+                #   +50% gain → SL moves to +25%
+                #   +100% gain → SL moves to +50%
+                peak_sol = pos.get("peak_sol", entry_sol)
+                if current_sol > peak_sol:
+                    pos["peak_sol"] = current_sol  # track all-time high for this position
+                    peak_sol = current_sol
+
+                gain_pct = (peak_sol / entry_sol - 1) * 100 if entry_sol > 0 else 0
+                if gain_pct >= 100:
+                    effective_sl_floor = entry_sol * 1.50   # lock in 50%
+                elif gain_pct >= 50:
+                    effective_sl_floor = entry_sol * 1.25   # lock in 25%
+                elif gain_pct >= 25:
+                    effective_sl_floor = entry_sol * 1.10   # lock in 10%
+                elif gain_pct >= 10:
+                    effective_sl_floor = entry_sol * 1.00   # break-even
+                else:
+                    effective_sl_floor = 0  # no trailing protection yet
+
+                # Check stop loss (use whichever is HIGHER: fixed SL or trailing floor)
+                if sl_pct > 0 or effective_sl_floor > 0:
+                    fixed_sl = entry_sol * (1 - sl_pct / 100) if sl_pct > 0 else 0
+                    sl_trigger = max(fixed_sl, effective_sl_floor)
+                    if current_sol <= sl_trigger:
+                        trigger_label = "TRAIL_SL" if effective_sl_floor > fixed_sl else "SL"
+                        triggered.append((chat_id, user, pos_index, pos, trigger_label, current_sol))
+                        continue  # don't also check TP
+
+                # Check take profit
+                if tp_pct > 0:
+                    tp_trigger = entry_sol * (1 + tp_pct / 100)
+                    if current_sol >= tp_trigger:
+                        triggered.append((chat_id, user, pos_index, pos, "TP", current_sol))
+
+                # Rate limit delay between API calls
+                await asyncio.sleep(1)
+
+            except Exception as pos_err:
+                logger.warning(f"SL/TP check error for {pos.get('token', '?')}: {pos_err}")
+                continue
+
+        # Execute triggered sells (process in reverse to maintain indices)
+        for chat_id, user, pos_index, pos, trigger_type, current_sol in reversed(triggered):
+            try:
+                encrypted = user.get("wallet_secret_enc")
+                if not encrypted:
+                    continue
+
+                keypair = load_keypair(encrypted)
+                raw_amount = int(pos["token_amount_raw"])
+
+                # Get fresh quote for execution
+                quote = await get_quote(
+                    input_mint=pos["mint"],
+                    output_mint=SOL_MINT,
+                    amount_raw=raw_amount,
+                    slippage_bps=DEFAULT_SLIPPAGE_BPS,
+                )
+
+                if not quote:
+                    logger.warning(f"SL/TP sell quote failed for {pos['token']}")
+                    continue
+
+                # Calculate fee on output
+                out_lamports = int(quote.get("outAmount", 0))
+                swap_lamports, fee_lamports = calculate_fee(out_lamports)
+
+                # Execute sell
+                tx_sig, swap_err = await execute_swap(keypair, quote)
+
+                if tx_sig:
+                    # Collect fee
+                    try:
+                        if FEE_COLLECT_WALLET and fee_lamports > 5000:
+                            await collect_fee(keypair, fee_lamports, FEE_COLLECT_WALLET)
+                    except Exception:
+                        pass
+
+                    # Remove position (safe because we process in reverse)
+                    positions = user.get("active_positions", [])
+                    if pos_index < len(positions):
+                        positions.pop(pos_index)
+
+                    entry = pos.get("entry_sol", 0)
+
+                    # Use actual SOL received from sell (after fee)
+                    sold_sol = swap_lamports / 1_000_000_000  # net SOL after fee deduction
+
+                    # Sanity check: sold amount should be in reasonable range of entry
+                    # If wildly off (>100x entry), use the pre-sell quote value instead
+                    if entry > 0 and sold_sol > entry * 100:
+                        sold_sol = current_sol  # fall back to quote estimate
+
+                    pnl_sol = sold_sol - entry
+                    pnl_pct = (pnl_sol / entry * 100) if entry > 0 else 0
+                    pnl_emoji = "🟢" if pnl_sol >= 0 else "🔴"
+
+                    if trigger_type == "TRAIL_SL":
+                        trigger_label = "🟡 TRAILING SL"
+                    elif trigger_type == "SL":
+                        trigger_label = "🔴 STOP LOSS"
+                    else:
+                        trigger_label = "🟢 TAKE PROFIT"
+
+                    # Record trade
+                    _record_trade(
+                        chat_id, user, "SELL", pos["token"], pos["mint"],
+                        sold_sol, 0, tx_sig,
+                    )
+
+                    # Track win rate (critical for marketing + trust)
+                    try:
+                        from core.persistence import record_trade_result
+                        record_trade_result(
+                            chat_id, pos["token"], pnl_pct, pnl_sol,
+                            signal_grade=pos.get("signal_grade", ""),
+                        )
+                    except Exception:
+                        pass
+
+                    _persist()
+
+                    # ── CEO TIER 2: Track consecutive losses + auto-pause ──
+                    try:
+                        from core.persistence import _get_redis as _pr
+                        _r = _pr()
+                        if _r:
+                            if pnl_sol < 0:
+                                consec = _r.incr("winrate:consecutive_losses")
+                                logger.info(f"Consecutive losses: {consec}")
+                                # Check if auto-pause should trigger
+                                from agents.ceo_agent import check_win_rate_and_pause
+                                pause_result = check_win_rate_and_pause()
+                                if pause_result.get("action") == "paused":
+                                    # Alert Erik via Telegram
+                                    for admin_id in ADMIN_IDS:
+                                        try:
+                                            await context.bot.send_message(
+                                                chat_id=admin_id,
+                                                text=(
+                                                    "🤖 *CEO Agent TIER 2 — ACTIE GENOMEN*\n"
+                                                    "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                                                    f"⚠️ Signals **GEPAUZEERD**\n"
+                                                    f"Reden: {pause_result.get('reason', '?')}\n"
+                                                    f"Win rate: {pause_result.get('win_rate', '?')}%\n"
+                                                    f"Trades: {pause_result.get('total_trades', '?')}\n\n"
+                                                    "Signals worden NIET meer verzonden.\n"
+                                                    "Klik hervat om handmatig te hervatten:"
+                                                ),
+                                                reply_markup=InlineKeyboardMarkup([[
+                                                    InlineKeyboardButton(
+                                                        "▶️ Hervat Signals", callback_data="admin_resume_signals"
+                                                    ),
+                                                    InlineKeyboardButton(
+                                                        "📊 Stats", callback_data="admin_stats"
+                                                    ),
+                                                ]]),
+                                                parse_mode="Markdown",
+                                            )
+                                        except Exception:
+                                            pass
+                            else:
+                                # Win: reset consecutive loss counter
+                                _r.set("winrate:consecutive_losses", "0")
+                    except Exception as pause_err:
+                        logger.debug(f"CEO pause check failed (non-fatal): {pause_err}")
+
+                    # Notify user
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=(
+                            f"{trigger_label} *TRIGGERED!*\n"
+                            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            f"🎯 {pos['token']}\n"
+                            f"📥 Entry: *{entry:.4f} SOL*\n"
+                            f"📤 Sold: *{sold_sol:.4f} SOL*\n"
+                            f"{pnl_emoji} P/L: *{pnl_sol:+.4f} SOL* ({pnl_pct:+.1f}%)\n\n"
+                            f"🔗 [View on Solscan](https://solscan.io/tx/{tx_sig})"
+                        ),
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+
+                    logger.info(
+                        f"SL/TP {trigger_type} executed: user={chat_id} "
+                        f"token={pos['token']} entry={entry:.4f} exit={current_sol:.4f} "
+                        f"pnl={pnl_pct:+.1f}% tx={tx_sig}"
+                    )
+
+                    # Social proof: post trade result to channel (anonymous)
+                    if ALERT_CHANNEL_ID and pnl_sol != 0:
+                        try:
+                            win_streak = ""
+                            from core.persistence import get_win_rate
+                            wr = get_win_rate()
+                            if wr and wr.get("total", 0) >= 5:
+                                win_streak = f"\n📊 Platform Win Rate: *{wr.get('win_rate', 0)}%* ({wr.get('total', 0)} trades)"
+
+                            channel_text = (
+                                f"{'🟢 WIN' if pnl_sol > 0 else '🔴 LOSS'} — *{pos['token']}*\n"
+                                "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                                f"📥 Entry: {entry:.4f} SOL\n"
+                                f"📤 Exit: {sold_sol:.4f} SOL\n"
+                                f"{pnl_emoji} *P/L: {pnl_sol:+.4f} SOL ({pnl_pct:+.1f}%)*\n"
+                                f"⏱ Trigger: {trigger_label}\n"
+                                f"{win_streak}\n\n"
+                                f"🔗 [Verify on Solscan](https://solscan.io/tx/{tx_sig})\n\n"
+                                f"💡 _Get these signals free → @{BOT_USERNAME}_\n"
+                                "🔥 _Copy top traders → apexflash.pro_"
+                            )
+                            await context.bot.send_message(
+                                chat_id=ALERT_CHANNEL_ID,
+                                text=channel_text,
+                                parse_mode="Markdown",
+                                disable_web_page_preview=True,
+                            )
+                        except Exception as ch_err:
+                            logger.warning(f"Channel trade post failed: {ch_err}")
+                else:
+                    logger.warning(f"SL/TP sell failed for {pos['token']} user={chat_id}")
+
+                await asyncio.sleep(1)  # rate limit between sells
+
+            except Exception as sell_err:
+                logger.error(f"SL/TP sell error for {pos.get('token', '?')}: {sell_err}")
+                continue
+
+    except Exception as monitor_err:
+        logger.error(f"SL/TP monitor error: {monitor_err}")
+    finally:
+        _sl_tp_lock = False
+
+
+async def _cb_trade_buy(query, user, context):
+    """Buy token instructions."""
+    if not user.get("wallet_pubkey"):
+        await query.edit_message_text(
+            "\u26a0\ufe0f Create a wallet first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    text = (
+        "💰 *Buy Tokens*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "\n"
+        "Tap a token below to buy instantly!\n"
+        "Or paste any Solana mint address.\n"
+        "\n"
+        "🔥 *Popular tokens:*"
+    )
+
+    # Build clickable token buttons with fun icons — 1 tap = buy screen
+    TOKEN_ICONS = {
+        "USDC": "💵", "USDT": "💲", "JUP": "🪐", "BONK": "🐕",
+        "WIF": "🐶", "TRUMP": "🇺🇸", "RAY": "☀️", "ORCA": "🐋",
+        "PYTH": "🐍", "W": "🌀", "SOL": "◎",
+    }
+    token_buttons = []
+    shown = 0
+    for sym, info in COMMON_TOKENS.items():
+        if sym == "SOL":
+            continue
+        icon = TOKEN_ICONS.get(sym, "🪙")
+        token_buttons.append(
+            InlineKeyboardButton(f"{icon} {sym}", callback_data=f"hot_buy_{info['mint']}")
+        )
+        shown += 1
+        if shown >= 10:
+            break
+
+    # Arrange in rows of 2 for better readability
+    kb = []
+    for i in range(0, len(token_buttons), 2):
+        kb.append(token_buttons[i:i+2])
+
+    kb.append([InlineKeyboardButton("🔥 Trending Tokens", callback_data="cmd_hot_refresh")])
+    kb.append([InlineKeyboardButton("💼 My Wallet", callback_data="trade_wallet")])
+    kb.append([InlineKeyboardButton("💰 Trade Menu", callback_data="trade")])
+    kb.append([_back_main()[0]])
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+async def _cb_trade_sell(query, user, context):
+    """Show tokens available to sell."""
+    if not user.get("wallet_pubkey"):
+        await query.edit_message_text(
+            "\u26a0\ufe0f Create a wallet first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    await query.edit_message_text(
+        "\U0001f50d *Scanning tokens...*", parse_mode="Markdown",
+    )
+    
+    logger.info(f"Scanning tokens for user {query.from_user.id} ({user['wallet_pubkey']})")
+
+    tokens = await get_token_balances(user["wallet_pubkey"])
+
+    if not tokens:
+        pubkey = user["wallet_pubkey"]
+        short = pubkey[:20]
+        await query.edit_message_text(
+            "\U0001f4b8 *Sell Tokens*\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            "\n"
+            "\u26a0\ufe0f No tokens found in your bot wallet.\n\n"
+            f"\U0001f510 *Bot wallet:*\n`{pubkey}`\n\n"
+            "Steps to get tokens:\n"
+            "1\ufe0f\u20e3 Send SOL to the address above\n"
+            "2\ufe0f\u20e3 Use Trade \u2192 Buy to purchase a token\n"
+            "3\ufe0f\u20e3 Come back here to sell\n\n"
+            "_Your Phantom wallet is separate \u2014 the bot uses its own wallet._",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4b5 Buy Token", callback_data="trade_buy")],
+                [InlineKeyboardButton("\U0001f4cb Copy Address", callback_data=f"copy_addr_{pubkey}")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    text = (
+        "\U0001f4b8 *Sell Tokens*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "Select a token to sell:\n"
+    )
+
+    kb = []
+    for t in tokens[:8]:
+        token_name = None
+        for sym, info in COMMON_TOKENS.items():
+            if info["mint"] == t["mint"]:
+                token_name = sym
+                break
+        display = token_name or f"{t['mint'][:8]}..."
+        label = f"\U0001f534 {display} \u2014 {t['amount']:,.4f}"
+        kb.append([InlineKeyboardButton(label, callback_data=f"sell_tok_{t['mint']}")])
+
+    kb.append([InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")])
+    kb.append([_back_main()[0]])
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+# ══════════════════════════════════════════════
+# RISK MANAGEMENT — TERMS, CONFIRMATION, CHECKS
+# ══════════════════════════════════════════════
+
+async def _cb_accept_terms(query, user, context):
+    """User accepts risk disclaimer."""
+    user["accepted_terms"] = True
+    logger.info(f"Terms accepted: user {query.from_user.id}")
+    await query.edit_message_text(
+        "\u2705 *Terms Accepted*\n\n"
+        "You can now trade. Be careful and only risk what you can afford to lose.\n\n"
+        "Tap below to continue:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+            [_back_main()[0]],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_view_disclaimer(query, user, context):
+    """Show full risk disclaimer."""
+    kb = [[_back_main()[0]]]
+    if not user.get("accepted_terms"):
+        kb.insert(0, [InlineKeyboardButton(
+            "\u2705 I Understand & Accept", callback_data="accept_terms",
+        )])
+    await query.edit_message_text(
+        RISK_DISCLAIMER,
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+
+
+def _apply_test_cap(sol_amount: float) -> float:
+    """If TEST_TRADE_SOL is set, cap the trade to that micro amount.
+    Prevents expensive mistakes during testing. 0 = disabled."""
+    if TEST_TRADE_SOL > 0 and sol_amount > TEST_TRADE_SOL:
+        logger.warning(f"TEST MODE: capping trade {sol_amount} SOL → {TEST_TRADE_SOL} SOL")
+        return TEST_TRADE_SOL
+    return sol_amount
+
+
+def _check_trade_allowed(user: dict, sol_amount: float = 0) -> str | None:
+    """Pre-trade risk checks. Returns error message or None if OK."""
+    global trading_enabled
+
+    # Kill switch
+    if not trading_enabled:
+        return (
+            "\U0001f6d1 *Trading Paused*\n\n"
+            "Trading is temporarily disabled by admin.\n"
+            "Please try again later."
+        )
+
+    # Terms acceptance
+    if not user.get("accepted_terms"):
+        return None  # Handled separately with accept flow
+
+    # Daily trade limit
+    daily = _user_daily_trades(user)
+    if daily >= MAX_DAILY_TRADES:
+        return (
+            f"\u26a0\ufe0f *Daily Limit Reached*\n\n"
+            f"You've made {daily}/{MAX_DAILY_TRADES} trades today.\n"
+            f"Limits reset at midnight UTC."
+        )
+
+    # Max single trade size
+    if sol_amount > MAX_TRADE_SOL:
+        return (
+            f"\u26a0\ufe0f *Trade Too Large*\n\n"
+            f"Max single trade: *{MAX_TRADE_SOL} SOL*\n"
+            f"You tried: *{sol_amount} SOL*\n\n"
+            f"Split into smaller trades for safety."
+        )
+
+    return None
+
+
+async def _cb_preview_buy(query, user, context, data):
+    """Show trade confirmation with quote before executing."""
+    global trading_enabled
+
+    # Check terms first
+    if not user.get("accepted_terms"):
+        await query.edit_message_text(
+            RISK_DISCLAIMER,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "\u2705 I Understand & Accept", callback_data="accept_terms",
+                )],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    if not user.get("wallet_pubkey"):
+        await query.edit_message_text(
+            "\u26a0\ufe0f Create a wallet first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    target_mint = context.user_data.get("target_mint")
+    if not target_mint:
+        await query.edit_message_text(
+            "\u26a0\ufe0f No token selected. Paste a mint address first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4b5 Buy Token", callback_data="trade_buy")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Parse SOL amount (preset or custom)
+    amount_map = {"buy_01": 0.1, "buy_05": 0.5, "buy_1": 1.0, "buy_5": 5.0}
+    if data == "buy_custom_exec":
+        sol_amount = context.user_data.get("custom_sol_amount")
+    else:
+        sol_amount = amount_map.get(data)
+    if not sol_amount:
+        return
+
+    # Apply test cap (micro amounts for safe testing)
+    sol_amount = _apply_test_cap(sol_amount)
+
+    # Risk checks
+    error = _check_trade_allowed(user, sol_amount)
+    if error:
+        await query.edit_message_text(
+            error,
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Balance check (None = RPC unreachable)
+    balance = await get_sol_balance(user["wallet_pubkey"])
+    if balance is None:
+        await query.edit_message_text(
+            "⚠️ *RPC Temporarily Unavailable*\n\n"
+            "Could not check your balance. Please try again in a moment.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Retry", callback_data=query.data)],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+    needed = sol_amount + MIN_SOL_RESERVE
+    if balance < needed:
+        await query.edit_message_text(
+            f"\u26a0\ufe0f *Insufficient Balance*\n\n"
+            f"Balance: *{balance:.4f} SOL*\n"
+            f"Needed: *{sol_amount} SOL* + {MIN_SOL_RESERVE} reserve\n"
+            f"= *{needed:.4f} SOL*\n\n"
+            f"Deposit more SOL to your wallet first.\n\n"
+            f"\U0001f4b3 *Buy SOL on an exchange:*",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4bc My Wallet", callback_data="trade_wallet")],
+                [
+                    InlineKeyboardButton(
+                        "\U0001f525 Buy on MEXC (70% fee back)",
+                        url=AFFILIATE_LINKS["mexc"]["url"],
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "\U0001f525 Buy on Bitunix (50%)",
+                        url=AFFILIATE_LINKS["bitunix"]["url"],
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "\U0001f525 Buy on Gate.io (30%)",
+                        url=AFFILIATE_LINKS.get("gate", {}).get("url", "https://www.gate.com/signup/VFFHXVFDUG?ref_type=103"),
+                    ),
+                ],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Get quote for preview
+    await query.edit_message_text(
+        "\U0001f50d *Getting quote...*", parse_mode="Markdown",
+    )
+
+    total_lamports = int(sol_amount * 1_000_000_000)
+    swap_lamports, fee_lamports = calculate_fee(total_lamports)
+
+    quote = await get_quote(
+        input_mint=SOL_MINT,
+        output_mint=target_mint,
+        amount_raw=swap_lamports,
+        slippage_bps=DEFAULT_SLIPPAGE_BPS,
+    )
+
+    if not quote:
+        await query.edit_message_text(
+            "\u274c *Quote Failed*\n\nCould not get price. Token may be illiquid.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f504 Retry", callback_data=data)],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Store quote for execution (with timestamp for freshness check)
+    import time as _time
+    context.user_data["pending_quote"] = quote
+    context.user_data["pending_quote_ts"] = _time.time()
+    context.user_data["pending_quote_mint"] = target_mint
+    context.user_data["pending_buy_data"] = data
+
+    # Extract info for confirmation
+    token_name = context.user_data.get("target_name", "Token")
+    fee_sol = fee_lamports / 1_000_000_000
+    price_impact = _get_price_impact(quote)
+    out_amount = quote.get("outAmount", "?")
+
+    # Price impact warning
+    impact_warn = ""
+    if price_impact > PRICE_IMPACT_WARN_PCT:
+        impact_warn = (
+            f"\n\u26a0\ufe0f *HIGH PRICE IMPACT: {price_impact:.1f}%*\n"
+            f"You may receive significantly less than expected!\n"
+        )
+
+    # ── Token Safety Check (DexPaprika — free, no key) ──
+    safety_text = ""
+    try:
+        import aiohttp as _aio_safety
+        async with _aio_safety.ClientSession() as _ss:
+            async with _ss.get(
+                f"https://api.dexpaprika.com/networks/solana/tokens/{target_mint}/pools",
+                params={"limit": "5"},
+                timeout=_aio_safety.ClientTimeout(total=5),
+            ) as _sr:
+                if _sr.status == 200:
+                    _pools = await _sr.json()
+                    _pool_list = _pools.get("pools", _pools) if isinstance(_pools, dict) else _pools
+                    if isinstance(_pool_list, list) and _pool_list:
+                        _top = _pool_list[0]
+                        _liq = _top.get("liquidity_usd", 0) or 0
+                        _vol = _top.get("volume_usd", 0) or 0
+                        _age_str = _top.get("created_at", "")
+
+                        # Liquidity grade
+                        if _liq >= 100_000:
+                            _grade = "\U0001f7e2 HIGH"
+                        elif _liq >= 10_000:
+                            _grade = "\U0001f7e1 MEDIUM"
+                        else:
+                            _grade = "\U0001f534 LOW \u26a0\ufe0f"
+
+                        # Pool age
+                        _age_label = ""
+                        if _age_str:
+                            from datetime import datetime, timezone
+                            try:
+                                _created = datetime.fromisoformat(_age_str.replace("Z", "+00:00"))
+                                _days = (datetime.now(timezone.utc) - _created).days
+                                _age_label = f"{_days}d" if _days >= 1 else "<1d \u26a0\ufe0f"
+                            except Exception:
+                                _age_label = "?"
+
+                        safety_text = (
+                            f"\n\U0001f6e1 *Safety Check*\n"
+                            f"Liquidity: {_grade} (${_liq:,.0f})\n"
+                            f"24h Volume: ${_vol:,.0f}\n"
+                        )
+                        if _age_label:
+                            safety_text += f"Pool Age: {_age_label}\n"
+
+                        if _liq < 5_000:
+                            safety_text += "\u26a0\ufe0f _Very low liquidity — high rug risk!_\n"
+                        elif _liq < 10_000:
+                            safety_text += "\u26a0\ufe0f _Low liquidity — trade with caution_\n"
+                    else:
+                        safety_text = "\n\U0001f6e1 _No pool data found — unknown token, trade carefully!_\n"
+    except Exception:
+        pass  # Safety check is optional — never block a trade
+
+    # ── RugCheck Safety Score (Solana-specific, free) ──
+    try:
+        import aiohttp as _aio_rug
+        async with _aio_rug.ClientSession() as _rs:
+            async with _rs.get(
+                f"https://api.rugcheck.xyz/v1/tokens/{target_mint}/report/summary",
+                timeout=_aio_rug.ClientTimeout(total=4),
+            ) as _rr:
+                if _rr.status == 200:
+                    _rug = await _rr.json()
+                    _risk = _rug.get("score", 0)
+                    _risks = _rug.get("risks", [])
+                    if _risk > 0:
+                        if _risk >= 800:
+                            _rug_grade = "\U0001f7e2 SAFE"
+                        elif _risk >= 500:
+                            _rug_grade = "\U0001f7e1 CAUTION"
+                        else:
+                            _rug_grade = "\U0001f534 RISKY \u26a0\ufe0f"
+                        safety_text += f"RugCheck: {_rug_grade} ({_risk}/1000)\n"
+                        if _risks:
+                            top_risks = [r.get("name", "?") for r in _risks[:3]]
+                            safety_text += f"Flags: {', '.join(top_risks)}\n"
+    except Exception:
+        pass  # RugCheck is bonus — never block a trade
+
+    text = (
+        "\U0001f4cb *Trade Confirmation*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        f"\U0001f504 *BUY {token_name}*\n"
+        f"\U0001f4b5 Spend: *{sol_amount} SOL*\n"
+        f"\U0001f4b0 Fee: *{fee_sol:.4f} SOL* ({PLATFORM_FEE_PCT}%)\n"
+        f"\U0001f3af Slippage: max {DEFAULT_SLIPPAGE_BPS/100:.1f}%\n"
+        f"\U0001f4bc Balance: *{balance:.4f} SOL*\n"
+        f"{safety_text}"
+        f"{impact_warn}\n"
+        f"\u26a0\ufe0f _This trade is irreversible once confirmed._\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    kb = [
+        [
+            InlineKeyboardButton(
+                f"\u2705 Confirm Buy {sol_amount} SOL",
+                callback_data=f"confirm_{data}",
+            ),
+        ],
+        [InlineKeyboardButton("\u274c Cancel", callback_data="trade")],
+    ]
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+async def _cb_preview_sell(query, user, context, data):
+    """Show sell confirmation before executing."""
+    # Check terms first
+    if not user.get("accepted_terms"):
+        await query.edit_message_text(
+            RISK_DISCLAIMER,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "\u2705 I Understand & Accept", callback_data="accept_terms",
+                )],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Kill switch / limits
+    error = _check_trade_allowed(user)
+    if error:
+        await query.edit_message_text(
+            error,
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # data format: sel_25_{mint}, sel_50_{mint}, sel_100_{mint}
+    try:
+        _, pct_str, sell_mint = data.split("_", 2)
+        pct_label = int(pct_str)
+    except Exception:
+        await query.edit_message_text(
+            "\u26a0\ufe0f Invalid sell request.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Find token name
+    token_name = f"{sell_mint[:8]}..."
+    for sym, info in COMMON_TOKENS.items():
+        if info["mint"] == sell_mint:
+            token_name = sym
+            break
+
+    text = (
+        "\U0001f4cb *Sell Confirmation*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        f"\U0001f4b8 *SELL {pct_label}% of {token_name}*\n"
+        f"\U0001f4b0 Fee: {PLATFORM_FEE_PCT}%\n"
+        f"\U0001f3af Slippage: max {DEFAULT_SLIPPAGE_BPS/100:.1f}%\n"
+        f"\n"
+        f"\u26a0\ufe0f _This trade is irreversible once confirmed._\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    kb = [
+        [InlineKeyboardButton(
+            f"\u2705 Confirm Sell {pct_label}%",
+            callback_data=f"csel_{pct_str}_{sell_mint}",
+        )],
+        [InlineKeyboardButton("\u274c Cancel", callback_data="trade_sell")],
+    ]
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+async def _cb_sell_token_select(query, user, context, data):
+    """User tapped a token to sell. data = sell_tok_{mint}"""
+    mint = data[9:]  # strip "sell_tok_"
+    token_name = None
+    for sym, info in COMMON_TOKENS.items():
+        if info["mint"] == mint:
+            token_name = sym
+            break
+    display = token_name or f"{mint[:8]}..."
+
+    text = (
+        f"\U0001f534 *Sell {display}*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "How much do you want to sell?\n"
+    )
+    kb = [
+        [
+            InlineKeyboardButton("Sell 25%", callback_data=f"sel_25_{mint}"),
+            InlineKeyboardButton("Sell 50%", callback_data=f"sel_50_{mint}"),
+            InlineKeyboardButton("Sell 100%", callback_data=f"sel_100_{mint}"),
+        ],
+        [InlineKeyboardButton("\u25c0 Back", callback_data="trade_sell")],
+    ]
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+# ══════════════════════════════════════════════
+# LEADERBOARD
+# ══════════════════════════════════════════════
+
+async def _cb_leaderboard(query, user, context):
+    """Show anonymized leaderboard — top traders by volume."""
+    _reset_daily_stats()
+
+    # Gather all users with trades
+    traders = []
+    for uid, u in users.items():
+        trades = u.get("total_trades", 0)
+        vol = u.get("total_volume_usd", 0)
+        if trades > 0:
+            # Anonymize: show first 2 chars of username or "Trader"
+            uname = u.get("username", "")
+            anon = f"{uname[:2]}***" if uname and len(uname) >= 2 else f"Trader#{uid % 1000:03d}"
+            traders.append({
+                "name": anon,
+                "trades": trades,
+                "volume": vol,
+                "today": uid in platform_stats["active_traders_today"],
+            })
+
+    # Sort by volume (highest first)
+    traders.sort(key=lambda x: x["volume"], reverse=True)
+
+    text = (
+        "\U0001f3c6 *ApexFlash Leaderboard*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+    )
+
+    if not traders:
+        text += (
+            "No trades yet! Be the first.\n"
+            "\n"
+            "Paste a token address to start trading.\n"
+        )
+    else:
+        medals = ["\U0001f947", "\U0001f948", "\U0001f949"]
+        for i, t in enumerate(traders[:10]):
+            rank = medals[i] if i < 3 else f"{i+1}."
+            active = " \U0001f7e2" if t["today"] else ""
+            text += (
+                f"{rank} *{t['name']}*{active}\n"
+                f"   {t['trades']} trades | ${t['volume']:,.0f} volume\n"
+            )
+
+        # Platform totals
+        text += (
+            "\n"
+            f"\U0001f30d *Platform Total:*\n"
+            f"\u2022 {platform_stats['trades_total']} trades all-time\n"
+            f"\u2022 ${platform_stats['volume_total_usd']:,.0f} total volume\n"
+            f"\u2022 {len(traders)} active traders\n"
+        )
+
+    # Mandatory disclaimer
+    text += (
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\u26a0\ufe0f _Leaderboard shows volume, not profit._\n"
+        "_High volume does not mean positive returns._\n"
+        "_Past performance is not indicative of future results._\n"
+        "_Trading crypto involves substantial risk of loss._"
+    )
+
+    # User's own position
+    my_trades = user.get("total_trades", 0)
+    my_vol = user.get("total_volume_usd", 0)
+    my_refs = user.get("referral_count", 0)
+    my_earnings = user.get("referral_earnings", 0)
+    if my_trades > 0:
+        my_rank = sum(1 for t in traders if t["volume"] > my_vol) + 1
+        text += (
+            f"\n\n📊 *Your Stats:*\n"
+            f"• Rank: #{my_rank} of {len(traders)}\n"
+            f"• {my_trades} trades | ${my_vol:,.0f} volume\n"
+        )
+    if my_refs > 0:
+        text += f"• {my_refs} referrals | {my_earnings:.4f} SOL earned\n"
+
+    # Share link
+    try:
+        _bot_un = (await context.bot.get_me()).username
+        ref_link = f"https://t.me/{_bot_un}?start=ref_{query.from_user.id}"
+    except Exception:
+        ref_link = None
+
+    kb = [
+        [InlineKeyboardButton("🔥 Hot Tokens", callback_data="cmd_hot_refresh")],
+        [InlineKeyboardButton("💼 My Wallet", callback_data="trade_wallet")],
+        [InlineKeyboardButton("💰 Trade Menu", callback_data="trade")],
+    ]
+    if ref_link:
+        kb.insert(0, [InlineKeyboardButton("🤝 Invite & Earn 25%", url=f"https://t.me/share/url?url={ref_link}&text=Trade Solana tokens free on ApexFlash! 🚀")])
+    kb.append([_back_main()[0]])
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    )
+
+
+# ══════════════════════════════════════════════
+# TRADE EXECUTION (now requires confirmation)
+# ══════════════════════════════════════════════
+
+async def _cb_execute_buy(query, user, context, data):
+    """Execute a buy order. data = buy_01, buy_05, buy_1, buy_5"""
+    if not user.get("wallet_pubkey") or not user.get("wallet_secret_enc"):
+        await query.edit_message_text(
+            "\u26a0\ufe0f No wallet. Create one first!",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    target_mint = context.user_data.get("target_mint")
+    if not target_mint:
+        await query.edit_message_text(
+            "\u26a0\ufe0f No token selected. Paste a mint address first!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4b5 Buy Token", callback_data="trade_buy")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Parse SOL amount from callback data (preset or custom)
+    amount_map = {
+        "buy_01": 0.1,
+        "buy_05": 0.5,
+        "buy_1": 1.0,
+        "buy_5": 5.0,
+    }
+    if data == "buy_custom_exec":
+        sol_amount = context.user_data.get("custom_sol_amount")
+    else:
+        sol_amount = amount_map.get(data)
+    if not sol_amount:
+        await query.edit_message_text("\u26a0\ufe0f Invalid amount.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown")
+        return
+
+    await query.edit_message_text(
+        f"\u23f3 *Swapping {sol_amount} SOL...*\n"
+        f"Token: `{target_mint[:20]}...`\n"
+        f"Fee: {PLATFORM_FEE_PCT}%\n\n"
+        "_Getting best price via Jupiter..._",
+        parse_mode="Markdown",
+    )
+
+    # Calculate amounts (SOL has 9 decimals)
+    total_lamports = int(sol_amount * 1_000_000_000)
+    swap_lamports, fee_lamports = calculate_fee(total_lamports)
+
+    # Get quote (reuse cached if fresh enough — within 30 seconds)
+    import time as _time
+    cached_quote = context.user_data.get("pending_quote")
+    cached_ts = context.user_data.get("pending_quote_ts", 0)
+    cached_mint = context.user_data.get("pending_quote_mint")
+    if (cached_quote and cached_mint == target_mint
+            and (_time.time() - cached_ts) < 30):
+        quote = cached_quote
+        logger.info("Reusing cached quote (< 30s old)")
+    else:
+        quote = await get_quote(
+            input_mint=SOL_MINT,
+            output_mint=target_mint,
+            amount_raw=swap_lamports,
+            slippage_bps=DEFAULT_SLIPPAGE_BPS,
+        )
+
+    if not quote:
+        await query.edit_message_text(
+            "\u274c *Quote Failed*\n\n"
+            "Could not get a price for this token.\n"
+            "The token may be illiquid or invalid.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f504 Try Again", callback_data=data)],
+                [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Execute swap
+    try:
+        keypair = load_keypair(user["wallet_secret_enc"])
+    except Exception as e:
+        logger.error(f"Keypair load error: {e}")
+        await query.edit_message_text(
+            "\u274c Wallet error. Please contact support.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    tx_sig, swap_err = await execute_swap(keypair, quote)
+
+    if tx_sig:
+        user["total_trades"] = user.get("total_trades", 0) + 1
+        _increment_daily_trades(user)
+        prices = await get_crypto_prices()
+        sol_price = prices.get("SOL", 0)
+        usd_value = sol_amount * sol_price
+        user["total_volume_usd"] = user.get("total_volume_usd", 0) + usd_value
+        fee_sol = fee_lamports / 1_000_000_000
+
+        out_amount = quote.get("outAmount", "?")
+        token_name = context.user_data.get("target_name", "Token")
+
+        text = (
+            "\u2705 *Swap Successful!*\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            "\n"
+            f"\U0001f4b5 Spent: *{sol_amount} SOL*"
+        )
+        if usd_value > 0:
+            text += f" (${usd_value:,.2f})"
+        text += (
+            f"\n\U0001f4b0 Fee: *{fee_sol:.4f} SOL* ({PLATFORM_FEE_PCT}%)\n"
+            f"\U0001f3af Received: *{token_name}*\n"
+            "\n"
+            f"\U0001f517 [View on Solscan](https://solscan.io/tx/{tx_sig})\n"
+            "\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        )
+        # Generate viral share link: t.me/apexflash_bot?start=buy_MINT_ref_USERID
+        try:
+            _bot_un = (await context.bot.get_me()).username
+            share_link = f"https://t.me/{_bot_un}?start=buy_{target_mint}_ref_{query.from_user.id}"
+            share_text = f"I just bought ${token_name} on Solana via @{_bot_un}! 🚀 Trade it too:"
+            share_url = f"https://t.me/share/url?url={share_link}&text={share_text}"
+        except Exception:
+            share_url = None
+
+        kb = [
+            [InlineKeyboardButton("💼 View Wallet", callback_data="trade_wallet")],
+            [InlineKeyboardButton("💰 Trade Menu", callback_data="trade")],
+        ]
+        if share_url:
+            kb.insert(0, [InlineKeyboardButton("🔗 Share & Earn 25%", url=share_url)])
+        kb.append([_back_main()[0]])
+
+        logger.info(f"TRADE OK: user={query.from_user.id} buy={sol_amount}SOL token={target_mint[:12]} tx={tx_sig}")
+
+        # Analytics: track trade + funnel
+        track_token_trade(target_mint, sol_amount)
+        update_last_active(query.from_user.id)
+        if user.get("total_trades", 0) == 1:
+            track_funnel("first_trade")
+
+        # CRITICAL: Instant backup after trade (wallet balances changed)
+        try:
+            await _send_backup_to_admin(
+                context.bot,
+                f"\U0001f4b5 BUY trade backup | {sol_amount} SOL | user {query.from_user.id} | tx: {tx_sig[:16]}...",
+            )
+        except Exception:
+            pass
+
+        # ── Record trade for PnL + leaderboard ──
+        _record_trade(
+            query.from_user.id, user, "BUY", token_name, target_mint,
+            sol_amount, usd_value, tx_sig, entry_price_usd=sol_price,
+        )
+
+        # ── Fee collection (best-effort, async) ──
+        try:
+            # Collect platform fee → ApexFlash hot wallet
+            if FEE_COLLECT_WALLET and fee_lamports > 5000:
+                # Check if user was referred → split fee
+                referrer_id = user.get("referred_by", 0)
+                if referrer_id and referrer_id in users:
+                    referrer = users[referrer_id]
+                    from core.config import get_referral_pct
+                    ref_pct = get_referral_pct(referrer.get("referral_count", 0))
+                    referral_share = int(fee_lamports * ref_pct / 100)
+                    platform_share = fee_lamports - referral_share
+
+                    # Platform fee
+                    await collect_fee(keypair, platform_share, FEE_COLLECT_WALLET)
+                    # Referrer share → referrer's bot wallet
+                    if referrer.get("wallet_pubkey") and referral_share > 5000:
+                        ref_kp = keypair  # fee comes from trader's wallet
+                        await transfer_sol(ref_kp, referrer["wallet_pubkey"], referral_share)
+                        referrer["referral_earnings"] = referrer.get("referral_earnings", 0) + referral_share / 1e9
+                        logger.info(f"Referral fee ({ref_pct}%): {referral_share} lamports -> user {referrer_id}")
+                else:
+                    # No referrer — full fee to platform
+                    await collect_fee(keypair, fee_lamports, FEE_COLLECT_WALLET)
+        except Exception as fee_err:
+            logger.warning(f"Fee collection failed (non-fatal): {fee_err}")
+
+        # ── Social proof notifications (Discord + Telegram channel) ──
+        try:
+            uname = query.from_user.username or "Anon"
+            await notify_discord_trade(uname, "BUY", f"{sol_amount} SOL", token_name, tx_sig, fee_sol)
+            await notify_channel_trade(
+                context.bot, "BUY", sol_amount, token_name, tx_sig,
+                token_mint=target_mint, sol_price=sol_price,
+                fee_sol=fee_sol,
+            )
+        except Exception:
+            pass
+
+        # ── SL/TP prompt (send as separate message after the buy confirmation) ──
+        try:
+            token_decimals = context.user_data.get("target_decimals", 0)
+            await _ask_sl_tp(
+                chat_id=query.from_user.id,
+                user=user,
+                context=context,
+                bot=context.bot,
+                mint=target_mint,
+                token_name=token_name,
+                entry_sol=sol_amount,
+                token_amount_raw=str(out_amount),
+                token_decimals=token_decimals,
+                tx_sig=tx_sig,
+                signal_grade=context.user_data.get("target_signal_grade", ""),
+            )
+        except Exception as sltp_err:
+            logger.warning(f"SL/TP prompt failed (non-fatal): {sltp_err}")
+    else:
+        reason = swap_err or "Unknown error"
+        text = (
+            "\u274c *Swap Failed*\n\n"
+            f"Reason: `{reason}`\n\n"
+            "Check your balance and try again."
+        )
+        kb = [
+            [InlineKeyboardButton("\U0001f4bc My Wallet", callback_data="trade_wallet")],
+            [InlineKeyboardButton("\U0001f504 Retry", callback_data=data)],
+            [_back_main()[0]],
+        ]
+        logger.error(f"BUY FAILED: user={query.from_user.id} amount={sol_amount} token={target_mint[:12]} reason={reason}")
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown", disable_web_page_preview=True,
+    )
+
+
+async def _cb_execute_sell(query, user, context, data):
+    """Execute a sell order. data = csel_{pct}_{mint}"""
+    if not user.get("wallet_pubkey") or not user.get("wallet_secret_enc"):
+        await query.edit_message_text(
+            "\u26a0\ufe0f No wallet found.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Parse mint and pct from callback_data (no user_data dependency)
+    try:
+        _, pct_str, sell_mint = data.split("_", 2)
+        pct = int(pct_str) / 100.0
+    except Exception:
+        await query.edit_message_text(
+            "\u26a0\ufe0f Invalid sell request.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    await query.edit_message_text(
+        "\u23f3 *Fetching token balance...*", parse_mode="Markdown",
+    )
+
+    # Fresh balance fetch — always accurate even after bot restarts
+    tokens = await get_token_balances(user["wallet_pubkey"])
+    token_info = next((t for t in tokens if t["mint"] == sell_mint), None)
+    if not token_info:
+        await query.edit_message_text(
+            "\u26a0\ufe0f Token not found in wallet.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4b8 Sell Token", callback_data="trade_sell")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    raw_total = int(token_info["raw_amount"])
+    sell_raw = int(raw_total * pct)
+
+    if sell_raw <= 0:
+        await query.edit_message_text(
+            "\u26a0\ufe0f Nothing to sell (zero balance).",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    pct_label = f"{int(pct * 100)}%"
+    await query.edit_message_text(
+        f"\u23f3 *Selling {pct_label} of token...*\n\n"
+        "_Getting best price via Jupiter..._",
+        parse_mode="Markdown",
+    )
+
+    # Sell: swap ALL tokens → SOL, then collect fee from SOL output
+    # (No upfront token deduction — fee is taken from SOL received)
+
+    # Get quote (token → SOL)
+    quote = await get_quote(
+        input_mint=sell_mint,
+        output_mint=SOL_MINT,
+        amount_raw=sell_raw,
+        slippage_bps=DEFAULT_SLIPPAGE_BPS,
+    )
+
+    if not quote:
+        await query.edit_message_text(
+            "\u274c *Quote Failed*\n\nCould not get price.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f504 Retry", callback_data=data)],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    try:
+        keypair = load_keypair(user["wallet_secret_enc"])
+    except Exception as e:
+        logger.error(f"Keypair load error: {e}")
+        await query.edit_message_text(
+            "\u274c Wallet error.",
+            reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
+            parse_mode="Markdown",
+        )
+        return
+
+    tx_sig, swap_err = await execute_swap(keypair, quote)
+
+    if tx_sig:
+        user["total_trades"] = user.get("total_trades", 0) + 1
+        _increment_daily_trades(user)
+        out_lamports = int(quote.get("outAmount", 0))
+        sol_received = out_lamports / 1_000_000_000
+
+        text = (
+            "\u2705 *Sell Successful!*\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            "\n"
+            f"\U0001f4b8 Sold: *{pct_label}* of token\n"
+            f"\U0001f4b5 Received: ~*{sol_received:.4f} SOL*\n"
+            f"\U0001f4b0 Fee: {PLATFORM_FEE_PCT}%\n"
+            "\n"
+            f"\U0001f517 [View on Solscan](https://solscan.io/tx/{tx_sig})\n"
+            "\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        )
+        kb = [
+            [InlineKeyboardButton("\U0001f4bc View Wallet", callback_data="trade_wallet")],
+            [_back_main()[0]],
+        ]
+        logger.info(f"SELL OK: user={query.from_user.id} pct={pct_label} tx={tx_sig}")
+
+        # CRITICAL: Instant backup after trade (wallet balances changed)
+        try:
+            await _send_backup_to_admin(
+                context.bot,
+                f"\U0001f4b8 SELL trade backup | {pct_label} | user {query.from_user.id} | tx: {tx_sig[:16]}...",
+            )
+        except Exception:
+            pass
+
+        # ── Record trade for PnL + leaderboard ──
+        prices = await get_crypto_prices()
+        sol_price = prices.get("SOL", 0)
+        sell_usd_value = sol_received * sol_price
+        sell_token_name = "Token"
+        for sym, info in COMMON_TOKENS.items():
+            if info["mint"] == sell_mint:
+                sell_token_name = sym
+                break
+        _record_trade(
+            query.from_user.id, user, "SELL", sell_token_name, sell_mint,
+            sol_received, sell_usd_value, tx_sig,
+        )
+
+        # ── Fee collection from SOL received (best-effort) ──
+        try:
+            sol_fee_lamports = int(out_lamports * PLATFORM_FEE_PCT / 100)
+            if FEE_COLLECT_WALLET and sol_fee_lamports > 5000:
+                referrer_id = user.get("referred_by", 0)
+                if referrer_id and referrer_id in users:
+                    referrer = users[referrer_id]
+                    from core.config import get_referral_pct
+                    _ref_pct = get_referral_pct(referrer.get("referral_count", 0))
+                    ref_share_sol = int(sol_fee_lamports * _ref_pct / 100)
+                    platform_sol = sol_fee_lamports - ref_share_sol
+                    await collect_fee(keypair, platform_sol, FEE_COLLECT_WALLET)
+                    if referrer.get("wallet_pubkey") and ref_share_sol > 5000:
+                        await transfer_sol(keypair, referrer["wallet_pubkey"], ref_share_sol)
+                        referrer["referral_earnings"] = referrer.get("referral_earnings", 0) + ref_share_sol / 1e9
+                else:
+                    await collect_fee(keypair, sol_fee_lamports, FEE_COLLECT_WALLET)
+        except Exception as fee_err:
+            logger.warning(f"Sell fee collection failed (non-fatal): {fee_err}")
+
+        # ── Social proof notifications (Discord + Telegram channel) ──
+        try:
+            uname = query.from_user.username or "Anon"
+            await notify_discord_trade(uname, "SELL", f"{pct_label}", sell_token_name, tx_sig, sol_received * PLATFORM_FEE_PCT / 100)
+            await notify_channel_trade(
+                context.bot, "SELL", sol_received, sell_token_name, tx_sig,
+                token_mint=sell_mint, sol_price=sol_price,
+                fee_sol=sol_received * PLATFORM_FEE_PCT / 100,
+            )
+        except Exception:
+            pass
+
+        # ── CRITICAL: Sync active_positions after manual sell ──
+        # Without this, SL monitor keeps monitoring a sold position and
+        # tries to sell tokens that no longer exist.
+        try:
+            positions = user.get("active_positions", [])
+            updated_positions = []
+            for p in positions:
+                if p.get("mint") != sell_mint:
+                    updated_positions.append(p)  # different token — keep
+                    continue
+                # Track P&L for win rate KPI (manual sell)
+                try:
+                    entry_sol = float(p.get("entry_sol", 0))
+                    if entry_sol > 0 and pct >= 1.0:
+                        pnl_sol = sol_received - entry_sol
+                        pnl_pct = (pnl_sol / entry_sol) * 100
+                        from core.persistence import record_trade_result
+                        record_trade_result(
+                            query.from_user.id, sell_token_name, pnl_pct, pnl_sol,
+                            signal_grade=p.get("signal_grade", ""),
+                        )
+                except Exception:
+                    pass
+                if pct >= 1.0:
+                    # 100% sell → remove position entirely
+                    logger.info(f"Position removed after 100% manual sell: user={query.from_user.id} token={sell_token_name}")
+                else:
+                    # Partial sell → update remaining raw amount
+                    original_raw = int(p.get("token_amount_raw", 0))
+                    remaining_raw = original_raw - sell_raw
+                    if remaining_raw > 0:
+                        p["token_amount_raw"] = str(remaining_raw)
+                        updated_positions.append(p)
+                        logger.info(f"Position updated after {pct_label} sell: remaining_raw={remaining_raw}")
+                    else:
+                        logger.info(f"Position removed (0 remaining): user={query.from_user.id} token={sell_token_name}")
+            user["active_positions"] = updated_positions
+            _persist()
+        except Exception as pos_err:
+            logger.warning(f"Position sync after sell failed (non-fatal): {pos_err}")
+
+    else:
+        reason = swap_err or "Unknown error"
+        text = (
+            "\u274c *Sell Failed*\n\n"
+            f"Reason: `{reason}`\n\n"
+            "Try again or check your balance."
+        )
+        kb = [
+            [InlineKeyboardButton("\U0001f504 Retry", callback_data=data)],
+            [_back_main()[0]],
+        ]
+        logger.error(f"SELL FAILED: user={query.from_user.id} reason={reason}")
+
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown", disable_web_page_preview=True,
+    )
+
+
+async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Detect Solana token addresses or license keys pasted in chat.
+    GUARANTEE: user ALWAYS gets a response if text looks like a SOL address."""
+    if not update.message or not update.message.text:
+        return
+    text = update.message.text.strip()
+    if not text:
+        return
+
+    # ALWAYS log for admin visibility
+    uid = getattr(update.effective_user, 'id', 0)
+    is_sol_address = SOL_ADDR_RE.match(text)
+    logger.info(f"HANDLER_ENTRY: user={uid} len={len(text)} is_addr={bool(is_sol_address)} text={text[:25]}")
+
+    # Admin: send visible confirmation that handler fires
+    if uid == 7851853521 and (is_sol_address or len(text) > 20):
+        try:
+            await update.message.reply_text(
+                f"Processing `{text[:20]}...`",
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass
+
+    try:
+        await _handle_token_address_inner(update, context, cleaned_text=text)
+    except Exception as e:
+        logger.error(f"handle_token_address CRASH: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        try:
+            await update.message.reply_text(
+                f"⚠️ Error processing: {type(e).__name__}\n\nPlease try again.",
+                parse_mode=None,
+            )
+        except Exception:
+            pass
+
+
+async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, cleaned_text: str = "") -> None:
+    """Inner handler — separated so crashes are caught and reported."""
+    if not update.message:
+        return
+    # Use cleaned text from wrapper (prefix-matched, dots stripped) or fall back to raw
+    text = cleaned_text or (update.message.text or "").strip()
+    if not text:
+        return
+
+    # FIX: Strip trailing dots/ellipsis from truncated addresses (popular token list copies)
+    text = text.rstrip('.').rstrip(' ').rstrip('\u2026')  # Remove "..." and "…"
+
+    # FIX: If text looks like start of a known token address, expand to full address
+    if len(text) >= 10 and not SOL_ADDR_RE.match(text):
+        for sym, info in COMMON_TOKENS.items():
+            if info["mint"].startswith(text):
+                logger.info(f"Prefix match: {text[:15]}... -> {sym} ({info['mint'][:15]}...)")
+                text = info["mint"]
+                break
+
+    user_id = update.effective_user.id
+    user = get_user(user_id)
+
+    # Log entry for debugging
+    if user_id == 7851853521 and SOL_ADDR_RE.match(text):
+        logger.info(f"[ADMIN-DEBUG] Handler fired. Text={text[:20]}... awaiting={user.get('awaiting_input','')} ctx_await={context.user_data.get('awaiting_input','')}")
+
+    # ── Handle license key input (when awaiting) ──
+    if user.get("awaiting_input") == "license_key":
+        # Gumroad keys look like: XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX
+        if re.match(r'^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{8}-[A-Fa-f0-9]{8}-[A-Fa-f0-9]{8}$', text):
+            await _verify_and_activate(update.effective_chat.id, user_id, user, text, context)
+            return
+        else:
+            user["awaiting_input"] = ""
+            await update.message.reply_text(
+                "\u26a0\ufe0f That doesn't look like a valid license key.\n\n"
+                "Format: `XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX`\n\n"
+                "Try again: /activate",
+                parse_mode="Markdown",
+            )
+            return
+
+    # ── Handle custom buy amount input ──
+    if context.user_data.get("awaiting_input") == "custom_buy_amount":
+        context.user_data["awaiting_input"] = None
+        try:
+            sol_amount = float(text.replace(",", "."))
+        except ValueError:
+            await update.message.reply_text(
+                "\u26a0\ufe0f Invalid number. Please type a valid amount (e.g. `0.25` or `3.5`).",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("\u274c Cancel", callback_data="trade_buy")],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+        if sol_amount < 0.01:
+            await update.message.reply_text(
+                f"\u26a0\ufe0f Minimum buy is *0.01 SOL*.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("\u270f\ufe0f Try Again", callback_data="buy_custom")],
+                    [InlineKeyboardButton("\u274c Cancel", callback_data="trade_buy")],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+        if sol_amount > MAX_TRADE_SOL:
+            await update.message.reply_text(
+                f"\u26a0\ufe0f Maximum single trade is *{MAX_TRADE_SOL} SOL*.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("\u270f\ufe0f Try Again", callback_data="buy_custom")],
+                    [InlineKeyboardButton("\u274c Cancel", callback_data="trade_buy")],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+        # Store custom amount and trigger preview
+        context.user_data["custom_sol_amount"] = sol_amount
+        # Show buy buttons with the custom amount
+        token_name = context.user_data.get("target_name", "Token")
+        target_mint = context.user_data.get("target_mint")
+        if not target_mint:
+            await update.message.reply_text(
+                "\u26a0\ufe0f No token selected. Paste a mint address first!",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("\U0001f4b5 Buy Token", callback_data="trade_buy")],
+                    [_back_main()[0]],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+        await update.message.reply_text(
+            f"\u2705 Custom amount: *{sol_amount} SOL*\n\n"
+            f"Token: *{token_name}*\n\n"
+            "Tap below to preview the trade:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"\U0001f4b5 Preview Buy {sol_amount} SOL", callback_data="buy_custom_exec")],
+                [InlineKeyboardButton("\u270f\ufe0f Change Amount", callback_data="buy_custom")],
+                [InlineKeyboardButton("\u274c Cancel", callback_data="trade_buy")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # ── Handle withdraw address input (when awaiting) ──
+    if context.user_data.get("awaiting_input") == "withdraw_address":
+        context.user_data["awaiting_input"] = None
+        # Validate as SOL address
+        if not SOL_ADDR_RE.match(text):
+            await update.message.reply_text(
+                "⚠️ That doesn't look like a valid Solana address.\n\n"
+                "Please send a valid SOL address (32-44 characters, base58).",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("❌ Cancel", callback_data="trade_wallet")],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+        # Block self-transfer
+        if text == user.get("wallet_pubkey"):
+            await update.message.reply_text(
+                "⚠️ Cannot withdraw to your own bot wallet.\n\n"
+                "Send a *different* SOL address (e.g. your Trust Wallet, Phantom, exchange).",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("❌ Cancel", callback_data="trade_wallet")],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+
+        # Store destination and show amount options
+        context.user_data["withdraw_dest"] = text
+        sol_bal = await get_sol_balance(user["wallet_pubkey"])
+        available = sol_bal - MIN_SOL_RESERVE
+        if available <= 0:
+            context.user_data.pop("withdraw_dest", None)
+            await update.message.reply_text(
+                "⚠️ *Insufficient balance* — cannot withdraw.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+
+        dest_short = f"{text[:6]}...{text[-4:]}"
+        await update.message.reply_text(
+            "📤 *Withdraw SOL*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📤 To: `{dest_short}`\n"
+            f"◎ Available: *{available:.4f} SOL*\n\n"
+            "💰 *How much do you want to send?*",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("25%", callback_data="withdraw_amt_25"),
+                    InlineKeyboardButton("50%", callback_data="withdraw_amt_50"),
+                    InlineKeyboardButton("100%", callback_data="withdraw_amt_100"),
+                ],
+                [InlineKeyboardButton("❌ Cancel", callback_data="withdraw_cancel")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Check if it looks like a Solana address
+    if not SOL_ADDR_RE.match(text):
+        # Not an address — try token search by name/symbol (e.g. "PEPE", "bonk")
+        if len(text) >= 2 and len(text) <= 20 and text.replace(" ", "").isalnum():
+            results = await search_token(text)
+            if results:
+                msg = f"\U0001f50d *Search: {text}*\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+                kb_rows = []
+                for t in results[:5]:
+                    sym = t.get("symbol", "???")
+                    name = t.get("name", "Unknown")
+                    mint = t.get("id") or t.get("address", "")
+                    msg += f"\u2022 *{sym}* — {name}\n  `{mint}`\n\n"
+                    kb_rows.append([InlineKeyboardButton(
+                        f"{sym} — {name[:20]}", callback_data=f"search_{mint[:40]}"
+                    )])
+                msg += "_Tap a token or paste the mint address to buy!_"
+                kb_rows.append([InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")])
+                await update.message.reply_text(
+                    msg, reply_markup=InlineKeyboardMarkup(kb_rows),
+                    parse_mode="Markdown",
+                )
+                return
+        return
+
+    if not user.get("wallet_pubkey"):
+        await update.message.reply_text(
+            "\U0001f4b0 That looks like a Solana token!\n\n"
+            "Create a wallet first to start trading:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Look up token info
+    await update.message.reply_text(
+        f"\U0001f50d Looking up token `{text[:12]}...`",
+        parse_mode="Markdown",
+    )
+
+    token_info = await get_token_info(text)
+
+    if token_info and token_info.get("symbol"):
+        name = token_info.get("name", "Unknown")
+        symbol = token_info.get("symbol", "???")
+        decimals = token_info.get("decimals", 0)
+
+        # Analytics: track token lookup
+        track_token_lookup(text, symbol)
+        update_last_active(user_id)
+
+        # Store target mint for buy callbacks
+        context.user_data["target_mint"] = text
+        context.user_data["target_name"] = symbol
+        context.user_data["target_decimals"] = decimals
+
+        # Get SOL balance for display (None = RPC down)
+        sol_bal = await get_sol_balance(user["wallet_pubkey"])
+        if sol_bal is None:
+            sol_bal = 0.0
+            bal_display = "⚠️ RPC busy — balance unavailable"
+        else:
+            prices = await get_crypto_prices()
+            sol_price = prices.get("SOL", 0)
+            bal_display = f"💼 Your SOL: *{sol_bal:.4f}*"
+            if sol_price:
+                bal_display += f" (${sol_bal * sol_price:,.2f})"
+
+        msg = (
+            f"\U0001f3af *{name}* ({symbol})\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            "\n"
+            f"\U0001f517 Mint: `{text}`\n"
+            f"\U0001f522 Decimals: {decimals}\n"
+            "\n"
+            f"{bal_display}"
+        )
+        msg += (
+            f"\n\U0001f4b0 Fee: *{PLATFORM_FEE_PCT}%* per trade\n"
+            "\n"
+            "\u2b07\ufe0f *Choose buy amount:*"
+        )
+
+        kb = [
+            [
+                InlineKeyboardButton("0.1 SOL", callback_data="buy_01"),
+                InlineKeyboardButton("0.5 SOL", callback_data="buy_05"),
+            ],
+            [
+                InlineKeyboardButton("1 SOL", callback_data="buy_1"),
+                InlineKeyboardButton("5 SOL", callback_data="buy_5"),
+            ],
+            [InlineKeyboardButton("\u270f\ufe0f Custom Amount", callback_data="buy_custom")],
+            [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+            [_back_main()[0]],
+        ]
+
+        # Try to send chart image first (non-blocking — if fails, just show text)
+        try:
+            chart_url = await get_token_chart_url(text, hours=24)
+            if chart_url:
+                await update.message.reply_photo(
+                    photo=chart_url,
+                    caption=msg,
+                    reply_markup=InlineKeyboardMarkup(kb),
+                    parse_mode="Markdown",
+                )
+            else:
+                await update.message.reply_text(
+                    msg, reply_markup=InlineKeyboardMarkup(kb),
+                    parse_mode="Markdown",
+                )
+        except Exception as chart_err:
+            logger.warning(f"Chart send failed: {chart_err}, falling back to text")
+            await update.message.reply_text(
+                msg, reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode="Markdown",
+            )
+    else:
+        # Also try to store it for selling (user might own this token)
+        context.user_data["target_mint"] = text
+        context.user_data["target_name"] = "Unknown"
+
+        await update.message.reply_text(
+            f"\u26a0\ufe0f Token `{text[:20]}...` not found on Jupiter.\n\n"
+            "It may be a very new or illiquid token.\n"
+            "Try again or paste a different address.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f4b5 Buy Anyway (0.1 SOL)", callback_data="buy_01")],
+                [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
+            ]),
+            parse_mode="Markdown",
+        )
+
+
+# ══════════════════════════════════════════════
+# TRADE SECTION (Copy Trade + DCA via MIZAR)
+# ══════════════════════════════════════════════
+
+async def _cb_portfolio(query, user, context):
+    """Show portfolio: SOL balance + token holdings + trade stats."""
+    update_last_active(query.from_user.id)
+
+    if not user.get("wallet_pubkey"):
+        await query.edit_message_text(
+            "\U0001f4bc *Portfolio*\n\n"
+            "Create a wallet first to start tracking your trades!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
+                [_back_main()[0]],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    await query.edit_message_text("\U0001f4bc *Loading portfolio...*", parse_mode="Markdown")
+
+    # Get SOL balance
+    sol_bal = await get_sol_balance(user["wallet_pubkey"])
+    if sol_bal is None:
+        sol_bal = 0.0
+    prices = await get_crypto_prices()
+    sol_price = prices.get("SOL", 0)
+    sol_usd = sol_bal * sol_price
+
+    # Get token holdings
+    tokens = await get_token_balances(user["wallet_pubkey"])
+
+    # Trade stats
+    total_trades = user.get("total_trades", 0)
+    total_vol = user.get("total_volume_usd", 0)
+    referral_earnings = user.get("referral_earnings", 0)
+
+    # Active positions (SL/TP)
+    positions = user.get("active_positions", [])
+
+    # Build message
+    msg = (
+        "\U0001f4bc *Your Portfolio*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        f"\u25ce SOL: *{sol_bal:.4f}*"
+    )
+    if sol_usd > 0:
+        msg += f" (${sol_usd:,.2f})"
+    msg += "\n"
+
+    if tokens:
+        msg += "\n\U0001f4b0 *Token Holdings:*\n"
+        for t in tokens[:10]:
+            # Try to find symbol
+            symbol = "?"
+            for sym, info in COMMON_TOKENS.items():
+                if info["mint"] == t["mint"]:
+                    symbol = sym
+                    break
+            if symbol == "?":
+                symbol = f"{t['mint'][:6]}..."
+            msg += f"  \u2022 *{symbol}:* {t['amount']:,.4f}\n"
+    else:
+        msg += "\n\U0001f4ad No tokens — all SOL\n"
+
+    if positions:
+        msg += f"\n\U0001f6e1\ufe0f *Active Positions:* {len(positions)}\n"
+        for p in positions[:5]:
+            sl = p.get("sl_pct", 0)
+            tp = p.get("tp_pct", 0)
+            entry = p.get("entry_sol", 0)
+            # Try to get live value
+            try:
+                raw_amt = int(p.get("token_amount_raw", 0))
+                if raw_amt > 0 and entry > 0:
+                    live_quote = await get_quote(
+                        input_mint=p.get("mint", ""),
+                        output_mint="So11111111111111111111111111111111111111112",
+                        amount_raw=raw_amt,
+                        slippage_bps=300,
+                    )
+                    if live_quote and live_quote.get("outAmount"):
+                        current_val = int(live_quote["outAmount"]) / 1_000_000_000
+                        pnl = current_val - entry
+                        pnl_pct = (pnl / entry * 100) if entry > 0 else 0
+                        emoji = "\U0001f7e2" if pnl >= 0 else "\U0001f534"
+                        pnl_sign = "+" if pnl >= 0 else ""
+                        msg += (
+                            f"  {emoji} *{p.get('token', '?')}*\n"
+                            f"     Entry: {entry:.4f} → Now: {current_val:.4f} SOL\n"
+                            f"     P/L: *{pnl_sign}{pnl:.4f} SOL ({pnl_sign}{pnl_pct:.1f}%)*\n"
+                            f"     SL: -{sl}% | TP: +{tp}%\n"
+                        )
+                        continue
+            except Exception:
+                pass
+            msg += f"  \u2022 {p.get('token', '?')} | Entry: {entry:.4f} SOL | SL: -{sl}% | TP: +{tp}%\n"
+
+    msg += (
+        f"\n\U0001f4ca *Stats:*\n"
+        f"  \u2022 Trades: *{total_trades}*\n"
+        f"  \u2022 Volume: *${total_vol:,.2f}*\n"
+    )
+    if referral_earnings > 0:
+        msg += f"  \u2022 Referral earnings: *{referral_earnings:.4f} SOL*\n"
+
+    msg += (
+        f"  \u2022 Tier: *{user.get('tier', 'free').title()}*\n"
+        "\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+
+    # Build keyboard
+    buy_btn = InlineKeyboardButton("\U0001f4b5 Buy", callback_data="trade_buy")
+    sell_btn = InlineKeyboardButton("\U0001f4b8 Sell", callback_data="trade_sell")
+    
+    # Kaizen: Show Sell button only if there are active positions
+    trade_row = [buy_btn]
+    if positions:
+        trade_row.append(sell_btn)
+
+    kb = [
+        trade_row,
+        [InlineKeyboardButton("\U0001f6e1\ufe0f Positions (SL/TP)", callback_data="positions")],
+        [InlineKeyboardButton("\U0001f504 Refresh", callback_data="portfolio")],
+        [_back_main()[0]],
+    ]
+
+    await query.edit_message_text(
+        msg, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
     )
 
 
@@ -1894,27 +4354,43 @@ async def _cb_copy_trade(query, user, context):
         text = (
             "\U0001f4c8 *Copy Trading \u2014 Live Leaderboard*\n"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-            "\n"
-            "Automated copy trading for any SOL token.\n"
-            "Powered by MIZAR.\n"
-            "\n"
-            "1. Choose a top trader to follow\n"
-            "2. Set your risk parameters\n"
-            "3. Watch the profits roll in 🚀\n"
-            "\n"
-            "\U0001f4cb *Popular Strategies:*\n"
-            "\u2022 BTC Weekly DCA \u2014 Best for long-term\n"
-            "\u2022 ETH Daily Micro \u2014 Smooth entry\n"
-            "\u2022 SOL Dip Buyer \u2014 Buy the dips\n"
-            "\n"
-            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-            "Set up your strategy on MIZAR:"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
         )
+
+        if top_bots:
+            for i, bot in enumerate(top_bots[:5], 1):
+                name = bot.get("name", f"Bot #{i}")[:20]
+                pnl = bot.get("pnl_30d", bot.get("pnl", 0))
+                win_rate = bot.get("win_rate", 0)
+                trades = bot.get("total_trades", 0)
+                copiers = bot.get("copiers", bot.get("followers", 0))
+
+                pnl_val = float(pnl) if pnl else 0
+                wr_val = float(win_rate) if win_rate else 0
+                pnl_emoji = "\U0001f7e2" if pnl_val > 0 else "\U0001f534"
+
+                text += (
+                    f"{i}. *{name}*\n"
+                    f"   {pnl_emoji} P/L 30d: {pnl_val:+.1f}% | "
+                    f"WR: {wr_val:.0f}% | "
+                    f"Copiers: {copiers}\n\n"
+                )
+
+            text += "\U0001f4a1 Click below to start copying the best traders:"
+        else:
+            text += (
+                "Copy profitable traders automatically.\n"
+                "Powered by MIZAR.\n\n"
+                "\U0001f3c6 *How it works:*\n"
+                "1\ufe0f\u20e3 Browse top-performing traders\n"
+                "2\ufe0f\u20e3 Connect your exchange API\n"
+                "3\ufe0f\u20e3 Set your risk & position size\n"
+                "4\ufe0f\u20e3 Trades are copied automatically"
+            )
+
         kb = [
-            [InlineKeyboardButton("\U0001f517 Open MIZAR Platform", url=MIZAR_REFERRAL_URL)],
-            [InlineKeyboardButton("\U0001f4d6 How Copy Trading Works", callback_data="help_copy")],
+            [InlineKeyboardButton("\U0001f680 Start Copying Top Traders", url=MIZAR_REFERRAL_URL)],
+            [InlineKeyboardButton("\U0001f4d6 How It Works", callback_data="help_copy")],
             [_back_main()[0]],
         ]
 
@@ -2007,7 +4483,7 @@ async def _cb_exchanges(query, user, context):
     ]
 
     # Show featured exchanges preview
-    text += "\U0001f525 *Top Exchange Deals:*\n"
+    text += "\n\U0001f525 *Top Exchange Deals:*\n"
     for key, aff in AFFILIATE_LINKS.items():
         if aff.get("featured"):
             text += f"\u2022 *{aff['name']}* \u2014 {aff['commission']} rebate\n"
@@ -2054,8 +4530,7 @@ async def _cb_aff_exchanges(query, user, context):
     # Buttons
     featured_btns = [
         InlineKeyboardButton(f"\U0001f525 {v['name']}", url=v["url"])
-        for k, v in AFFILIATE_LINKS.items()
-        if v.get("featured") and v.get("url", "").find("YOUR_REF") == -1
+        for k, v in AFFILIATE_LINKS.items() if v.get("featured") and v.get("url", "").find("YOUR_REF") == -1
     ]
     other_btns = [
         InlineKeyboardButton(v["name"], url=v["url"])
@@ -2180,7 +4655,7 @@ async def _cb_premium(query, user, context):
         "\u2022 All chains (ETH, SOL, BSC, ARB)\n"
         "\u2022 100 tracked wallets\n"
         "\u2022 AI-powered signals\n"
-        "\u2022 Copy Trading & DCA Bot\n"
+        "\u2022 Copy Trading + DCA Bot\n"
         "\u2022 Custom alert thresholds\n"
         "\u2022 1-on-1 onboarding call\n"
         "\n"
@@ -2378,8 +4853,7 @@ async def _execute_sol_payment(query, user, context, tier: str, price_sol: float
         text = (
             f"\u2705 *Payment Successful!*\n"
             f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-            f"\n"
+            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
             f"Plan: *{tier_info['emoji']} {tier_info['name']}*\n"
             f"Paid: *{price_sol} SOL*\n"
             f"Active for: *30 days*\n\n"
@@ -2408,7 +4882,7 @@ async def _execute_sol_payment(query, user, context, tier: str, price_sol: float
         # Social proof
         try:
             uname = query.from_user.username or "Anon"
-            await notify_discord_trade(uname, "UPGRADE", "Gumroad License", f"{tier_info['name']} Plan", "", 0)
+            await notify_discord_trade(uname, "UPGRADE", f"{price_sol} SOL", f"{tier_info['name']} Plan", "", price_sol)
         except Exception:
             pass
 
@@ -2456,7 +4930,8 @@ async def _cb_referral(query, user, context):
     text = (
         "\U0001f91d *Referral Program*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
         "Earn *25% of every trade fee* from\n"
         "friends you invite! Passive income\n"
         "for life \u2014 every trade they make,\n"
@@ -2469,8 +4944,22 @@ async def _cb_referral(query, user, context):
         "4\ufe0f\u20e3 Earnings sent to your bot wallet\n"
         "\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"\U0001f465 Referrals: *{ref_count}*\n"
+        f"\U0001f4b5 Earned: *{earnings_sol:.6f} SOL*"
+    )
+    if earnings_usd > 0.01:
+        text += f" (${earnings_usd:,.2f})"
+    text += (
+        "\n\n\U0001f517 *Your link:*\n"
+        f"{ref_link}\n"
+        "\n"
+        "_Forward this link to your friends!_\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
     )
+
     kb = [
         [InlineKeyboardButton("\U0001f4cb Copy Link", callback_data="referral_link")],
         [InlineKeyboardButton("\U0001f4ca Referral Stats", callback_data="referral_stats")],
@@ -2521,8 +5010,6 @@ async def _cb_referral_stats(query, user, context):
     """Detailed referral statistics."""
     from core.config import get_referral_pct
     uid = query.from_user.id
-    user = get_user(uid)
-    
     ref_count = sum(1 for u in users.values() if u.get("referred_by") == uid)
     user["referral_count"] = ref_count
 
@@ -2578,7 +5065,10 @@ async def _cb_referral_stats(query, user, context):
         [InlineKeyboardButton("\U0001f519 Back to Referral", callback_data="referral")],
         [_back_main()[0]],
     ]
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
 
 
 # ══════════════════════════════════════════════
@@ -2639,31 +5129,191 @@ async def _cb_help(query, user, context):
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\n"
-        "\U0001f40b *Whale Alerts* \u2014 Track large crypto transfers\n"
-        "\U0001f4c8 *Copy Trade* \u2014 Copy top traders (Pro+)\n"
-        "\U0001f916 *DCA Bot* \u2014 Automated buying (Pro+)\n"
-        "\U0001f4b1 *Exchanges* \u2014 Fee rebates up to 70%\n"
-        "\U0001f48e *Premium* \u2014 From $9.99/mo\n"
+        "\U0001f40b *Whale Alerts* \u2014 Track large crypto\n"
+        "   transfers in real-time\n"
         "\n"
-        "Use /start for the main menu."
+        "\U0001f4c8 *Copy Trade* \u2014 Automatically copy\n"
+        "   profitable traders (Pro+)\n"
+        "\n"
+        "\U0001f916 *DCA Bot* \u2014 Set up automated\n"
+        "   buying strategies (Pro+)\n"
+        "\n"
+        "\U0001f4b1 *Exchanges* \u2014 Partner deals with\n"
+        "   up to 70% fee rebates\n"
+        "\n"
+        "\U0001f48e *Premium* \u2014 Unlock all features\n"
+        "   starting at $9.99/mo\n"
+        "\n"
+        "*Commands:*\n"
+        "/start \u2014 Main menu\n"
+        "/activate \u2014 Activate Gumroad license\n"
+        "/myid \u2014 Show your Telegram ID\n"
+        "/help \u2014 This help page\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
 
-
-async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show user's Telegram ID (needed for admin setup)."""
-    uid = update.effective_user.id
-    await update.message.reply_text(
-        f"\U0001f194 Your Telegram ID: `{uid}`\n\n"
-        "_Send this to the bot admin to get admin access._",
-        parse_mode="Markdown",
+    kb = [
+        [InlineKeyboardButton("\u2753 FAQ", callback_data="help_faq")],
+        [
+            InlineKeyboardButton("\U0001f310 Website", url=WEBSITE_URL),
+            InlineKeyboardButton("\U0001f4ac Support", url=SUPPORT_URL),
+        ],
+        [_back_main()[0]],
+    ]
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown", disable_web_page_preview=True,
     )
 
 
-async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _cb_help_faq(query, user, context):
+    """Frequently asked questions."""
+    text = (
+        "\u2753 *FAQ*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "*Q: What are whale alerts?*\n"
+        "Notifications when large wallets move\n"
+        "big amounts of crypto. Often signals\n"
+        "upcoming price movements.\n"
+        "\n"
+        "*Q: How does copy trading work?*\n"
+        "Connect your exchange and automatically\n"
+        "mirror the trades of top-performing\n"
+        "traders via MIZAR.\n"
+        "\n"
+        "*Q: What is DCA?*\n"
+        "Dollar-Cost Averaging \u2014 buying a fixed\n"
+        "amount on a regular schedule to reduce\n"
+        "volatility risk.\n"
+        "\n"
+        "*Q: How do I earn fee rebates?*\n"
+        "Sign up for exchanges through our links\n"
+        "in \U0001f4b1 Exchanges. You get up to 70%\n"
+        "of your trading fees back.\n"
+        "\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+    )
+    kb = [
+        [InlineKeyboardButton("\U0001f4ac Contact Support", url=SUPPORT_URL)],
+        [InlineKeyboardButton("\U0001f519 Back to Help", callback_data="help")],
+        [_back_main()[0]],
+    ]
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown", disable_web_page_preview=True,
+    )
+
+
+async def _cb_help_copy(query, user, context):
+    """How copy trading works."""
+    text = (
+        "\U0001f4c8 *How Copy Trading Works*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "1\ufe0f\u20e3 *Browse Traders*\n"
+        "   View performance stats, win rates,\n"
+        "   and risk profiles of top traders.\n"
+        "\n"
+        "2\ufe0f\u20e3 *Connect Exchange*\n"
+        "   Link your exchange account via API.\n"
+        "   Your funds stay on your exchange.\n"
+        "\n"
+        "3\ufe0f\u20e3 *Set Parameters*\n"
+        "   Choose position size, max risk,\n"
+        "   and stop-loss levels.\n"
+        "\n"
+        "4\ufe0f\u20e3 *Auto-Copy*\n"
+        "   Every trade the leader makes is\n"
+        "   replicated in your account.\n"
+        "\n"
+        "\U0001f6e1 *Your funds never leave your exchange.*"
+    )
+    kb = [
+        [InlineKeyboardButton("\U0001f517 Open MIZAR", url=MIZAR_REFERRAL_URL)],
+        [InlineKeyboardButton("\U0001f519 Back", callback_data="copy_trade")],
+        [_back_main()[0]],
+    ]
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown", disable_web_page_preview=True,
+    )
+
+
+async def _cb_help_dca(query, user, context):
+    """How DCA works."""
+    text = (
+        "\U0001f916 *How DCA Bots Work*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\n"
+        "DCA (Dollar-Cost Averaging) reduces\n"
+        "risk by spreading buys over time.\n"
+        "\n"
+        "*Example:* Instead of buying $1000 of\n"
+        "BTC at once, buy $100 every week.\n"
+        "\n"
+        "\U0001f4c8 *Benefits:*\n"
+        "\u2022 Lower average entry price\n"
+        "\u2022 Removes emotional decisions\n"
+        "\u2022 Works in any market condition\n"
+        "\u2022 Set and forget automation\n"
+        "\n"
+        "*How to start:*\n"
+        "1. Pick a token (BTC, ETH, SOL...)\n"
+        "2. Set amount & frequency\n"
+        "3. Connect your exchange\n"
+        "4. Bot executes automatically"
+    )
+    kb = [
+        [InlineKeyboardButton("\U0001f517 Open MIZAR", url=MIZAR_REFERRAL_URL)],
+        [InlineKeyboardButton("\U0001f519 Back", callback_data="dca_bot")],
+        [_back_main()[0]],
+    ]
+    await query.edit_message_text(
+        text, reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown", disable_web_page_preview=True,
+    )
+
+
+# ══════════════════════════════════════════════
+# ADMIN SECTION
+async def _cb_admin_resume_signals(query, user, context):
+    """CEO TIER 2: Erik resumes signals after auto-pause."""
+    if not is_admin(query.from_user.id):
+        await query.answer("❌ Admin only.", show_alert=True)
+        return
+    try:
+        from core.persistence import _get_redis as _pr
+        _r = _pr()
+        if _r:
+            _r.set("signals:paused", "0")
+            _r.set("winrate:consecutive_losses", "0")
+        await query.edit_message_text(
+            "✅ *Signals hervat*\n\n"
+            "CEO Agent heeft de pauze opgeheven.\n"
+            "Signals worden weer verzonden.\n\n"
+            "_Consecutive loss teller gereset._",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📊 Admin Stats", callback_data="admin_stats")],
+            ]),
+        )
+    except Exception as e:
+        await query.edit_message_text(f"❌ Fout: {e}", parse_mode="Markdown")
+
+
+# ══════════════════════════════════════════════
+
+async def _cb_admin(query, user, context):
     """Admin dashboard."""
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("\u26d4 Unauthorized.")
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("\u26d4 Unauthorized.")
         return
 
     total = len(users)
@@ -2883,7 +5533,7 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict = None) -> str
 
         price = prices.get(symbol, 0)
         usd_value = value * price if value > 0 else 0
-        usd_str = f"(${usd_value:,.0f})" if usd_value > 0 else ""
+        usd_str = f"(~${usd_value:,.0f})" if usd_value > 0 else ""
 
         # Special SWAP format — actionable
         text = (
@@ -2923,8 +5573,8 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict = None) -> str
         if promo:
             text += f"\U0001f381 *{promo}*\n"
         text += (
-            f"\U0001f525 [{aff['name']} \u2014 {aff['commission']} fee rebate]({aff['url']})\n"
-            f"\U0001f48e Instant alerts + more chains \u2192 /premium"
+            f"\U0001f525 [{aff['name']} \u2014 {aff['commission']}]({aff['url']})\n"
+            f"\U0001f48e /deals for all exchange bonuses"
         )
         return text
 
@@ -2934,10 +5584,10 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict = None) -> str
 
     price = prices.get(symbol, 0)
     usd_value = value * price
-    usd_str = f"(${usd_value:,.0f})" if usd_value > 0 else ""
+    usd_str = f"(~${usd_value:,.0f})" if usd_value > 0 else ""
 
     # Random featured affiliate with promo bonus
-    featured = [(k, v) for k, v in AFFILIATE_LINKS.items() if v.get("featured")]
+    featured = [k for k, v in AFFILIATE_LINKS.items() if v.get("featured")]
     aff_key = random.choice(featured) if featured else list(AFFILIATE_LINKS.keys())[0]
     aff = AFFILIATE_LINKS[aff_key]
 
@@ -2961,7 +5611,7 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict = None) -> str
         f"{emoji} *WHALE ALERT* \u2502 {chain}\n"
         f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-        "\n"
+        f"\n"
         f"\U0001f4b0 *{value_str} {symbol}* {usd_str}\n"
         f"\U0001f4e4 From: `{alert['from_label']}`\n"
         f"\U0001f4e5 To: `{alert['to_label']}`\n"
@@ -2996,3 +5646,1966 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict = None) -> str
         )
 
     return text
+
+
+# ══════════════════════════════════════════════
+# WHALE SCANNER (Job Queue)
+# ══════════════════════════════════════════════
+
+async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Periodic whale scanner: fetch transfers and broadcast to subscribers."""
+    global seen_tx_hashes
+
+    try:
+        prices = await get_crypto_prices()
+        eth_alerts = await fetch_eth_whale_transfers()
+        sol_alerts = await fetch_sol_whale_transfers()
+
+        # NEW: Detect what tokens whales are BUYING (the real signal)
+        try:
+            from exchanges.chains import fetch_sol_whale_token_swaps
+            swap_alerts = await fetch_sol_whale_token_swaps()
+        except Exception as swap_err:
+            logger.debug(f"Swap tracker: {swap_err}")
+            swap_alerts = []
+
+        all_alerts = eth_alerts + sol_alerts + swap_alerts
+
+        new_alerts = [a for a in all_alerts if a["tx_hash"] not in seen_tx_hashes]
+
+        if not new_alerts:
+            return
+
+        # Mark as seen
+        for a in new_alerts:
+            seen_tx_hashes.add(a["tx_hash"])
+
+        # Cap memory
+        if len(seen_tx_hashes) > 10000:
+            seen_tx_hashes = set(list(seen_tx_hashes)[-5000:])
+
+        # AI Sentiment + Signal Quality scoring per alert
+        for alert in new_alerts:
+            try:
+                sentiment = await get_whale_alert_sentiment(alert)
+                alert["_sentiment"] = sentiment
+            except Exception:
+                alert["_sentiment"] = None
+
+            # Score signal quality (filters bad trades)
+            from sentiment import score_whale_signal, format_signal_quality
+            sq = score_whale_signal(alert, alert.get("_sentiment"))
+            alert["_signal_quality"] = sq
+            if not sq["pass"]:
+                logger.info(
+                    f"Signal filtered: {alert.get('symbol')} grade={sq['grade']} "
+                    f"score={sq['quality']} — below threshold, not sending"
+                )
+
+        # Remove low-quality signals (grade D = likely bad trade)
+        new_alerts = [a for a in new_alerts if a.get("_signal_quality", {}).get("pass", True)]
+
+        if not new_alerts:
+            return
+
+        # ── CEO TIER 2: Check signals:paused before broadcasting ──
+        try:
+            from core.persistence import _get_redis as _pr
+            _r = _pr()
+            if _r and _r.get("signals:paused") == b"1":
+                logger.warning("CEO TIER 2: signals PAUSED — skipping broadcast this cycle")
+                return
+        except Exception:
+            pass  # Redis unavailable → proceed (fail open)
+
+        # Broadcast to subscribers
+        for user_id, user_data in list(users.items()):
+            if not user_data.get("alerts_on"):
+                continue
+
+            tier_config = TIERS.get(user_data.get("tier", "free"), TIERS["free"])
+            user_chains = tier_config["chains"]
+
+            for alert in new_alerts:
+                if alert["chain"] not in user_chains:
+                    continue
+
+                try:
+                    # AI sentiment analysis (non-blocking — if HF fails, alert still sends)
+                    sentiment = alert.get("_sentiment")
+                    text = format_whale_alert(alert, prices, sentiment=sentiment)
+
+                    # Add trade + affiliate buttons
+                    alert_kb = []
+
+                    # Direct "Buy this token" button
+                    token_symbol = alert.get("symbol", "")
+                    # Swap alerts already have mint address (most actionable!)
+                    token_mint = alert.get("mint", "")
+                    if not token_mint:
+                        for sym, info in COMMON_TOKENS.items():
+                            if sym == token_symbol:
+                                token_mint = info["mint"]
+                                break
+                    if token_mint and token_mint != SOL_MINT:
+                        alert_kb.append([
+                            InlineKeyboardButton(
+                                f"\U0001f4b5 Buy {token_symbol}", callback_data=f"search_{token_mint[:40]}",
+                            )
+                        ])
+
+                    # PREMIUM: Whale Intent AI (Elite Only)
+                    if can_user_analyze(user_data.get("tier", "free")):
+                        tx_hash = alert.get("tx_hash", "")
+                        alert_kb.append([
+                            InlineKeyboardButton(
+                                "🤖 Analyze Intent (AI)", 
+                                callback_data=f"whale_intent_{tx_hash[:20]}_{token_symbol}"
+                            )
+                        ])
+
+                    featured = [
+                        (k, v) for k, v in AFFILIATE_LINKS.items()
+                        if v.get("featured")
+                    ]
+                    if featured:
+                        _, aff = random.choice(featured)
+                        alert_kb.append([
+                            InlineKeyboardButton(
+                                f"\U0001f525 {aff['name']} \u2014 {aff['commission']}",
+                                url=aff["url"],
+                            )
+                        ])
+                    alert_kb.append([
+                        InlineKeyboardButton(
+                            "\U0001f4b0 Trade Menu", callback_data="trade",
+                        )
+                    ])
+
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=text,
+                        reply_markup=InlineKeyboardMarkup(alert_kb),
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+                except Exception as e:
+                    logger.error(f"Alert send failed [{user_id}]: {e}")
+
+        # ── Cross-platform distribution (Discord + Telegram Channel) ──
+        for alert in new_alerts:
+            try:
+                # Discord webhook
+                await notify_discord_whale(alert, prices)
+            except Exception as e:
+                logger.debug(f"Discord notify error: {e}")
+
+            try:
+                # Telegram public channel — with tradeable deep links + AI sentiment
+                channel_text = format_whale_alert(alert, prices, sentiment=alert.get("_sentiment"))
+                token_symbol = alert.get("symbol", "")
+                token_mint = ""
+                for sym, info in COMMON_TOKENS.items():
+                    if sym == token_symbol:
+                        token_mint = info["mint"]
+                        break
+
+                ch_buttons = []
+                if token_mint and token_mint != SOL_MINT:
+                    # Deep link: opens bot with this token ready to buy
+                    ch_buttons.append([InlineKeyboardButton(
+                        f"💰 Buy {token_symbol} Now",
+                        url=f"https://t.me/{BOT_USERNAME}?start=buy_{token_mint}",
+                    )])
+                ch_buttons.append([InlineKeyboardButton(
+                    "🔥 Trending Tokens", url=f"https://t.me/{BOT_USERNAME}?start=hot",
+                )])
+                ch_buttons.append([InlineKeyboardButton(
+                    "⚡ Start Trading", url=f"https://t.me/{BOT_USERNAME}",
+                )])
+
+                channel_kb = InlineKeyboardMarkup(ch_buttons)
+                await notify_telegram_channel(
+                    context.bot, alert, channel_text, channel_kb,
+                )
+            except Exception as e:
+                logger.debug(f"Telegram channel notify error: {e}")
+
+        logger.info(f"Scanner: {len(new_alerts)} new alerts distributed")
+
+    except Exception as e:
+        logger.error(f"Scanner error: {e}")
+
+
+# ══════════════════════════════════════════════
+# DAILY DIGEST JOB
+# ══════════════════════════════════════════════
+
+async def daily_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Post daily digest summary to Discord + TG channel. Runs once/day at 20:00 UTC."""
+    try:
+        _reset_daily_stats()
+
+        stats = {
+            "trades_today": platform_stats["trades_today"],
+            "volume_today_usd": platform_stats["volume_today_usd"],
+            "active_traders": len(platform_stats["active_traders_today"]),
+            "total_users": len(users),
+            "trades_total": platform_stats["trades_total"],
+            "volume_total_usd": platform_stats["volume_total_usd"],
+        }
+
+        # Skip if no activity today (don't spam empty digests)
+        if stats["trades_today"] == 0 and stats["active_traders"] == 0:
+            logger.info("Daily digest: no activity, skipping")
+            return
+
+        # Discord
+        try:
+            await notify_discord_digest(stats)
+        except Exception as e:
+            logger.debug(f"Digest Discord error: {e}")
+
+        # Telegram channel
+        try:
+            await notify_channel_digest(context.bot, stats)
+        except Exception as e:
+            logger.debug(f"Digest TG channel error: {e}")
+
+        logger.info(f"Daily digest posted: {stats['trades_today']} trades, ${stats['volume_today_usd']:,.0f} volume")
+
+    except Exception as e:
+        logger.error(f"Daily digest error: {e}")
+
+
+# ══════════════════════════════════════════════
+# AUTO-SAVE & BACKUP JOBS
+# ══════════════════════════════════════════════
+
+async def auto_save_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Periodic auto-save every 60 seconds — safety net."""
+    try:
+        _persist()
+    except Exception as e:
+        logger.error(f"Auto-save error: {e}")
+
+
+async def _send_backup_to_admin(bot, caption: str = "") -> None:
+    """Send backup file to all admins. Used by auto-backup and critical events."""
+    if not ADMIN_IDS or not users:
+        return
+    try:
+        import io
+        backup_json = export_backup(users, platform_stats)
+        bio = io.BytesIO(backup_json.encode())
+        bio.name = f"apexflash_backup_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.json"
+        default_caption = f"\U0001f4be Backup | {len(users)} users | {platform_stats.get('trades_total', 0)} trades"
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_document(
+                    chat_id=admin_id,
+                    document=bio,
+                    caption=caption or default_caption,
+                )
+                bio.seek(0)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error(f"Backup send error: {e}")
+
+
+async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send backup to admin via Telegram every 2 hours. Deploy resilience."""
+    await _send_backup_to_admin(context.bot, f"\U0001f4be Auto-backup (2h) | {len(users)} users | {platform_stats.get('trades_total', 0)} trades")
+    logger.info(f"Auto-backup sent to {len(ADMIN_IDS)} admin(s)")
+
+
+async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Hourly heartbeat — admin knows the bot is alive 24/7."""
+    if not ADMIN_IDS:
+        return
+    try:
+        uptime = datetime.now(timezone.utc) - bot_start_time
+        hours = int(uptime.total_seconds() // 3600)
+        mins = int((uptime.total_seconds() % 3600) // 60)
+        wallets = sum(1 for u in users.values() if u.get("wallet_pubkey"))
+        # Env var health check in heartbeat
+        import os as _hb_os
+        _crit = {"HELIUS": _hb_os.getenv("HELIUS_API_KEY",""), "ETHERSCAN": _hb_os.getenv("ETHERSCAN_API_KEY",""),
+                 "REDIS": _hb_os.getenv("UPSTASH_REDIS_URL",""), "FEE_WALLET": _hb_os.getenv("FEE_COLLECT_WALLET",""),
+                 "JUPITER": _hb_os.getenv("JUPITER_API_KEY",""), "ALERT_CH": _hb_os.getenv("ALERT_CHANNEL_ID","")}
+        _miss = [k for k,v in _crit.items() if not v]
+        _env_status = "\U0001f534 MISSING: " + ",".join(_miss) if _miss else "\U0001f7e2 All env OK"
+
+        msg = (
+            f"\U0001f49a *Heartbeat OK*\n"
+            f"Uptime: {hours}h {mins}m\n"
+            f"Users: {len(users)} | Wallets: {wallets}\n"
+            f"Trades today: {platform_stats.get('trades_today', 0)} | "
+            f"Total: {platform_stats.get('trades_total', 0)}\n"
+            f"{_env_status}\n"
+            f"v{VERSION}"
+        )
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id, text=msg, parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error(f"Heartbeat error: {e}")
+
+
+async def marketing_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Post marketing content to Telegram + Twitter 3x daily (08:00, 14:00, 20:00 UTC)."""
+    # Telegram channel post
+    try:
+        if ALERT_CHANNEL_ID:
+            success = await marketing_post(context.bot, ALERT_CHANNEL_ID)
+            if success:
+                platform_stats["marketing_posts"] = platform_stats.get("marketing_posts", 0) + 1
+                logger.info(f"Marketing post #{platform_stats['marketing_posts']} sent (Telegram)")
+    except Exception as e:
+        logger.error(f"Marketing job (Telegram) error: {e}")
+
+    # Twitter/X post
+    try:
+        if TWITTER_ENABLED and TWITTER_API_KEY:
+            tw_ok = await twitter_post(
+                TWITTER_API_KEY, TWITTER_API_SECRET,
+                TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET,
+            )
+            if tw_ok:
+                platform_stats["twitter_posts"] = platform_stats.get("twitter_posts", 0) + 1
+                logger.info(f"Twitter post #{platform_stats['twitter_posts']} sent")
+    except Exception as e:
+        logger.error(f"Marketing job (Twitter) error: {e}")
+
+
+# ══════════════════════════════════════════════
+# LIVE SCALPING MONITOR (Job Queue — every 30s)
+# ══════════════════════════════════════════════
+
+async def scalper_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Live scalping signal detector — fires every 30 seconds.
+    Monitors SOL/BONK/JUP/WIF/RAY/PYTH for rapid momentum moves.
+    Alerts Grade A/B to channel; Grade C logged only.
+    """
+    try:
+        from scalper import check_scalp_signals, format_scalp_alert
+        signals = await check_scalp_signals()
+
+        for sig in signals:
+            grade = sig["grade"]
+            msg = format_scalp_alert(sig)
+            is_high_conviction = (grade == "A")
+
+            # 1. Public Channel Alert — ONLY Grade A (Protect Social Proof)
+            if is_high_conviction and ALERT_CHANNEL_ID:
+                try:
+                    await context.bot.send_message(
+                        chat_id=ALERT_CHANNEL_ID,
+                        text=f"⭐ <b>HIGH CONVICION SIGNAL</b>\n{msg}",
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                except Exception as ch_err:
+                    logger.warning(f"Scalper channel send error: {ch_err}")
+
+            # 2. Individual User Alerts (Tiered Broadcast)
+            for uid, udata in list(users.items()):
+                if not udata.get("alerts_enabled", True):
+                    continue
+                
+                user_tier = udata.get("tier", "free").lower()
+                is_premium = user_tier in ("pro", "elite")
+                
+                # --- BROADCAST LOGIC ---
+                # Grade A: Everyone (Social Proof)
+                # Grade B/C: Pro/Elite only (Premium Value)
+                should_alert = False
+                alert_text = msg
+                
+                if grade == "A":
+                    should_alert = True
+                    alert_text = f"⭐ <b>GOLD SIGNAL (Grade A)</b>\n{msg}"
+                elif grade in ("B", "C") and is_premium:
+                    should_alert = True
+                    alert_text = f"⚠️ <b>PRO ALERT (Grade {grade} - High Risk)</b>\n{msg}"
+                
+                if not should_alert:
+                    continue
+
+                try:
+                    kb = InlineKeyboardMarkup([[
+                        InlineKeyboardButton(
+                            f"⚡ Trade {sig['symbol']}",
+                            callback_data=f"search_{sig['symbol']}:{grade}",
+                        )
+                    ]])
+                    await context.bot.send_message(
+                        chat_id=uid,
+                        text=alert_text,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                        reply_markup=kb,
+                    )
+                except Exception:
+                    pass
+
+            # Logging
+            if is_high_conviction:
+                logger.info(f"GOLD signal broadcast: {sig['symbol']} {sig['pct_5m']:+.2f}%")
+            else:
+                logger.info(f"Scalp watch (Grade {grade}): {sig['symbol']} — sent to Pro users only")
+
+    except Exception as e:
+        logger.error(f"Scalper job error: {e}")
+
+
+# ══════════════════════════════════════════════
+# ADMIN: /backup & /restore COMMANDS
+# ══════════════════════════════════════════════
+
+async def cmd_backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin command: send manual backup file."""
+    if not is_admin(update.effective_user.id):
+        return
+    import io
+    backup_json = export_backup(users, platform_stats)
+    bio = io.BytesIO(backup_json.encode())
+    bio.name = f"apexflash_backup_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.json"
+    await update.message.reply_document(
+        document=bio,
+        caption=f"\U0001f4be Manual backup | {len(users)} users | {platform_stats.get('trades_total', 0)} trades",
+    )
+
+
+async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """🔥 Show trending Solana tokens by volume — DexScreener + DexPaprika."""
+    await update.message.reply_text("🔥 *Loading trending tokens...*", parse_mode="Markdown")
+
+    try:
+        import aiohttp as _aiohttp
+        async with _aiohttp.ClientSession() as session:
+            # Try DexScreener first (boosted tokens = paid promotions = high interest)
+            dexscreener_tokens = []
+            _ds_seen_mints: set = set()  # dedup boosted list itself
+            try:
+                async with session.get(
+                    "https://api.dexscreener.com/token-boosts/top/v1",
+                    timeout=_aiohttp.ClientTimeout(total=5),
+                ) as ds_resp:
+                    if ds_resp.status == 200:
+                        ds_data = await ds_resp.json()
+                        for item in (ds_data if isinstance(ds_data, list) else []):
+                            tok_addr = item.get("tokenAddress", "")
+                            if item.get("chainId") == "solana" and tok_addr:
+                                if tok_addr in _ds_seen_mints:
+                                    continue  # skip duplicate boosted entries
+                                _ds_seen_mints.add(tok_addr)
+                                dexscreener_tokens.append({
+                                    "mint": tok_addr,
+                                    "symbol": item.get("description", item.get("url", ""))[:10] or "???",
+                                    "source": "dexscreener",
+                                    "link": item.get("url", ""),
+                                })
+                            if len(dexscreener_tokens) >= 3:
+                                break
+            except Exception:
+                pass  # DexScreener is bonus, not critical
+
+            # DexPaprika: top pools by volume on Solana
+            async with session.get(
+                "https://api.dexpaprika.com/networks/solana/pools",
+                params={"order_by": "volume_usd", "sort": "desc", "limit": "100"},
+                timeout=_aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status != 200:
+                    await update.message.reply_text("⚠️ Could not fetch trending data. Try again later.")
+                    return
+                data = await resp.json()
+
+        # Parse: extract unique tokens (skip SOL/USDC/USDT base pairs)
+        pools = data.get("pools", data) if isinstance(data, dict) else data
+        if not isinstance(pools, list) or not pools:
+            await update.message.reply_text("⚠️ No trending data available.")
+            return
+
+        # Skip stablecoins and base pairs
+        SKIP_MINTS = {
+            "So11111111111111111111111111111111111111112",   # SOL
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # USDC
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", # USDT
+            "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",  # mSOL
+            "7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj", # stSOL
+        }
+
+        # Deduplicate: one entry per unique token (highest volume pool wins)
+        # Dedup on BOTH mint AND symbol — prevents same token from multiple pools
+        seen_mints: set = set()
+        seen_syms: set = set()
+        trending = []
+        for pool in pools:
+            tokens = pool.get("tokens", [])
+            # Find the non-base token in this pool
+            target_tok = None
+            for tok in tokens:
+                mint = tok.get("id", "") or tok.get("address", "")
+                if mint not in SKIP_MINTS and mint:
+                    target_tok = tok
+                    break
+            if not target_tok:
+                continue
+
+            mint = target_tok.get("id", "") or target_tok.get("address", "")
+            symbol = (target_tok.get("symbol", "") or "???").strip()
+            # Skip if we already have this token (by mint OR symbol)
+            if (mint and mint in seen_mints) or (symbol != "???" and symbol in seen_syms):
+                continue
+            if mint:
+                seen_mints.add(mint)
+            if symbol != "???":
+                seen_syms.add(symbol)
+
+            pct_24h = pool.get("last_price_change_usd_24h", 0) or 0
+            volume = pool.get("volume_usd", 0) or 0
+            price = pool.get("price_usd", 0) or 0
+            trending.append({
+                "symbol": symbol,
+                "name": target_tok.get("name", "Unknown"),
+                "mint": mint,
+                "pct_24h": pct_24h,
+                "volume": volume,
+                "price": price,
+            })
+            if len(trending) >= 10:
+                break
+
+        if not trending:
+            await update.message.reply_text("⚠️ No trending tokens found.")
+            return
+
+        # Build message
+        msg = "\U0001f525 *HOT TOKENS \u2014 Solana*\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        kb_rows = []
+
+        # DexScreener boosted tokens first (if any)
+        if dexscreener_tokens:
+            msg += "\U0001f680 *BOOSTED (DexScreener):*\n"
+            for ds in dexscreener_tokens:
+                short_mint = f"{ds['mint'][:6]}...{ds['mint'][-4:]}"
+                msg += f"\u26a1 `{short_mint}`\n"
+                kb_rows.append([InlineKeyboardButton(
+                    f"\U0001f680 Buy Boosted {short_mint}",
+                    callback_data=f"hot_buy_{ds['mint']}",
+                )])
+            msg += "\n"
+
+        # DexPaprika volume leaders
+        msg += "\U0001f4ca *TOP BY VOLUME:*\n"
+        for i, t in enumerate(trending, 1):
+            arrow = "\U0001f4c8" if t["pct_24h"] >= 0 else "\U0001f4c9"
+            pct = f"+{t['pct_24h']:.1f}%" if t["pct_24h"] >= 0 else f"{t['pct_24h']:.1f}%"
+            vol_str = f"${t['volume']:,.0f}" if t["volume"] >= 1 else "$0"
+            msg += f"{i}. {arrow} *{t['symbol']}* \u2014 {pct} | Vol: {vol_str}\n"
+            kb_rows.append([InlineKeyboardButton(
+                f"\U0001f4b0 Buy {t['symbol']}",
+                callback_data=f"hot_buy_{t['mint']}",
+            )])
+
+        msg += (
+            "\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            "\U0001f446 Tap to buy | Paste any mint to trade\n"
+            "\u26a1 Powered by ApexFlash + DexScreener"
+        )
+
+        kb_rows.append([InlineKeyboardButton("🔄 Refresh", callback_data="cmd_hot_refresh")])
+        kb_rows.append([_back_main()[0]])
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=InlineKeyboardMarkup(kb_rows),
+            parse_mode="Markdown",
+        )
+
+    except Exception as e:
+        logger.error(f"cmd_hot error: {e}")
+        await update.message.reply_text("⚠️ Error loading trending tokens. Try again.")
+
+
+async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show portfolio — wrapper for /portfolio command."""
+    uid = update.effective_user.id
+    user = get_user(uid)
+    # Fake a query-like object to reuse _cb_portfolio
+    class FakeQuery:
+        from_user = update.effective_user
+        message = update.message
+        async def edit_message_text(self, *a, **kw):
+            await update.message.reply_text(*a, **kw)
+    await _cb_portfolio(FakeQuery(), user, context)
+
+
+async def cmd_policy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show no-risk policy."""
+    text = (
+        "\U0001f6e1\ufe0f *ApexFlash — No Risk Policy*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        "*5-Point Protection:*\n\n"
+        "1\ufe0f\u20e3 *You Control Everything*\n"
+        "Your wallet, your keys. We never hold your funds.\n\n"
+        "2\ufe0f\u20e3 *Built-In Safety Net*\n"
+        "Stop Loss default ON. Max trade 10 SOL.\n\n"
+        "3\ufe0f\u20e3 *Transparent Fees*\n"
+        "1% per trade. No hidden charges. Ever.\n\n"
+        "4\ufe0f\u20e3 *Rug Pull Protection*\n"
+        "AI token scanning. Liquidity monitoring.\n\n"
+        "5\ufe0f\u20e3 *No Pressure*\n"
+        "No fake urgency. Real data, real trades.\n\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\u26a0\ufe0f *Disclaimer:* Trading crypto involves risk. "
+        "Only trade with funds you can afford to lose. "
+        "ApexFlash provides tools, not financial advice.\n\n"
+        "\U0001f4e7 support@apexflash.pro"
+    )
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("\U0001f310 Website", url="https://www.apexflash.pro")],
+            [InlineKeyboardButton("\U0001f4ac Support", url="https://t.me/ApexFlashSupport")],
+            [_back_main()[0]],
+        ]),
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+    )
+
+
+async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """📊 Live market overview — gainers, losers, new tokens."""
+    await update.message.reply_text("📊 *Loading market data...*", parse_mode="Markdown")
+    update_last_active(update.effective_user.id)
+
+    try:
+        import aiohttp as _aiohttp
+        async with _aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://api.dexpaprika.com/networks/solana/pools",
+                params={"order_by": "volume_usd", "sort": "desc", "limit": "200"},
+                timeout=_aiohttp.ClientTimeout(total=12),
+            ) as resp:
+                if resp.status != 200:
+                    await update.message.reply_text("⚠️ Market data unavailable.")
+                    return
+                data = await resp.json()
+
+        SKIP_MINTS = {
+            "So11111111111111111111111111111111111111112",
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+            "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",
+            "7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj",
+        }
+
+        pools = data.get("pools", data) if isinstance(data, dict) else data
+        if not isinstance(pools, list):
+            await update.message.reply_text("⚠️ No market data.")
+            return
+
+        seen = set()
+        all_tokens = []
+        for pool in pools:
+            tokens = pool.get("tokens", [])
+            target = None
+            for tok in tokens:
+                if tok.get("id", "") not in SKIP_MINTS:
+                    target = tok
+                    break
+            if not target:
+                continue
+            mint = target.get("id", "")
+            if mint in seen:
+                continue
+            seen.add(mint)
+            pct = pool.get("last_price_change_usd_24h", 0) or 0
+            vol = pool.get("volume_usd", 0) or 0
+            all_tokens.append({
+                "symbol": target.get("symbol", "???"),
+                "mint": mint,
+                "pct": pct,
+                "volume": vol,
+            })
+
+        # Sort for categories
+        gainers = sorted([t for t in all_tokens if t["pct"] > 0], key=lambda x: -x["pct"])[:5]
+        losers = sorted([t for t in all_tokens if t["pct"] < 0], key=lambda x: x["pct"])[:5]
+        by_volume = sorted(all_tokens, key=lambda x: -x["volume"])[:5]
+
+        msg = "📊 *SOLANA MARKET*\n━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        msg += "🟢 *TOP GAINERS (24h)*\n"
+        for i, t in enumerate(gainers, 1):
+            msg += f"  {i}. *{t['symbol']}* +{t['pct']:.1f}%\n"
+
+        msg += "\n🔴 *TOP LOSERS (24h)*\n"
+        for i, t in enumerate(losers, 1):
+            msg += f"  {i}. *{t['symbol']}* {t['pct']:.1f}%\n"
+
+        msg += "\n💎 *HIGHEST VOLUME*\n"
+        for i, t in enumerate(by_volume, 1):
+            vol_str = f"${t['volume']:,.0f}" if t['volume'] >= 1 else "$0"
+            msg += f"  {i}. *{t['symbol']}* — {vol_str}\n"
+
+        msg += "\n━━━━━━━━━━━━━━━━━━━━━\n⚡ Tap to buy instantly"
+
+        kb = []
+        # Top 3 gainers as buy buttons
+        for t in gainers[:3]:
+            kb.append([InlineKeyboardButton(
+                f"🟢 Buy {t['symbol']} (+{t['pct']:.0f}%)",
+                callback_data=f"hot_buy_{t['mint']}",
+            )])
+        kb.append([InlineKeyboardButton("🔥 Hot Tokens", callback_data="cmd_hot_refresh")])
+        kb.append([InlineKeyboardButton("🔄 Refresh", callback_data="cmd_market_refresh")])
+        kb.append([_back_main()[0]])
+
+        await update.message.reply_text(
+            msg, reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown",
+        )
+
+    except Exception as e:
+        logger.error(f"cmd_market error: {e}")
+        await update.message.reply_text("⚠️ Error loading market data.")
+
+
+async def cmd_admin_marketing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: get the current viral hooks for social media."""
+    if not is_admin(update.effective_user.id):
+        return
+        
+    hooks = get_marketing_playbook()
+    text = "🚀 **SOCIAL DOMINANCE PLAYBOOK (v3.18.0)**\n"
+    text += "Use these high-conversion hooks for TikTok/Reels:\n\n"
+    for hook in hooks:
+        text += f"• `{hook}`\n\n"
+        
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: show funnel, popular tokens, affiliate stats, and referral revenue."""
+    if not is_admin(update.effective_user.id):
+        return
+
+    from core.persistence import get_funnel_stats, get_popular_tokens, get_affiliate_stats, _get_redis
+    
+    funnel = get_funnel_stats()
+    popular = get_popular_tokens("alltime", 5)
+    affiliates = get_affiliate_stats()
+    
+    r = _get_redis()
+    referral_payouts_sol = float(r.get("kpi:total_referral_payouts_sol") or 0) if r else 0
+    
+    # REVENUE MISSION TRACKER (€1M Goal)
+    total_vol = platform_stats.get("volume_total_usd", 0)
+    # Estimated gross revenue from 1% platform fee
+    gross_revenue_usd = total_vol * 0.01
+    
+    # Calculate net (payouts subtracted)
+    sol_price = 150.0  # Placeholder, in prod use get_crypto_prices
+    payouts_usd = referral_payouts_sol * sol_price
+    net_revenue_usd = gross_revenue_usd - payouts_usd
+    
+    goal_usd = 1000000.0
+    progress_pct = (net_revenue_usd / goal_usd * 100) if goal_usd > 0 else 0
+    
+    # WHALE SEGMENTATION (v3.19.0)
+    whale_vol_usd = float(r.get("kpi:whale_volume_usd") or 0) if r else 0
+    alpha_clan_hits = int(r.get("kpi:alpha_clan_signals") or 0) if r else 0
+    retail_vol_usd = total_vol - whale_vol_usd
+    
+    whale_share = (whale_vol_usd / total_vol * 100) if total_vol > 0 else 0
+    
+    revenue_text = (
+        "\U0001f3af *MISSION: €1,000,000 NET REVENUE*\n"
+        f"\u25b6 Gross Revenue: *${gross_revenue_usd:,.2f}*\n"
+        f"\u25b6 Referral Payouts: *-${payouts_usd:,.2f}* ({referral_payouts_sol:.2f} SOL)\n"
+        f"\u25b6 *NET REVENUE:* *${max(0, net_revenue_usd):,.2f}*\n"
+        f"————————————————————————\n"
+        f"\U0001f40b *WHALE SEGMENTATION:*\n"
+        f"• Institutional/Whale: *${whale_vol_usd:,.0f}* ({whale_share:.1f}%)\n"
+        f"• Retail/Organic: *${retail_vol_usd:,.0f}*\n"
+        f"• Alpha Clan Signals: *{alpha_clan_hits}* triggers\n"
+        f"————————————————————————\n"
+        f"\u25b6 Progress to €1M: *{progress_pct:.2f}%*\n"
+        f"————————————————————————\n"
+    )
+
+    # Simplified formatting for long outputs
+    funnel_text = "\U0001f4ca *Funnel Stats:*\n" + "\n".join([f"• {k}: {v}" for k,v in funnel.items()])
+    popular_text = "\n\n🔥 *Popular Tokens:*\n" + "\n".join([f"• {t['symbol']}" for t in popular])
+    
+    await update.message.reply_text(
+        f"{revenue_text}\n{funnel_text}{popular_text}",
+        parse_mode="Markdown",
+    )
+
+
+async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show personalized AI trade analysis for Elite users."""
+    from agents.advisor_agent import analyze_trader_performance, get_advisor_intro
+
+    uid = update.effective_user.id
+    user = get_user(uid)
+
+    if user.get("tier", "free") not in ("elite", "admin"):
+        await update.message.reply_text(
+            "💎 *ApexFlash AI Advisor (Elite)*\n\n"
+            "This professional feature is reserved for **Elite** members.\n"
+            "Upgrade to receive personalized Gemini trade coaching.",
+            parse_mode="Markdown"
+        )
+        return
+
+    history = user.get("trade_history", [])
+    if not history:
+        await update.message.reply_text("📈 *No Trade History Found.*", parse_mode="Markdown")
+        return
+
+    msg = await update.message.reply_text("🤖 *AI Advisor is analyzing your stats...*", parse_mode="Markdown")
+    analysis = await analyze_trader_performance(uid, history)
+    use_fallback_intro = "(Fallback Model)" in analysis or analysis.startswith("Fallback reason:")
+    await msg.edit_text(f"{get_advisor_intro(use_fallback=use_fallback_intro)}{analysis}", parse_mode="Markdown")
+
+async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show language selection menu."""
+    from core.i18n import get_text
+    uid = update.effective_user.id
+    user = get_user(uid)
+    lang = user.get("language_code", "en")
+    
+    kb = [
+        [InlineKeyboardButton("English 🇺🇸", callback_data="set_lang_en"), InlineKeyboardButton("Español 🇪🇸", callback_data="set_lang_es")],
+        [InlineKeyboardButton("中文 🇨🇳", callback_data="set_lang_zh"), InlineKeyboardButton("Nederlands 🇳🇱", callback_data="set_lang_nl")],
+        [_back_main()[0]]
+    ]
+    await update.message.reply_text(get_text("SELECT_LANG", lang), reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+
+async def cmd_path(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show the user their AI-personalized 'Road to €1M' path."""
+    user_id = update.effective_user.id
+    lang = context.user_data.get("lang", "en")
+    
+    # Static content for now, but AI-ready for customization
+    title = "🏆 *THE APEX ROAD TO €1,000,000*"
+    body = (
+        "1. 🚀 *Onboarding:* Fund your wallet with 0.1+ SOL.\n"
+        "2. 🛡️ *Protection:* Lock in 0.5% Breakeven (Auto-Guard).\n"
+        "3. 📈 *Scaling:* Copy elite traders via 'Alpha Clan'.\n"
+        "4. 💎 *Compounding:* Reinvest 50% of profits into the bot.\n\n"
+        "Your current progress: *Phase 1 (Active)*"
+    )
+    kb = [[InlineKeyboardButton("⚡ Optimize Strategy", callback_data="advisor_analyze")]]
+    await update.message.reply_text(f"{title}\n\n{body}", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+
+async def scheduled_conversion_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Daily check for free users to send FOMO reports."""
+    from agents.conversion_agent import check_conversion_eligibility, generate_opportunity_report
+    logger.info("🕒 Scheduled Job: Conversion AI (Cycle 14)")
+    
+    from core.persistence import load_users
+    users_data = load_users()
+    
+    for user_id, data in users_data.items():
+        if await check_conversion_eligibility(user_id, data):
+            lang = data.get("lang", "en")
+            report = await generate_opportunity_report(user_id, lang)
+            if report:
+                try:
+                    await context.bot.send_message(chat_id=user_id, text=report, parse_mode="Markdown")
+                    logger.info(f"Conversion report sent to {user_id}")
+                except Exception as e:
+                    logger.debug(f"Failed to send conversion report to {user_id}: {e}")
+
+
+async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Debug: show handler and state info. No admin check for debugging."""
+    uid = update.effective_user.id
+    user = users.get(uid, {})
+    has_wallet = bool(user.get("wallet_pubkey"))
+    h_count = sum(len(v) for v in context.application.handlers.values())
+    msg = (
+        f"🔧 Debug Info\n"
+        f"Users in memory: {len(users)}\n"
+        f"Your ID: {uid}\n"
+        f"Your user exists: {uid in users}\n"
+        f"Your wallet: {has_wallet}\n"
+        f"Handlers: {h_count}\n"
+        f"Admin IDs: {ADMIN_IDS}\n"
+        f"Is admin: {uid in ADMIN_IDS}\n"
+        f"Trading: {trading_enabled}\n"
+        f"Redis: {bool(os.getenv('UPSTASH_REDIS_URL', ''))}\n"
+        f"Helius: {bool(HELIUS_API_KEY)}\n"
+        f"Jupiter: {bool(JUPITER_API_KEY)}\n"
+    )
+    await update.message.reply_text(msg)
+
+
+async def cmd_restore(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin command: restore from backup file. Reply to a backup JSON file with /restore."""
+    if not is_admin(update.effective_user.id):
+        return
+    global users, platform_stats
+
+    reply = update.message.reply_to_message
+    if not reply or not reply.document:
+        await update.message.reply_text(
+            "\u26a0\ufe0f Reply to a backup JSON file with /restore"
+        )
+        return
+
+    try:
+        file = await reply.document.get_file()
+        raw = await file.download_as_bytearray()
+        json_str = raw.decode("utf-8")
+        restored_users, restored_stats = import_backup(json_str)
+
+        if not restored_users:
+            await update.message.reply_text("\u274c Backup file contains no users.")
+            return
+
+        users.update(restored_users)
+        if restored_stats:
+            for k, v in restored_stats.items():
+                platform_stats[k] = v
+        _persist()
+
+        await update.message.reply_text(
+            f"\u2705 Restored {len(restored_users)} users from backup.\n"
+            f"Total users now: {len(users)}"
+        )
+        logger.info(f"Backup restored: {len(restored_users)} users by admin {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"Restore error: {e}")
+        await update.message.reply_text(f"\u274c Restore failed: {e}")
+
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Auto-restore when admin forwards a backup JSON file (no /restore needed)."""
+    if not is_admin(update.effective_user.id):
+        return
+    doc = update.message.document
+    if not doc or not doc.file_name or not doc.file_name.endswith(".json"):
+        return
+    if "backup" not in doc.file_name.lower() and "apexflash" not in doc.file_name.lower():
+        return
+
+    global users, platform_stats
+    try:
+        file = await doc.get_file()
+        raw = await file.download_as_bytearray()
+        json_str = raw.decode("utf-8")
+        restored_users, restored_stats = import_backup(json_str)
+
+        if not restored_users:
+            await update.message.reply_text("\u274c Backup file contains no users.")
+            return
+
+        users.update(restored_users)
+        if restored_stats:
+            for k, v in restored_stats.items():
+                platform_stats[k] = v
+        _persist()
+
+        wallets = sum(1 for u in restored_users.values() if u.get("wallet_pubkey"))
+        await update.message.reply_text(
+            f"\u2705 *Auto-Restore Complete*\n\n"
+            f"Users restored: *{len(restored_users)}*\n"
+            f"Wallets restored: *{wallets}*\n"
+            f"Total users now: {len(users)}*\n\n"
+            f"\U0001f512 All wallet keys recovered.",
+            parse_mode="Markdown",
+        )
+        logger.info(f"Auto-restore from document: {len(restored_users)} users, {wallets} wallets")
+    except Exception as e:
+        logger.error(f"Document restore error: {e}")
+        await update.message.reply_text(f"\u274c Auto-restore failed: {e}")
+
+
+# ══════════════════════════════════════════════
+# REFERRAL LEADERBOARD & STATS
+# ══════════════════════════════════════════════
+
+async def cmd_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show personal referral stats and the Global Leaderboard."""
+    from core.persistence import get_user_referral_stats, get_referral_leaderboard
+    
+    uid = update.effective_user.id
+    user = get_user(uid)
+    stats = get_user_referral_stats(uid)
+    leaderboard = get_referral_leaderboard(limit=5)
+    
+    bot_username = (await context.bot.get_me()).username
+    ref_link = f"https://t.me/{bot_username}?start=ref_{uid}"
+    
+    # 🏆 Personal Stats
+    text = (
+        "\U0001f91d *ApexFlash Referral Program*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        f"👤 *Your Stats:*\n"
+        f"\u2022 Total Referrals: *{user.get('referral_count', 0)}*\n"
+        f"\u2022 Total Earned: *{stats['earnings']:.4f} SOL*\n"
+        f"\u2022 Global Rank: *#{stats['rank'] if stats['rank'] > 0 else 'N/A'}*\n\n"
+        f"\U0001f517 *Your Referral Link:*\n{ref_link}\n\n"
+        f"_Share this link to earn 25-40% of every trade fee your friends pay!_\n\n"
+    )
+    
+    # 🥇 Global Leaderboard
+    if leaderboard:
+        text += "🏆 *GLOBAL REFERRAL LEADERS:*\n"
+        emojis = ["🥇", "🥈", "🥉", "👤", "👤"]
+        for i, entry in enumerate(leaderboard):
+            emoji = emojis[i] if i < len(emojis) else "👤"
+            # Anonymize user ID
+            anon_name = f"User_{str(entry['user_id'])[-4:]}"
+            text += f"{emoji} *{anon_name}*: `{entry['total_sol']:.2f} SOL` earned\n"
+        text += "\n"
+    
+    kb = [
+        [InlineKeyboardButton("\U0001f4e3 Share Link", switch_inline_query=f"\nJoin me on ApexFlash! The fastest whale tracker on Solana: {ref_link}")],
+        [_back_main()[0]],
+    ]
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+        disable_web_page_preview=True
+    )
+
+async def arbitrage_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Recurring job to scan cross-chain arbitrage spreads (Elite Feature)."""
+    from core.config import ELITE_CHANNEL_ID
+    
+    alerts = await scan_arbitrage()
+    for alert in alerts:
+        text = format_arbitrage_alert(alert)
+        # Broadcast to Elite Channel and Admin Chat
+        if ELITE_CHANNEL_ID:
+            try:
+                await context.bot.send_message(
+                    chat_id=ELITE_CHANNEL_ID,
+                    text=text,
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Arbitrage Elite alert failed: {e}")
+        
+        # Admin direct alert
+        for admin_id in [u_id for u_id, u in users.items() if u.get("tier") == "admin"]:
+            try:
+                await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+            except: pass
+
+async def _cb_switch_network_v320_legacy(query, user, context):
+    """Toggle between Solana and Base networks."""
+    current = user.get("active_chain", "SOL")
+    new_chain = "BASE" if current == "SOL" else "SOL"
+    user["active_chain"] = new_chain
+    _persist()
+    
+    await query.answer(f"🌐 Switched to {new_chain} network")
+    # Refresh menu
+    await query.edit_message_reply_markup(reply_markup=main_menu_kb(query.from_user.id))
+
+async def _cb_language_menu(query, user, context):
+    """Callback to show language selection."""
+    class FakeUpdate:
+        effective_user = query.from_user
+        message = query.message
+    await cmd_language(FakeUpdate(), context)
+
+async def _cb_advisor(query, user, context):
+    """Callback to show AI advisor analysis."""
+    class FakeUpdate:
+        effective_user = query.from_user
+        message = query.message
+    await cmd_advisor(FakeUpdate(), context)
+
+async def _cb_set_lang_en(query, user, context): await _set_lang(query, user, "en")
+async def _cb_set_lang_es(query, user, context): await _set_lang(query, user, "es")
+async def _cb_set_lang_zh(query, user, context): await _set_lang(query, user, "zh")
+async def _cb_set_lang_nl(query, user, context): await _set_lang(query, user, "nl")
+
+async def _set_lang(query, user, lang_code):
+    user["language_code"] = lang_code
+    _persist()
+    await query.answer(f"🗣 Language: {lang_code.upper()}")
+    await query.edit_message_reply_markup(reply_markup=main_menu_kb(query.from_user.id))
+
+
+async def _cb_referral(query, user, context):
+    """Callback for referral button in main menu."""
+    # Wrapper to reuse cmd_referrals logic
+    class FakeUpdate:
+        effective_user = query.from_user
+        message = query.message
+    await cmd_referrals(FakeUpdate(), context)
+
+
+async def _cb_whale_intent(query, user, context):
+    """Callback for Elite users to analyze whale intent via AI."""
+    if not can_user_analyze(user.get("tier", "free")):
+        await query.answer("💎 Elite feature! Upgrade to analyze whale intent.", show_alert=True)
+        return
+
+    data = query.data.split("_")
+    if len(data) < 4:
+        await query.answer("⚠️ Analysis data incomplete.")
+        return
+    
+    tx_hash_prefix = data[2]
+    token_symbol = data[3]
+    
+    await query.answer("🤖 AI is analyzing whale history...")
+    await query.edit_message_text(
+        f"{query.message.text}\n\n"
+        f"⏳ *AI ANALYZING INTENT...*",
+        parse_mode="Markdown"
+    )
+
+    # Note: In a real system, we'd look up the full tx_hash from the prefix in seen_tx_hashes
+    # For now, we use the token info we have.
+    analysis = await analyze_whale_intent(
+        tx_hash=tx_hash_prefix,
+        wallet="Tracked Whale",
+        token=token_symbol,
+        amount_sol=0  # Simplified for the callback
+    )
+
+    await query.edit_message_text(
+        f"{query.message.text}\n\n"
+        f"\U0001f9e0 *AI WHALE INTENT:*\n"
+        f"{analysis}",
+        parse_mode="Markdown",
+        reply_markup=query.message.reply_markup
+    )
+
+
+async def cmd_winrate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show platform and user win rate stats."""
+    from core.persistence import get_win_rate, get_user_win_rate
+
+    uid = update.effective_user.id
+    platform = get_win_rate()
+    user_wr = get_user_win_rate(uid)
+
+    p_rate = platform["win_rate"]
+    p_total = platform["total"]
+    p_wins = platform["wins"]
+    p_losses = platform["losses"]
+    p_pnl = platform["total_pnl_sol"]
+
+    u_rate = user_wr["win_rate"]
+    u_total = user_wr["total"]
+    u_wins = user_wr["wins"]
+
+    # Platform emoji
+    if p_rate >= 65:
+        rate_emoji = "\U0001f525"  # fire
+    elif p_rate >= 50:
+        rate_emoji = "\U0001f7e2"  # green
+    else:
+        rate_emoji = "\U0001f7e1"  # yellow
+
+    text = (
+        "\U0001f3af *ApexFlash Win Rate*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        f"{rate_emoji} *Platform Win Rate:* {p_rate}%\n"
+        f"\U0001f4ca Total Trades: {p_total}\n"
+        f"\u2705 Wins: {p_wins} | \u274c Losses: {p_losses}\n"
+        f"\U0001f4b0 Total P/L: {p_pnl:+.4f} SOL\n\n"
+    )
+
+    if u_total > 0:
+        text += (
+            "\U0001f464 *Your Stats:*\n"
+            f"Win Rate: {u_rate}% ({u_wins}/{u_total})\n\n"
+        )
+
+    if p_total < 10:
+        text += "_Building track record... More trades = more data._\n"
+
+    text += (
+        "\n\U0001f4a1 *Tip:* Our AI Signal Filter only sends Grade A-C alerts.\n"
+        "Grade D signals are automatically suppressed."
+    )
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def cmd_deals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show current exchange deals and promo bonuses."""
+    text = (
+        "\U0001f381 *Exclusive Exchange Deals*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+    )
+
+    deals = [
+        (k, v) for k, v in AFFILIATE_LINKS.items()
+        if v.get("promo")
+    ]
+
+    for i, (key, aff) in enumerate(deals, 1):
+        text += (
+            f"*{i}. {aff['name']}*\n"
+            f"\U0001f381 {aff['promo']}\n"
+            f"\U0001f4b8 Commission: {aff['commission']} fee rebate\n"
+            f"\u2192 [Sign Up Now]({aff['url']})\n\n"
+        )
+
+    # Non-promo featured exchanges
+    others = [
+        (k, v) for k, v in AFFILIATE_LINKS.items()
+        if not v.get("promo") and v.get("featured")
+    ]
+    if others:
+        for key, aff in others:
+            text += f"\u2022 [{aff['name']}]({aff['url']}) \u2014 {aff['commission']}\n"
+
+    text += (
+        "\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\U0001f4a1 Sign up via our links and you support ApexFlash!\n"
+        "All bonuses are verified and exclusive."
+    )
+
+    kb = []
+    for key, aff in deals[:4]:
+        kb.append([InlineKeyboardButton(
+            f"\U0001f525 {aff['name']} \u2014 {aff.get('promo', '')[:30]}",
+            callback_data=f"aff_click_{key}",
+        )])
+    kb.append([InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")])
+
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+    )
+
+
+# ══════════════════════════════════════════════
+# LEADERBOARD COMMAND
+# ══════════════════════════════════════════════
+
+async def cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show top traders by win rate and P/L — public social proof."""
+    from core.persistence import get_win_rate
+
+    platform = get_win_rate()
+
+    text = (
+        "\U0001f3c6 *ApexFlash Leaderboard*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+    )
+
+    # Build leaderboard from user trade histories
+    traders = []
+    for uid, udata in users.items():
+        history = udata.get("trade_history", [])
+        if not history:
+            continue
+
+        buys = [t for t in history if t.get("side") == "BUY"]
+        sells = [t for t in history if t.get("side") == "SELL"]
+        total_trades = len(history)
+
+        # Calculate rough P/L from trade history
+        total_buy_sol = sum(t.get("sol_amount", 0) for t in buys)
+        total_sell_sol = sum(t.get("sol_amount", 0) for t in sells)
+
+        if total_trades >= 2 and total_buy_sol > 0:
+            pnl_sol = total_sell_sol - total_buy_sol
+            pnl_pct = (pnl_sol / total_buy_sol * 100) if total_buy_sol > 0 else 0
+
+            # Anonymize: show first 4 chars of user ID
+            display_name = f"Trader #{str(uid)[-4:]}"
+            traders.append({
+                "name": display_name,
+                "trades": total_trades,
+                "pnl_sol": pnl_sol,
+                "pnl_pct": pnl_pct,
+            })
+
+    # Sort by P/L percentage (best first)
+    traders.sort(key=lambda x: x["pnl_pct"], reverse=True)
+
+    if traders:
+        for i, t in enumerate(traders[:10], 1):
+            pnl_emoji = "\U0001f7e2" if t["pnl_pct"] >= 0 else "\U0001f534"
+            medal = ["\U0001f947", "\U0001f948", "\U0001f949"][i-1] if i <= 3 else f"{i}."
+            text += (
+                f"{medal} *{t['name']}*\n"
+                f"   {pnl_emoji} P/L: {t['pnl_sol']:+.4f} SOL ({t['pnl_pct']:+.1f}%)\n"
+                f"   \U0001f4ca Trades: {t['trades']}\n\n"
+            )
+    else:
+        text += (
+            "\U0001f4ad No trades recorded yet.\n"
+            "Be the first on the leaderboard!\n\n"
+        )
+
+    # Platform stats
+    text += (
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"\U0001f4ca *Platform Stats*\n"
+        f"Total Trades: {platform['total']} | "
+        f"Win Rate: {platform['win_rate']}%\n"
+        f"Total P/L: {platform['total_pnl_sol']:+.4f} SOL"
+    )
+
+    kb = [
+        [InlineKeyboardButton("\U0001f4b0 Start Trading", callback_data="trade")],
+        [InlineKeyboardButton("\U0001f381 Exchange Deals", callback_data="deals_menu")],
+    ]
+
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+
+
+# ══════════════════════════════════════════════
+# INSPECTOR GADGET — ADMIN COMMANDS
+# ══════════════════════════════════════════════
+
+async def cmd_addwallet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: /addwallet <address> [label] — add an alpha wallet to track."""
+    uid = update.effective_user.id
+    if uid not in ADMIN_IDS:
+        await update.message.reply_text("⛔ Admin only.")
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "Usage: `/addwallet <solana_address> [label]`\n"
+            "Example: `/addwallet 7xKX... CryptoGodJohn`",
+            parse_mode="Markdown",
+        )
+        return
+
+    address = args[0].strip()
+    label = " ".join(args[1:]).strip() if len(args) > 1 else address[:8] + "..."
+
+    # Basic Solana address validation (base58, 32-44 chars)
+    if not (32 <= len(address) <= 44):
+        await update.message.reply_text("❌ Invalid Solana address length.")
+        return
+
+    try:
+        from agents.inspector_agent import add_alpha_wallet, get_alpha_wallets
+        add_alpha_wallet(address, label)
+        wallets = get_alpha_wallets()
+        await update.message.reply_text(
+            f"✅ *Alpha wallet added*\n"
+            f"Label: `{label}`\n"
+            f"Address: `{address}`\n"
+            f"Total tracked: {len(wallets)}",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"cmd_addwallet error: {e}")
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def cmd_list_wallets(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: /wallets — list all tracked alpha wallets."""
+    uid = update.effective_user.id
+    if uid not in ADMIN_IDS:
+        await update.message.reply_text("⛔ Admin only.")
+        return
+
+    try:
+        from agents.inspector_agent import get_alpha_wallets
+        wallets = get_alpha_wallets()
+        if not wallets:
+            await update.message.reply_text("No alpha wallets tracked yet.\nUse `/addwallet <address> [label]`")
+            return
+
+        lines = ["🕵️ *Inspector Gadget — Tracked Wallets*\n━━━━━━━━━━━━━━━━━━━━━\n"]
+        for i, (addr, label) in enumerate(wallets.items(), 1):
+            short = addr[:6] + "..." + addr[-4:]
+            lines.append(f"{i}. *{label}*\n   `{short}`")
+
+        text = "\n".join(lines)
+        kb = [[InlineKeyboardButton(
+            "🔍 View on Solscan",
+            url=f"https://solscan.io/account/{list(wallets.keys())[0]}",
+        )]]
+        await update.message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"cmd_list_wallets error: {e}")
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+# ══════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════
+
+def _check_critical_env():
+    """Verify all critical env vars are present at startup. Alert admin if missing."""
+    import os
+    CRITICAL = {
+        "BOT_TOKEN": BOT_TOKEN,
+        "ADMIN_IDS": ADMIN_IDS,
+        "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY", ""),
+        "HUGGINGFACE_TOKEN": os.getenv("HUGGINGFACE_TOKEN", ""),
+        "UPSTASH_REDIS_URL": os.getenv("UPSTASH_REDIS_URL", ""),
+        "GUMROAD_ACCESS_TOKEN": os.getenv("GUMROAD_ACCESS_TOKEN", ""),
+        "NEWSAPI_KEY": os.getenv("NEWSAPI_KEY", ""),
+        "CRYPTOPANIC_KEY": os.getenv("CRYPTOPANIC_KEY", ""),
+        "HELIUS_API_KEY": os.getenv("HELIUS_API_KEY", ""),
+        "ETHERSCAN_API_KEY": os.getenv("ETHERSCAN_API_KEY", ""),
+        "WALLET_ENCRYPTION_KEY": os.getenv("WALLET_ENCRYPTION_KEY", ""),
+        "FEE_COLLECT_WALLET": os.getenv("FEE_COLLECT_WALLET", ""),
+        "ALERT_CHANNEL_ID": os.getenv("ALERT_CHANNEL_ID", ""),
+        "JUPITER_API_KEY": os.getenv("JUPITER_API_KEY", ""),
+    }
+    missing = [k for k, v in CRITICAL.items() if not v]
+    if missing:
+        logger.critical(f"MISSING ENV VARS: {missing} — bot may malfunction!")
+        # Will alert admin via Telegram after bot starts (startup_alert logic)
+        return missing
+    logger.info(f"Env check OK: {len(CRITICAL)} critical vars present")
+    return []
+
+
+def main() -> None:
+    # Python 3.12+ / 3.14+ loop fix
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN not set! Add it to .env or environment variables.")
+        return
+
+    # Check all critical env vars before starting
+    missing_env = _check_critical_env()
+    if missing_env:
+        logger.critical(f"STARTUP WARNING: Missing {missing_env}")
+
+    app = Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
+
+    # VIRAL AGENT: Start the autonomous social proof loop
+    try:
+        from agents.viral_agent import viral_poster_job
+        app.job_queue.run_repeating(viral_poster_job, interval=3600, first=10)
+        logger.info("📱 VIRAL AGENT: Loop scheduled (every 1h)")
+    except Exception as viral_err:
+        logger.error(f"Failed to start Viral Agent: {viral_err}")
+
+    # Commands
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("myid", cmd_myid))
+    app.add_handler(CommandHandler("admin", cmd_admin))
+    app.add_handler(CommandHandler("share", cmd_share))
+    app.add_handler(CommandHandler("admin_pause", cmd_admin_pause))
+    app.add_handler(CommandHandler("admin_resume", cmd_admin_resume))
+    app.add_handler(CommandHandler("broadcast", cmd_broadcast))
+    app.add_handler(CommandHandler("activate", cmd_activate))
+    app.add_handler(CommandHandler("killswitch", cmd_killswitch))
+    app.add_handler(CommandHandler("backup", cmd_backup))
+    app.add_handler(CommandHandler("restore", cmd_restore))
+    app.add_handler(CommandHandler("hot", cmd_hot))
+    app.add_handler(CommandHandler("trending", cmd_hot))
+    app.add_handler(CommandHandler("market", cmd_market))
+    app.add_handler(CommandHandler("portfolio", cmd_portfolio))
+    app.add_handler(CommandHandler("policy", cmd_policy))
+    app.add_handler(CommandHandler("tweetstats", cmd_tweetstats))
+    app.add_handler(CommandHandler("debug", cmd_debug))
+    app.add_handler(CommandHandler("analytics", cmd_analytics))
+    app.add_handler(CommandHandler("admin_marketing", cmd_admin_marketing))
+    app.add_handler(CommandHandler("advisor", cmd_advisor))
+    app.add_handler(CommandHandler("language", cmd_language))
+    # app.add_handler(CommandHandler("admin_studio", cmd_admin_studio)) # TEMPORARY FIX: Disabled until implemented
+    app.add_handler(CommandHandler("path", cmd_path))
+    app.add_handler(CommandHandler("winrate", cmd_winrate))
+    app.add_handler(CommandHandler("deals", cmd_deals))
+    app.add_handler(CommandHandler("promos", cmd_deals))  # alias
+    app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
+    app.add_handler(CommandHandler("top", cmd_leaderboard))  # alias
+    app.add_handler(CommandHandler("referrals", cmd_referrals))
+    app.add_handler(CommandHandler("ref", cmd_referrals))     # alias
+    app.add_handler(CommandHandler("addwallet", cmd_addwallet))    # Inspector: add alpha wallet
+    app.add_handler(CommandHandler("wallets", cmd_list_wallets))   # Inspector: list tracked wallets
+
+    # Inline callbacks
+    app.add_handler(CallbackQueryHandler(callback_handler))
+
+    # Document handler — admin can forward backup JSON to auto-restore
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+
+    # Token address detection — TWO handlers for maximum compatibility
+    # Handler 1: explicit TEXT filter (standard text messages)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_token_address))
+    # Handler 2: catch messages with entities (URLs, etc.) that TEXT might miss
+    app.add_handler(MessageHandler(
+        filters.Entity("url") | filters.Entity("text_link") | filters.CaptionEntity("url"),
+        handle_token_address,
+    ))
+
+    # Whale scanner repeating job
+    app.job_queue.run_repeating(
+        scan_and_alert,
+        interval=SCAN_INTERVAL,
+        first=10,
+        name="whale_scanner",
+    )
+
+    # Conversion AI daily nudge (Cycle 14)
+    app.job_queue.run_daily(
+        scheduled_conversion_job,
+        time=dt_time(hour=9, minute=0, tzinfo=timezone.utc),
+        name="conversion_nudge",
+    )
+
+    # Daily digest — posts to Discord + TG channel at 20:00 UTC
+    app.job_queue.run_daily(
+        daily_digest_job,
+        time=dt_time(hour=20, minute=0, tzinfo=timezone.utc),
+        name="daily_digest",
+    )
+
+    # Auto-save every 60s (safety net for crash recovery)
+    app.job_queue.run_repeating(
+        auto_save_job, interval=60, first=60, name="auto_save",
+    )
+
+    # Auto-backup to admin every 30 min (deploy resilience — Render has no persistent disk)
+    app.job_queue.run_repeating(
+        auto_backup_job, interval=30 * 60, first=300, name="auto_backup",
+    )
+
+    # Heartbeat monitor — hourly ping to admin (24/7 uptime awareness)
+    app.job_queue.run_repeating(
+        heartbeat_job, interval=3600, first=120, name="heartbeat",
+    )
+
+    # SL/TP monitor — checks positions every 15s for stop loss / take profit triggers
+    # Fast enough for scalping (-3% SL can trigger quickly)
+    app.job_queue.run_repeating(
+        sl_tp_monitor_job, interval=15, first=60, name="sl_tp_monitor",
+    )
+
+    # Marketing auto-poster — repeating every 4 hours (survives restarts!)
+    # run_daily loses schedule on restart; run_repeating always fires
+    app.job_queue.run_repeating(
+        marketing_job, interval=4 * 3600, first=300, name="marketing_auto",
+    )
+
+    # Live scalping monitor — every 30s (price momentum on SOL/BONK/JUP/WIF/RAY/PYTH)
+    app.job_queue.run_repeating(
+        scalper_job, interval=30, first=60, name="scalper",
+    )
+
+    # CEO Agent daily briefing — 08:00 Amsterdam time (UTC+1 winter / UTC+2 summer)
+    # Reads all KPIs from Redis, prioritises via Gemini, sends Telegram briefing to Erik
+    async def ceo_briefing_job(context) -> None:
+        try:
+            from agents.ceo_agent import run_briefing
+            await run_briefing()
+        except Exception as e:
+            logger.error(f"CEO briefing job failed: {e}")
+
+    app.job_queue.run_daily(
+        ceo_briefing_job,
+        time=dt_time(hour=6, minute=0, tzinfo=timezone.utc),  # 08:00 AMS (UTC+2 summer)
+        name="ceo_daily_briefing",
+    )
+
+    # ── War Watch: geopolitical news scanner (every 10 min) ───────────────────
+    async def war_watch_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        try:
+            from agents.news_scanner import scan_once
+            signals = await scan_once(bot=context.bot)
+            if signals:
+                logger.info(f"War Watch: {len(signals)} new signal(s) sent")
+        except Exception as e:
+            logger.error(f"War Watch job failed: {e}")
+
+    app.job_queue.run_repeating(
+        war_watch_job,
+        interval=600,   # every 10 minutes
+        first=120,      # first run 2 min after startup (let bot settle)
+        name="war_watch",
+    )
+
+    # ── Zero Loss Manager: autonomous breakeven-lock scalper (24/7) ────────
+    _zero_loss_task = None  # Track the background task
+
+    async def zero_loss_start_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Start the Zero Loss autonomous trader as a persistent background task."""
+        nonlocal _zero_loss_task
+        try:
+            import asyncio as _aio
+            _zero_loss_task = _aio.create_task(auto_trader_loop(bot=context.bot))
+            logger.info("🛡️ Zero Loss Manager: 24/7 autonomous trader STARTED")
+            # Notify admin
+            for admin_id in ADMIN_IDS:
+                try:
+                    await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=(
+                            "🛡️ *Zero Loss Manager ONLINE*\n"
+                            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            "✅ Grade A signals only\n"
+                            "✅ Breakeven lock active\n"
+                            "✅ Auto stop-loss / take-profit\n"
+                            "✅ 24/7 autonomous execution\n\n"
+                            "_All trades reported to this chat._"
+                        ),
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"Zero Loss Manager start failed: {e}")
+
+    app.job_queue.run_once(
+        zero_loss_start_job,
+        when=45,  # start 45s after boot (let other systems settle)
+        name="zero_loss_start",
+    )
+
+    # ── Inspector Gadget: Alpha wallet copy-trade intelligence (every 60s) ─────
+    async def _inspector_copy_signal(signal: dict) -> None:
+        """Callback: broadcast Inspector copy-trade signal to all alert subscribers."""
+        try:
+            from agents.inspector_agent import format_inspector_signal
+            text = format_inspector_signal(signal)
+            mint = signal["mint"]
+
+            kb = [
+                [InlineKeyboardButton(
+                    "⚡ Copy Trade Now",
+                    url=f"https://t.me/{BOT_USERNAME}?start=buy_{mint}",
+                )],
+                [InlineKeyboardButton("📊 Chart", url=f"https://dexscreener.com/solana/{mint}")],
+            ]
+
+            # Send to Erik + all admin (signal test phase first)
+            for admin_id in ADMIN_IDS:
+                try:
+                    await app.bot.send_message(
+                        chat_id=admin_id,
+                        text=text,
+                        reply_markup=InlineKeyboardMarkup(kb),
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    pass
+
+            # Also post to alert subscribers (same as whale alerts)
+            for uid, udata in list(users.items()):
+                if not udata.get("alerts_on"):
+                    continue
+                try:
+                    await app.bot.send_message(
+                        chat_id=uid,
+                        text=text,
+                        reply_markup=InlineKeyboardMarkup(kb),
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.error(f"Inspector signal dispatch error: {e}")
+
+    async def inspector_gadget_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Inspector Gadget: scan alpha wallets, fire copy-trade signals."""
+        try:
+            from agents.inspector_agent import inspector_job, register_signal_callback
+            register_signal_callback(_inspector_copy_signal)
+            results = await inspector_job(context)
+            if results:
+                logger.info(f"Inspector: {len(results)} signal(s) fired")
+        except Exception as e:
+            logger.error(f"Inspector job failed: {e}")
+
+    app.job_queue.run_repeating(
+        inspector_gadget_job,
+        interval=60,   # every 60s — alpha wallets checked every minute
+        first=90,      # first run 90s after startup
+        name="inspector_gadget",
+    )
+
+    # Arbitrage Scanner (Cycle 9)
+    app.job_queue.run_repeating(arbitrage_job, interval=60, first=10)
+
+    async def system_heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Periodic status update for admin visibility (Heartbeat)."""
+        try:
+            from zero_loss_manager import check_market_trend
+            trend = await check_market_trend()
+            emoji = "\U0001f7e2" if trend >= 0 else "\U0001f534"
+            msg = (
+                f"\U0001f493 *APEXFLASH HEARTBEAT*\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"Status: **System Healthy**\n"
+                f"{emoji} SOL Trend: **{trend:+.2f}%**\n"
+                f"📡 Scanning: **Grade A/B+ active**\n"
+                f"\n"
+                f"_Bot is monitoring markets 24/7._"
+            )
+            for admin_id in ADMIN_IDS:
+                try:
+                    await context.bot.send_message(chat_id=admin_id, text=msg, parse_mode="Markdown")
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"Heartbeat failed: {e}")
+
+    app.job_queue.run_repeating(
+        system_heartbeat_job,
+        interval=14400, # every 4 hours
+        first=300,      # first run 5 min after startup
+        name="heartbeat_job",
+    )
+
+    logger.info("\u26a1 ApexFlash MEGA BOT v3.15.4 starting (Infinity Engine + The Agency Gateway)...")
+    logger.info(f"\U0001f4e1 Scan interval: {SCAN_INTERVAL}s | Digest: 20:00 UTC")
+    logger.info(f"\U0001f451 Admin IDs: {ADMIN_IDS}")
+    logger.info(f"\U0001f40b Tracking {len(ETH_WHALE_WALLETS)} ETH + {len(SOL_WHALE_WALLETS)} SOL wallets")
+
+    # Startup notification to channel
+    async def post_init(application: Application) -> None:
+        # Set persistent "/" menu commands (visible to all users)
+        try:
+            await application.bot.set_my_commands([
+                BotCommand("start", "Start the bot"),
+                BotCommand("help", "How to use ApexFlash"),
+                BotCommand("myid", "Show your Telegram ID"),
+            ])
+            logger.info("✅ Menu commands set")
+        except Exception as e:
+            logger.warning(f"set_my_commands failed: {e}")
+
+        # CRITICAL: Alert admin if data was lost on restart
+        if not users:
+            for admin_id in ADMIN_IDS:
+                try:
+                    await application.bot.send_message(
+                        chat_id=admin_id,
+                        text=(
+                            "\u26a0\ufe0f *DATA LOST — Render restart detected*\n\n"
+                            "Users: 0 | Wallets: 0\n\n"
+                            "\U0001f504 *To restore:* Forward the latest backup "
+                            "JSON file to this chat.\n\n"
+                            "_The bot will auto-restore all wallets and user data._"
+                        ),
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    pass
+            logger.warning("NO USER DATA — sent restore request to admins")
+
+        if ALERT_CHANNEL_ID:
+            try:
+                await application.bot.send_message(
+                    chat_id=ALERT_CHANNEL_ID,
+                    text=(
+                        "\u26a1 *ApexFlash MEGA BOT Godmode Infinity (v3.15.4) is LIVE*\n\n"
+                        "\u2705 All systems operational\n"
+                        "\u2705 Whale tracking active\n"
+                        "\u2705 Trading engine ready\n"
+                        "\u2705 SL/TP monitor active (30s)\n"
+                        "\u2705 Auto-backup every 30 min\n"
+                        "\u2705 Marketing auto-poster scheduled\n"
+                        "\u2705 Zero Loss Manager (24/7 autonomous)\n"
+                        "\u2705 War Watch (geopolitics scanner)\n"
+                        "\u2705 CEO Agent (daily briefing)"
+                    ),
+                    parse_mode="Markdown",
+                )
+            except Exception as e:
+                logger.warning(f"Startup notification failed: {e}")
+
+        # 🚀 START GODMODE AGENTS
+        try:
+            # 1. Zero-Loss Autonomous Scalper (24/7 background task)
+            asyncio.create_task(auto_trader_loop(application.bot))
+            logger.info("🛡️ Zero-Loss Manager: task started")
+
+            # 2. CEO Agent Scheduler (Daily 08:00 Amsterdam)
+            start_ceo_scheduler(application.job_queue.scheduler)
+            logger.info("🤖 CEO Agent: scheduler hooked to JobQueue")
+            
+        except Exception as e:
+            logger.error(f"Godmode Agent activation failed: {e}")
+
+    app.post_init = post_init
+    # ── Gumroad Revenue Sync: Poll for new sales (every 15 min) ───────────────
+    async def gumroad_sync_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Poll Gumroad for recent sales and sync to KPI tracking."""
+        try:
+            from gumroad import get_recent_sales
+            from core.persistence import (
+                is_purchase_synced, 
+                mark_purchase_synced, 
+                track_paid_conversion, 
+                track_revenue,
+                get_tier_from_product_id,
+                _get_redis
+            )
+            
+            sales = await get_recent_sales(page=1)
+            if not sales:
+                return
+
+            new_count = 0
+            for sale in sales:
+                purchase_id = sale.get("id")
+                product_id = sale.get("product_id")
+                
+                if not purchase_id or is_purchase_synced(purchase_id):
+                    continue
+                
+                # New sale detected!
+                tier = get_tier_from_product_id(product_id)
+                if tier == "unknown":
+                    continue
+                
+                # 1. Track in Redis
+                price = sale.get("price", 0) / 100.0 # cents to dollars
+                track_paid_conversion(0, tier) 
+                track_revenue(price)
+                mark_purchase_synced(purchase_id)
+                new_count += 1
+                
+                # 2. Get Progress Data
+                r = _get_redis()
+                total_usd = float(r.get("kpi:total_revenue_usd") or 0) if r else price
+                total_eur = total_usd * 0.92  # Approx conversion for €1M goal progress
+                progress_pct = (total_eur / 1_000_000) * 100
+
+                # 3. Notify Admin
+                currency = sale.get("currency", "USD")
+                formatted_price = f"{price:,.2f} {currency}"
+                
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=admin_id,
+                            text=(
+                                f"💰 <b>NEW GUMROAD SALE!</b>\n"
+                                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+                                f"Tier: <b>{tier.upper()}</b>\n"
+                                f"Amount: <b>{formatted_price}</b>\n"
+                                f"Product: <i>{sale.get('product_name', 'Unknown')}</i>\n\n"
+                                f"📈 <b>Progress to €1,000,000:</b>\n"
+                                f"Total: <b>€{total_eur:,.2f}</b> ({progress_pct:.4f}%)\n\n"
+                                f"🚀 <i>Every sale counts! Godmode active.</i>"
+                            ),
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+            
+            if new_count > 0:
+                logger.info(f"Gumroad Sync: {new_count} new sales synced to Redis")
+        except Exception as e:
+            logger.error(f"Gumroad sync job failed: {e}")
+
+    app.job_queue.run_repeating(
+        gumroad_sync_job,
+        interval=900,   # every 15 minutes
+        first=60,       # first run 1 min after startup
+        name="gumroad_sync",
+    )
+
+    try:
+        app.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=["message", "callback_query"],
+        )
+    except Exception as e:
+        if "Conflict" in str(e) or "terminated by other getUpdates" in str(e):
+            logger.warning("Another bot instance is running. Shutting down this local instance gracefully to prevent conflicts.")
+        else:
+            raise
+
+
+if __name__ == "__main__":
+    import os as _os
+    import time as _time
+    import traceback
+    import httpx
+
+    def _send_crash_report(msg: str):
+        """Send crash report to admin via Telegram."""
+        try:
+            _tok = _os.getenv("BOT_TOKEN", "")
+            _admin = _os.getenv("ADMIN_IDS", "").split(",")[0].strip()
+            if _tok and _admin:
+                httpx.post(
+                    f"https://api.telegram.org/bot{_tok}/sendMessage",
+                    json={"chat_id": int(_admin), "text": msg[:4000]},
+                    timeout=10,
+                )
+        except Exception:
+            pass
+
+    # Clear any stale Telegram polling connections (crash loop fix)
+    try:
+        _tok = _os.getenv("BOT_TOKEN", "")
+        if _tok:
+            httpx.post(
+                f"https://api.telegram.org/bot{_tok}/deleteWebhook",
+                json={"drop_pending_updates": True},
+                timeout=10,
+            )
+            httpx.post(
+                f"https://api.telegram.org/bot{_tok}/close",
+                timeout=10,
+            )
+            logging.info("Cleared webhook + closed sessions before startup")
+            _time.sleep(10)  # Let Telegram release old polling connections
+    except Exception as e:
+        logging.warning(f"Pre-startup cleanup failed: {e}")
+
+    try:
+        main()
+    except Exception as e:
+        err_str = str(e)
+        if "Conflict" in err_str or "terminated by other getUpdates" in err_str:
+            logging.warning("Auto-fix: telegram.error.Conflict detected. Exiting gracefully.")
+        else:
+            err_msg = f"\U0001f534 BOT CRASH:\n\n{e}\n\n{traceback.format_exc()}"
+            logging.error(err_msg)
+            _send_crash_report(err_msg)
+            raise
