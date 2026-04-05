@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 import re
 import random
-from datetime import datetime, timezone, time as dt_time
+from datetime import datetime, timezone, time as dt_time, timedelta
 import asyncio
 import json
 from pathlib import Path
@@ -144,10 +144,12 @@ RUNTIME_HEALTH = {
     "last_ops_status": "idle",
     "last_ops_error": "",
     "sla_history": [],
+    "daily_kpi_snapshots": {},
 }
 
 RUNTIME_HEALTH_FILE = Path("data") / "runtime_health.json"
 SLA_HISTORY_MAX = 120
+DAILY_KPI_HISTORY_MAX_DAYS = 14
 
 
 def _load_runtime_health() -> None:
@@ -164,6 +166,8 @@ def _load_runtime_health() -> None:
                 RUNTIME_HEALTH[key] = raw[key]
         if not isinstance(RUNTIME_HEALTH.get("sla_history"), list):
             RUNTIME_HEALTH["sla_history"] = []
+        if not isinstance(RUNTIME_HEALTH.get("daily_kpi_snapshots"), dict):
+            RUNTIME_HEALTH["daily_kpi_snapshots"] = {}
     except Exception as e:
         logger.warning(f"load runtime health failed: {e}")
 
@@ -208,6 +212,42 @@ def _record_sla_history(source: str) -> None:
     if len(history) > SLA_HISTORY_MAX:
         history = history[-SLA_HISTORY_MAX:]
     RUNTIME_HEALTH["sla_history"] = history
+
+
+def _compute_sla_percentages() -> tuple[float, float]:
+    advisor_total = int(RUNTIME_HEALTH.get("advisor_checks_total", 0))
+    advisor_ok_count = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0))
+    endpoint_total = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0))
+    endpoint_ok_count = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0))
+    advisor_sla = (advisor_ok_count / advisor_total * 100.0) if advisor_total else 0.0
+    endpoint_sla = (endpoint_ok_count / endpoint_total * 100.0) if endpoint_total else 0.0
+    return advisor_sla, endpoint_sla
+
+
+def _build_daily_kpi_snapshot() -> dict:
+    advisor_sla, endpoint_sla = _compute_sla_percentages()
+    wallets_total = 0
+    for u in users.values():
+        wallets_total += len(u.get("wallets", []))
+
+    return {
+        "users_total": len(users),
+        "wallets_total": wallets_total,
+        "trades_total": int(platform_stats.get("trades_total", 0) or 0),
+        "trades_today": int(platform_stats.get("trades_today", 0) or 0),
+        "volume_total_usd": float(platform_stats.get("volume_total_usd", 0.0) or 0.0),
+        "volume_today_usd": float(platform_stats.get("volume_today_usd", 0.0) or 0.0),
+        "advisor_sla": round(advisor_sla, 2),
+        "endpoint_sla": round(endpoint_sla, 2),
+    }
+
+
+def _delta_line(label: str, current: float | int, previous: float | int | None, suffix: str = "") -> str:
+    if previous is None:
+        return f"• {label}: `{current}{suffix}` (new baseline)"
+    delta = current - previous
+    sign = "+" if delta >= 0 else ""
+    return f"• {label}: `{current}{suffix}` ({sign}{delta}{suffix} vs yesterday)"
 
 
 _load_runtime_health()
@@ -7994,6 +8034,64 @@ def main() -> None:
         ops_autocheck_job,
         when=90,        # first full check after 90 seconds
         name="ops_autocheck_bootstrap",
+    )
+
+    # Daily self-check report with day-over-day KPI drift (LEAN/KAIZEN).
+    async def daily_self_check_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        try:
+            today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            yesterday_key = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+            snapshots = RUNTIME_HEALTH.get("daily_kpi_snapshots", {})
+            if not isinstance(snapshots, dict):
+                snapshots = {}
+
+            current = _build_daily_kpi_snapshot()
+            previous = snapshots.get(yesterday_key)
+
+            snapshots[today_key] = current
+            # Keep only latest N days.
+            keep_keys = sorted(snapshots.keys())[-DAILY_KPI_HISTORY_MAX_DAYS:]
+            snapshots = {k: snapshots[k] for k in keep_keys}
+            RUNTIME_HEALTH["daily_kpi_snapshots"] = snapshots
+            _save_runtime_health()
+
+            text = (
+                "📅 *Daily Self-Check (KPI Drift)*\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
+                f"Date: `{today_key}`\n"
+                + _delta_line("Users", current["users_total"], previous.get("users_total") if isinstance(previous, dict) else None)
+                + "\n"
+                + _delta_line("Wallets", current["wallets_total"], previous.get("wallets_total") if isinstance(previous, dict) else None)
+                + "\n"
+                + _delta_line("Trades total", current["trades_total"], previous.get("trades_total") if isinstance(previous, dict) else None)
+                + "\n"
+                + _delta_line(
+                    "Volume total",
+                    round(float(current["volume_total_usd"]), 2),
+                    round(float(previous.get("volume_total_usd")), 2)
+                    if isinstance(previous, dict) and previous.get("volume_total_usd") is not None
+                    else None,
+                    " USD",
+                )
+                + "\n"
+                + _delta_line("Advisor SLA", current["advisor_sla"], previous.get("advisor_sla") if isinstance(previous, dict) else None, "%")
+                + "\n"
+                + _delta_line("Endpoint SLA", current["endpoint_sla"], previous.get("endpoint_sla") if isinstance(previous, dict) else None, "%")
+            )
+
+            for admin_id in ADMIN_IDS:
+                try:
+                    await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"daily_self_check_job failed: {e}")
+
+    app.job_queue.run_daily(
+        daily_self_check_job,
+        time=dt_time(hour=5, minute=45, tzinfo=timezone.utc),  # 07:45 Amsterdam (summer)
+        name="daily_self_check",
     )
 
     logger.info("\u26a1 ApexFlash MEGA BOT v3.15.4 starting (Infinity Engine + The Agency Gateway)...")
