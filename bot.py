@@ -122,6 +122,16 @@ platform_stats = _saved_stats if _saved_stats else {
     "active_traders_today": set(),
 }
 
+# Runtime health snapshot for admin SLA visibility.
+RUNTIME_HEALTH = {
+    "advisor_ok": None,
+    "advisor_reason": "",
+    "advisor_model": "",
+    "endpoint_ok": None,
+    "endpoint_failed": [],
+    "last_smoke_ts": "",
+}
+
 # ══════════════════════════════════════════════
 # DISCLAIMER TEXT
 # ══════════════════════════════════════════════
@@ -6558,6 +6568,14 @@ async def cmd_smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         advisor_line = f"⚠️ Advisor probe fallback: `{probe.get('reason', 'unknown')}`"
 
+    # Update runtime snapshot for SLA command
+    RUNTIME_HEALTH["advisor_ok"] = bool(probe.get("ok"))
+    RUNTIME_HEALTH["advisor_reason"] = str(probe.get("reason") or "")
+    RUNTIME_HEALTH["advisor_model"] = str(probe.get("model") or "")
+    RUNTIME_HEALTH["endpoint_ok"] = all(line.startswith("✅") for line in lines)
+    RUNTIME_HEALTH["endpoint_failed"] = [line for line in lines if line.startswith("❌")][:8]
+    RUNTIME_HEALTH["last_smoke_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
     text = (
         "🧪 *ApexFlash Live Smoke Test*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
@@ -6565,6 +6583,39 @@ async def cmd_smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         + "\n\n"
         + advisor_line
     )
+
+    await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+
+
+async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin-only SLA snapshot from runtime watchdog/smoke states."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    advisor_ok = RUNTIME_HEALTH.get("advisor_ok")
+    endpoint_ok = RUNTIME_HEALTH.get("endpoint_ok")
+    advisor_status = "✅ online" if advisor_ok is True else "⚠️ fallback" if advisor_ok is False else "❔ unknown"
+    endpoint_status = "✅ healthy" if endpoint_ok is True else "⚠️ issues" if endpoint_ok is False else "❔ unknown"
+    failed = RUNTIME_HEALTH.get("endpoint_failed", []) or []
+
+    uptime = datetime.now(timezone.utc) - bot_start_time
+    uptime_h = int(uptime.total_seconds() // 3600)
+    uptime_m = int((uptime.total_seconds() % 3600) // 60)
+
+    text = (
+        "📡 *ApexFlash SLA Snapshot*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Advisor: {advisor_status}\n"
+        f"Endpoints: {endpoint_status}\n"
+        f"Model: `{RUNTIME_HEALTH.get('advisor_model', '') or '-'}" + "`\n"
+        f"Fallback reason: `{RUNTIME_HEALTH.get('advisor_reason', '') or '-'}" + "`\n"
+        f"Last smoke: `{RUNTIME_HEALTH.get('last_smoke_ts', '-')}`\n"
+        f"Uptime: `{uptime_h}h {uptime_m}m`"
+    )
+
+    if failed:
+        text += "\n\n❌ Failed endpoints:\n" + "\n".join(failed[:6])
 
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
 
@@ -7237,6 +7288,7 @@ def main() -> None:
     app.add_handler(CommandHandler("advisor", cmd_advisor))
     app.add_handler(CommandHandler("advisor_diag", cmd_advisor_diag))
     app.add_handler(CommandHandler("smoke", cmd_smoke))
+    app.add_handler(CommandHandler("sla", cmd_sla))
     app.add_handler(CommandHandler("language", cmd_language))
     # app.add_handler(CommandHandler("admin_studio", cmd_admin_studio)) # TEMPORARY FIX: Disabled until implemented
     app.add_handler(CommandHandler("path", cmd_path))
@@ -7496,6 +7548,10 @@ def main() -> None:
             probe = await advisor_live_probe()
             current_ok = bool(probe.get("ok"))
 
+            RUNTIME_HEALTH["advisor_ok"] = current_ok
+            RUNTIME_HEALTH["advisor_reason"] = str(probe.get("reason") or "")
+            RUNTIME_HEALTH["advisor_model"] = str(probe.get("model") or "")
+
             # Notify only on first run or when state changes (LEAN: avoid noisy spam)
             if advisor_probe_last_ok is None or advisor_probe_last_ok != current_ok:
                 if current_ok:
@@ -7555,6 +7611,8 @@ def main() -> None:
                     results.append((url, ok, status))
 
             all_ok = all(item[1] for item in results)
+            RUNTIME_HEALTH["endpoint_ok"] = all_ok
+            RUNTIME_HEALTH["endpoint_failed"] = [f"• `{u}` → {s if s else 'ERR'}" for u, ok, s in results if not ok][:8]
 
             # Notify only on first run or when aggregate health changes.
             if endpoint_watchdog_last_ok is None or endpoint_watchdog_last_ok != all_ok:
