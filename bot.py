@@ -6951,6 +6951,36 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
 
 
+async def cmd_qa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin-only lean QA summary: integrity + watchdog + autotrade readiness."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    integrity = _runtime_integrity_snapshot()
+    advisor_ok = RUNTIME_HEALTH.get("advisor_ok")
+    endpoint_ok = RUNTIME_HEALTH.get("endpoint_ok")
+
+    admin_id = ADMIN_IDS[0] if isinstance(ADMIN_IDS, list) and ADMIN_IDS else (ADMIN_IDS if isinstance(ADMIN_IDS, int) else 0)
+    admin_user = users.get(admin_id) if isinstance(admin_id, int) else None
+    if not admin_user and isinstance(admin_id, int):
+        admin_user = users.get(str(admin_id))
+    wallet_ready = bool((admin_user or {}).get("wallet_secret_enc"))
+
+    text = (
+        "🧪 *Lean QA Snapshot*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Runtime integrity: `{'OK' if integrity.get('ok') else 'ISSUES'}`\n"
+        f"Advisor watchdog: `{'OK' if advisor_ok is True else 'ISSUES' if advisor_ok is False else 'UNKNOWN'}`\n"
+        f"Endpoint watchdog: `{'OK' if endpoint_ok is True else 'ISSUES' if endpoint_ok is False else 'UNKNOWN'}`\n"
+        f"Autotrade wallet: `{'READY' if wallet_ready else 'MISSING'}`\n"
+        f"Last smoke: `{RUNTIME_HEALTH.get('last_smoke_ts', '-')}`\n"
+        f"Last integrity: `{RUNTIME_HEALTH.get('last_integrity_ts', '-')}`\n"
+        "Tip: run `/ops_now` for full cycle."
+    )
+    await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+
+
 async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin-only SLA snapshot from runtime watchdog/smoke states."""
     if not is_admin(update.effective_user.id):
@@ -7827,6 +7857,7 @@ def main() -> None:
     app.add_handler(CommandHandler("advisor", cmd_advisor))
     app.add_handler(CommandHandler("advisor_diag", cmd_advisor_diag))
     app.add_handler(CommandHandler("autotrade_diag", cmd_autotrade_diag))
+    app.add_handler(CommandHandler("qa", cmd_qa))
     app.add_handler(CommandHandler("smoke", cmd_smoke))
     app.add_handler(CommandHandler("sla", cmd_sla))
     app.add_handler(CommandHandler("ops_now", cmd_ops_now))
