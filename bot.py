@@ -6673,6 +6673,7 @@ async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         ("funded", "Funded"),
         ("first_trade", "First trade"),
         ("upgrade", "Upgrade"),
+        ("conversion_report_sent", "Conversion report sent"),
         ("advisor_used", "Advisor used (Elite/Admin)"),
         ("advisor_paywall_view", "Advisor paywall view"),
         ("advisor_upgrade_click", "Advisor upgrade click"),
@@ -7123,11 +7124,22 @@ async def scheduled_conversion_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     
     for user_id, data in users_data.items():
         if await check_conversion_eligibility(user_id, data):
-            lang = data.get("lang", "en")
+            lang = data.get("language_code", data.get("lang", "en"))
             report = await generate_opportunity_report(user_id, lang)
             if report:
                 try:
-                    await context.bot.send_message(chat_id=user_id, text=report, parse_mode="Markdown")
+                    kb = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💎 Upgrade to Elite", callback_data="advisor_upgrade_elite")],
+                        [InlineKeyboardButton("📈 View Pricing", callback_data="advisor_view_pricing")],
+                    ])
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=report,
+                        parse_mode="Markdown",
+                        reply_markup=kb,
+                    )
+                    track_funnel("conversion_report_sent")
+                    track_bucket_kpi(get_user_bucket(user_id), "conversion_report_sent")
                     logger.info(f"Conversion report sent to {user_id}")
                 except Exception as e:
                     logger.debug(f"Failed to send conversion report to {user_id}: {e}")
