@@ -54,6 +54,13 @@ _last_volume_cache: dict[str, float] = {}
 _last_volume_ts: float = 0.0
 _VOLUME_TTL = 120  # seconds
 _KNOWN_SYMBOLS = set(ALL_TOKENS.keys())
+SCALPER_STATE = {
+    "last_fetch_ts": "-",
+    "prices_count": 0,
+    "volume_symbols": 0,
+    "history_ready": 0,
+    "signals_generated": 0,
+}
 
 
 async def _fetch_prices() -> dict[str, float]:
@@ -118,6 +125,7 @@ def _grade_signal(pct_5m: float, pct_15m: float, volume_usd: float) -> str:
     """Return signal grade A/B/C or None. 
     Grade A requires trend alignment (5m and 15m in same direction).
     """
+    has_volume = volume_usd > 0
     has_high_vol = volume_usd > 1_500_000   # $1.5M+ for Grade A (liquidity)
     has_std_vol = volume_usd > 750_000     # $0.75M+ for Grade B/C
     
@@ -133,6 +141,16 @@ def _grade_signal(pct_5m: float, pct_15m: float, volume_usd: float) -> str:
         return "B" if has_std_vol else ""
     if abs5 >= 0.8:
         return "C" if has_std_vol else ""
+
+    # Fallback mode when volume feed is unavailable:
+    # keep stricter momentum thresholds, but don't fully block signal generation.
+    if not has_volume:
+        if abs5 >= 3.0 and trend_aligned:
+            return "A"
+        if abs5 >= 1.8 or abs15 >= 3.0:
+            return "B"
+        if abs5 >= 1.0:
+            return "C"
     return ""
 
 
@@ -167,18 +185,26 @@ async def check_scalp_signals() -> list[dict]:
     """
     now = time.time()
     prices = await _fetch_prices()
+    SCALPER_STATE["last_fetch_ts"] = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now))
+    SCALPER_STATE["prices_count"] = len(prices)
     if not prices:
+        SCALPER_STATE["volume_symbols"] = 0
+        SCALPER_STATE["history_ready"] = 0
+        SCALPER_STATE["signals_generated"] = 0
         return []
 
     volumes = await _fetch_volume_spikes()
+    SCALPER_STATE["volume_symbols"] = len(volumes)
 
     signals = []
+    history_ready = 0
     for sym, price in prices.items():
         history = _price_history[sym]
         history.append((now, price))
 
         if len(history) < 3:  # Need at least 3 data points (90 seconds)
             continue
+        history_ready += 1
 
         # 5-minute window: ~10 snapshots ago (30s * 10 = 300s)
         idx_5m = max(0, len(history) - 10)
@@ -218,6 +244,8 @@ async def check_scalp_signals() -> list[dict]:
             "direction": direction,
         })
 
+    SCALPER_STATE["history_ready"] = history_ready
+    SCALPER_STATE["signals_generated"] = len(signals)
     return signals
 
 

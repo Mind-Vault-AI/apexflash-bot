@@ -6943,11 +6943,14 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
     eff_min_vol = min(cfg_min_vol, 900000.0)
     try:
         from zero_loss_manager import active_positions, AUTOTRADE_STATE
+        from scalper import SCALPER_STATE
         pos_count = len(active_positions) if isinstance(active_positions, dict) else 0
         auto_state = AUTOTRADE_STATE if isinstance(AUTOTRADE_STATE, dict) else {}
+        scalper_state = SCALPER_STATE if isinstance(SCALPER_STATE, dict) else {}
     except Exception:
         pos_count = 0
         auto_state = {}
+        scalper_state = {}
 
     text = (
         "🛡️ *Autotrade Diagnostics*\n"
@@ -6967,6 +6970,8 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Scan ts: `{auto_state.get('last_cycle_ts', '-')}`\n"
         f"Signals scanned: `{auto_state.get('signals_scanned', 0)}` | candidates: `{auto_state.get('candidates', 0)}`\n"
         f"Skips — selectivity `{auto_state.get('skipped_selectivity', 0)}`, trend `{auto_state.get('skipped_trend', 0)}`, panic `{auto_state.get('skipped_panic', 0)}`, balance `{auto_state.get('skipped_balance', 0)}`\n"
+        f"Scalper fetch: prices `{scalper_state.get('prices_count', 0)}` | volume symbols `{scalper_state.get('volume_symbols', 0)}` | history ready `{scalper_state.get('history_ready', 0)}` | signals `{scalper_state.get('signals_generated', 0)}`\n"
+        f"Scalper ts: `{scalper_state.get('last_fetch_ts', '-')}`\n"
         f"Last reason: `{auto_state.get('last_reason', '-')}`\n"
         f"Last entry: `{auto_state.get('last_entry_symbol', '-')} @ {auto_state.get('last_entry_ts', '-')}`\n"
         "Tip: run `/ops_now` and check for zero-loss entry alerts."
