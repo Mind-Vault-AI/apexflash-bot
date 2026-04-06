@@ -5654,6 +5654,10 @@ async def _cb_admin_at_on(query, user, context):
     if not is_admin(query.from_user.id):
         return
     _set_autotrade_enabled_flag(True)
+    try:
+        await context.bot.send_message(chat_id=query.message.chat_id, text="✅ Autotrade runtime set to ON")
+    except Exception:
+        pass
     await _cb_admin_autotrade(query, user, context)
 
 
@@ -5661,6 +5665,10 @@ async def _cb_admin_at_off(query, user, context):
     if not is_admin(query.from_user.id):
         return
     _set_autotrade_enabled_flag(False)
+    try:
+        await context.bot.send_message(chat_id=query.message.chat_id, text="⏹️ Autotrade runtime set to OFF")
+    except Exception:
+        pass
     await _cb_admin_autotrade(query, user, context)
 
 
@@ -5671,6 +5679,10 @@ async def _cb_admin_at_test_003(query, user, context):
     r = _get_redis()
     if r:
         r.set("apexflash:autotrade:test_cap_sol", "0.03")
+    try:
+        await context.bot.send_message(chat_id=query.message.chat_id, text="🧪 Test mode cap set to 0.03 SOL")
+    except Exception:
+        pass
     await _cb_admin_autotrade(query, user, context)
 
 
@@ -5681,6 +5693,10 @@ async def _cb_admin_at_test_005(query, user, context):
     r = _get_redis()
     if r:
         r.set("apexflash:autotrade:test_cap_sol", "0.05")
+    try:
+        await context.bot.send_message(chat_id=query.message.chat_id, text="🧪 Test mode cap set to 0.05 SOL")
+    except Exception:
+        pass
     await _cb_admin_autotrade(query, user, context)
 
 
@@ -5691,6 +5707,10 @@ async def _cb_admin_at_test_off(query, user, context):
     r = _get_redis()
     if r:
         r.delete("apexflash:autotrade:test_cap_sol")
+    try:
+        await context.bot.send_message(chat_id=query.message.chat_id, text="✅ Test mode turned OFF")
+    except Exception:
+        pass
     await _cb_admin_autotrade(query, user, context)
 
 
@@ -5700,6 +5720,10 @@ async def _cb_admin_at_preset_safe(query, user, context):
     from core.persistence import update_governance_config
     update_governance_config("grade_a_min_pct", 1.2)
     update_governance_config("min_volume_usd", 900000)
+    try:
+        await context.bot.send_message(chat_id=query.message.chat_id, text="🟢 SAFE preset applied")
+    except Exception:
+        pass
     await _cb_admin_autotrade(query, user, context)
 
 
@@ -5709,6 +5733,10 @@ async def _cb_admin_at_preset_bal(query, user, context):
     from core.persistence import update_governance_config
     update_governance_config("grade_a_min_pct", 0.8)
     update_governance_config("min_volume_usd", 250000)
+    try:
+        await context.bot.send_message(chat_id=query.message.chat_id, text="🟡 BALANCED preset applied")
+    except Exception:
+        pass
     await _cb_admin_autotrade(query, user, context)
 
 
@@ -5718,6 +5746,10 @@ async def _cb_admin_at_preset_active(query, user, context):
     from core.persistence import update_governance_config
     update_governance_config("grade_a_min_pct", 0.5)
     update_governance_config("min_volume_usd", 100000)
+    try:
+        await context.bot.send_message(chat_id=query.message.chat_id, text="🔴 ACTIVE preset applied")
+    except Exception:
+        pass
     await _cb_admin_autotrade(query, user, context)
 
 
