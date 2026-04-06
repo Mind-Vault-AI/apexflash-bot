@@ -9,7 +9,7 @@ import aiohttp
 from core.config import (
     ADMIN_IDS, SOL_MINT, 
     AUTONOMOUS_TRADE_AMOUNT_SOL, BREAKEVEN_TRIGGER_PCT, 
-    TAKE_PROFIT_PCT, STOP_LOSS_PCT, AUTONOMOUS_COOLDOWN
+    TAKE_PROFIT_PCT, STOP_LOSS_PCT, AUTONOMOUS_COOLDOWN, MIN_SOL_RESERVE
 )
 from core.persistence import load_users, record_trade_result, get_governance_config, get_market_panic_score
 from core.wallet import load_keypair, get_sol_balance, get_token_balances
@@ -138,7 +138,7 @@ async def position_manager(keypair, symbol, mint, bot=None):
             if not quote: continue
             
             curr_sol = int(quote.get("outAmount", 0)) / 1e9
-            orig_sol = AUTONOMOUS_TRADE_AMOUNT_SOL
+            orig_sol = float(pos.get("entry_sol", AUTONOMOUS_TRADE_AMOUNT_SOL) or AUTONOMOUS_TRADE_AMOUNT_SOL)
             pnl = ((curr_sol - orig_sol) / orig_sol) * 100
             
             # 2. Breakeven Lock
@@ -153,7 +153,7 @@ async def position_manager(keypair, symbol, mint, bot=None):
             if curr_price <= pos['sl_price']:
                 logger.info(f"🛑 STOP OUT: {symbol}")
                 sig, _ = await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
-                record_trade_result(ADMIN_IDS[0], symbol, pnl, pnl * AUTONOMOUS_TRADE_AMOUNT_SOL / 100)
+                record_trade_result(ADMIN_IDS[0], symbol, pnl, pnl * orig_sol / 100)
                 await _notify_admin(bot, f"🛑 *STOP OUT* — {symbol}\nPNL: {pnl:+.2f}%\nTx: `{sig or 'failed'}`")
                 break
 
@@ -161,7 +161,7 @@ async def position_manager(keypair, symbol, mint, bot=None):
             if pnl >= tp_pct:
                 logger.info(f"💰 TAKE PROFIT: {symbol}")
                 sig, _ = await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
-                record_trade_result(ADMIN_IDS[0], symbol, pnl, pnl * AUTONOMOUS_TRADE_AMOUNT_SOL / 100)
+                record_trade_result(ADMIN_IDS[0], symbol, pnl, pnl * orig_sol / 100)
                 
                 # Viral Loop Hook for CEO/Admin
                 viral_hook = (
@@ -244,21 +244,30 @@ async def auto_trader_loop(bot=None):
                     # Check Market Hedge
                     if await check_market_trend() < -4.0: continue
                     
+                    # Entry sizing (LEAN): auto-scale to available SOL so autotrade doesn't idle below default size.
+                    wallet_pub = str(admin_user.get("wallet_pubkey") or "")
+                    avail_sol = float(await get_sol_balance(wallet_pub) or 0.0) if wallet_pub else 0.0
+                    trade_sol = min(float(AUTONOMOUS_TRADE_AMOUNT_SOL), max(0.0, avail_sol - float(MIN_SOL_RESERVE)))
+                    if trade_sol < 0.05:
+                        logger.info(f"⏸️ AUTOTRADE WAIT: balance={avail_sol:.4f} SOL, tradeable={trade_sol:.4f} SOL")
+                        continue
+
                     # Entry
                     prefix = "🐋 WHALE ENTRY" if is_whale else "⚡ ENTRY"
                     logger.info(f"{prefix} DETECTED: {sym}")
                     mint = SCALP_TOKENS.get(sym)
-                    sig, out_tokens = await execute_trade(keypair, "BUY", SOL_MINT, mint, int(AUTONOMOUS_TRADE_AMOUNT_SOL * 1e9))
+                    sig, out_tokens = await execute_trade(keypair, "BUY", SOL_MINT, mint, int(trade_sol * 1e9))
                     
                     if sig and out_tokens > 0:
                         active_positions[sym] = {
                             "entry_price": s['price'],
+                            "entry_sol": trade_sol,
                             "amount": out_tokens,
                             "sl_price": s['price'] * (1 - (gov.get('sl_pct', STOP_LOSS_PCT)/100)),
                             "tp_price": s['price'] * (1 + (gov.get('tp_pct', TAKE_PROFIT_PCT)/100))
                         }
                         save_active_positions(active_positions)
-                        await _notify_admin(bot, f"⚡ *ZERO-LOSS BUY* — {sym}\nAmt: *{AUTONOMOUS_TRADE_AMOUNT_SOL} SOL*\nTx: `{sig}`")
+                        await _notify_admin(bot, f"⚡ *ZERO-LOSS BUY* — {sym}\nAmt: *{trade_sol:.4f} SOL*\nTx: `{sig}`")
                         _manager_tasks[sym] = asyncio.create_task(position_manager(keypair, sym, mint, bot=bot))
         except Exception as e:
             logger.error(f"Auto-trader loop error: {e}")
