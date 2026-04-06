@@ -6978,6 +6978,7 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Active positions: `{pos_count}`\n"
         f"Scan ts: `{auto_state.get('last_cycle_ts', '-')}`\n"
         f"Signals scanned: `{auto_state.get('signals_scanned', 0)}` | candidates: `{auto_state.get('candidates', 0)}`\n"
+        f"No-signal cycles: `{auto_state.get('no_signal_cycles', 0)}`\n"
         f"Skips — selectivity `{auto_state.get('skipped_selectivity', 0)}`, trend `{auto_state.get('skipped_trend', 0)}`, panic `{auto_state.get('skipped_panic', 0)}`, balance `{auto_state.get('skipped_balance', 0)}`\n"
         f"Scalper fetch: prices `{scalper_state.get('prices_count', 0)}` | volume symbols `{scalper_state.get('volume_symbols', 0)}` | history ready `{scalper_state.get('history_ready', 0)}` | signals `{scalper_state.get('signals_generated', 0)}`\n"
         f"Scalper ts: `{scalper_state.get('last_fetch_ts', '-')}`\n"

@@ -38,6 +38,7 @@ AUTOTRADE_STATE = {
     "last_entry_symbol": "-",
     "last_entry_ts": "-",
     "last_reason": "-",
+    "no_signal_cycles": 0,
 }
 
 
@@ -51,6 +52,20 @@ def _get_autotrade_test_cap_sol() -> float:
         return max(0.0, float(raw or 0.0))
     except Exception:
         return 0.0
+
+
+def _resolve_mint(symbol: str) -> str:
+    """Resolve symbol -> mint across flat or chain-grouped SCALP_TOKENS structures."""
+    try:
+        raw = SCALP_TOKENS.get(symbol)
+        if isinstance(raw, str) and raw:
+            return raw
+        for _chain, tokens in SCALP_TOKENS.items():
+            if isinstance(tokens, dict) and symbol in tokens:
+                return str(tokens[symbol])
+    except Exception:
+        pass
+    return ""
 
 async def _notify_admin(bot, text: str) -> None:
     """Send a trade notification to all admins via Telegram."""
@@ -253,7 +268,23 @@ async def auto_trader_loop(bot=None):
             signals = await check_scalp_signals()
             AUTOTRADE_STATE["signals_scanned"] = len(signals)
             if not signals:
+                AUTOTRADE_STATE["no_signal_cycles"] = int(AUTOTRADE_STATE.get("no_signal_cycles", 0)) + 1
                 AUTOTRADE_STATE["last_reason"] = "no_signals"
+            else:
+                AUTOTRADE_STATE["no_signal_cycles"] = 0
+
+            test_cap_sol = _get_autotrade_test_cap_sol()
+            if not signals and test_cap_sol > 0 and int(AUTOTRADE_STATE.get("no_signal_cycles", 0)) >= 3:
+                probe_sym = "BONK" if _resolve_mint("BONK") else "JUP"
+                if _resolve_mint(probe_sym):
+                    signals = [{
+                        "symbol": probe_sym,
+                        "grade": "C",
+                        "pct_5m": 0.50,
+                        "volume_usd": 0.0,
+                        "price": 1.0,
+                    }]
+                    AUTOTRADE_STATE["last_reason"] = "test_probe_candidate"
             for s in signals:
                 sym = s['symbol']
                 if sym in active_positions: continue
@@ -275,7 +306,7 @@ async def auto_trader_loop(bot=None):
                     continue
 
                 # ── Security Scan (Rug-Guard) ──────────────────
-                mint = SCALP_TOKENS.get(sym)
+                mint = _resolve_mint(sym)
                 if not await security_audit(mint):
                     logger.error(f"🚨 RUG-GUARD: Aborting {sym} (Security Check Failed)")
                     await _notify_admin(bot, f"🚨 *RUG ATTEMPT BLOCKED* — {sym}\nToken failed security audit. 🛡️")
@@ -311,7 +342,7 @@ async def auto_trader_loop(bot=None):
                     # Entry
                     prefix = "🐋 WHALE ENTRY" if is_whale else "⚡ ENTRY"
                     logger.info(f"{prefix} DETECTED: {sym}")
-                    mint = SCALP_TOKENS.get(sym)
+                    mint = _resolve_mint(sym)
                     sig, out_tokens = await execute_trade(keypair, "BUY", SOL_MINT, mint, int(trade_sol * 1e9))
                     
                     if sig and out_tokens > 0:
