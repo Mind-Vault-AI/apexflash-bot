@@ -96,8 +96,8 @@ async def execute_swap(keypair: Keypair, quote: dict, use_jito: bool = False) ->
     """Execute a swap: get tx from Jupiter → sign → send to Solana.
     If use_jito=True, sends as a bundle for MEV protection.
     """
-    if not HELIUS_RPC_URL:
-        return None, "No HELIUS_RPC_URL configured"
+    if not RPC_URLS:
+        return None, "No RPC_URLS configured"
 
     try:
         swap_body = {
@@ -131,18 +131,34 @@ async def execute_swap(keypair: Keypair, quote: dict, use_jito: bool = False) ->
             if use_jito:
                 return await _send_jito_bundle(session, keypair, encoded_swap)
 
-            # 3) Standard Send (Fallback)
+            # 3) Standard Send with RPC fallback chain
             rpc_payload = {
                 "jsonrpc": "2.0", "id": 1,
                 "method": "sendTransaction",
                 "params": [encoded_swap, {"encoding": "base64", "skipPreflight": True}],
             }
-            # ... (rest of standard RPC loop)
-            async with session.post(HELIUS_RPC_URL, json=rpc_payload) as resp:
-                data = await resp.json()
-                if "result" in data:
-                    return data["result"], ""
-                return None, f"RPC Error: {data.get('error')}"
+            rpc_errors: list[str] = []
+            for rpc_url in RPC_URLS:
+                try:
+                    async with session.post(rpc_url, json=rpc_payload, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                        data = await resp.json(content_type=None)
+                        if "result" in data:
+                            return data["result"], ""
+
+                        err = data.get("error")
+                        rpc_errors.append(f"{rpc_url[:45]}... -> {err}")
+
+                        # Continue on quota/rate-limit errors, try next RPC endpoint
+                        err_txt = str(err).lower()
+                        if ("-32429" in err_txt) or ("rate" in err_txt) or ("max usage" in err_txt):
+                            continue
+                        # Non-rate errors are still useful to try next endpoint in chain
+                        continue
+                except Exception as rpc_exc:
+                    rpc_errors.append(f"{rpc_url[:45]}... -> {type(rpc_exc).__name__}: {rpc_exc}")
+                    continue
+
+            return None, f"RPC Error: {' | '.join(rpc_errors)[:220]}"
 
     except Exception as e:
         logger.error(f"Swap execution error: {e}")
