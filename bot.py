@@ -6933,7 +6933,6 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
     tradeable_sol = max(0.0, sol_balance - reserve)
     # Dynamic sizing floor in zero_loss_manager
     dynamic_floor = 0.05
-    funding_ok = tradeable_sol >= dynamic_floor
     test_cap_sol = 0.0
     try:
         from core.persistence import _get_redis
@@ -6942,6 +6941,8 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
             test_cap_sol = max(0.0, float(_r.get("apexflash:autotrade:test_cap_sol") or 0.0))
     except Exception:
         test_cap_sol = 0.0
+    effective_floor = 0.05 if test_cap_sol <= 0 else max(0.01, min(test_cap_sol, 0.05))
+    funding_ok = tradeable_sol >= effective_floor
 
     pos_count = 0
     gov = get_governance_config()
@@ -6973,7 +6974,7 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Selectivity cfg: move>={cfg_min_move:.2f}% | vol>={cfg_min_vol:,.0f} USD\n"
         f"Selectivity effective: move>={eff_min_move:.2f}% | vol>={eff_min_vol:,.0f} USD\n"
         f"Test mode cap: `{test_cap_sol:.4f} SOL` ({'ON' if test_cap_sol > 0 else 'OFF'})\n"
-        f"Dynamic floor: `{dynamic_floor:.4f}`\n"
+        f"Dynamic floor: `{effective_floor:.4f}`\n"
         f"Funding OK (dynamic): `{'YES' if funding_ok else 'NO'}`\n"
         f"Active positions: `{pos_count}`\n"
         f"Scan ts: `{auto_state.get('last_cycle_ts', '-')}`\n"

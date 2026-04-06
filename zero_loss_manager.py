@@ -333,10 +333,11 @@ async def auto_trader_loop(bot=None):
                     test_cap_sol = _get_autotrade_test_cap_sol()
                     if test_cap_sol > 0:
                         trade_sol = min(trade_sol, test_cap_sol)
-                    if trade_sol < 0.05:
+                    min_exec_floor = 0.05 if test_cap_sol <= 0 else max(0.01, min(test_cap_sol, 0.05))
+                    if trade_sol < min_exec_floor:
                         logger.info(f"⏸️ AUTOTRADE WAIT: balance={avail_sol:.4f} SOL, tradeable={trade_sol:.4f} SOL")
                         AUTOTRADE_STATE["skipped_balance"] = int(AUTOTRADE_STATE.get("skipped_balance", 0)) + 1
-                        AUTOTRADE_STATE["last_reason"] = "insufficient_tradeable_balance"
+                        AUTOTRADE_STATE["last_reason"] = f"insufficient_tradeable_balance<{min_exec_floor:.4f}"
                         continue
 
                     # Entry
