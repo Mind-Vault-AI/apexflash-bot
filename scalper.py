@@ -13,6 +13,7 @@ No paid API keys required. No external deps beyond aiohttp (already in bot).
 """
 import logging
 import time
+import asyncio
 from collections import deque
 
 import aiohttp
@@ -64,23 +65,57 @@ SCALPER_STATE = {
 
 
 async def _fetch_prices() -> dict[str, float]:
-    """Fetch current USD prices for all scalp tokens via Jupiter Price API."""
+    """Fetch current USD prices for all scalp tokens via Jupiter API, fallback DexScreener."""
     ids = ",".join(ALL_TOKENS.values())
     url = f"{JUPITER_PRICE_URL}?ids={ids}"
+    mint_to_sym = {v: k for k, v in ALL_TOKENS.items()}
+
+    # Primary: Jupiter
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=6)) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
+                    data = await resp.json(content_type=None)
                     prices = {}
-                    mint_to_sym = {v: k for k, v in ALL_TOKENS.items()}
                     for mint, info in (data.get("data") or {}).items():
                         sym = mint_to_sym.get(mint)
-                        if sym and info.get("price"):
-                            prices[sym] = float(info["price"])
-                    return prices
+                        raw = (info or {}).get("price")
+                        if sym and raw is not None:
+                            prices[sym] = float(raw)
+                    if prices:
+                        return prices
     except Exception as e:
-        logger.debug(f"Scalper price fetch error: {e}")
+        logger.debug(f"Scalper Jupiter price fetch error: {e}")
+
+    # Fallback: DexScreener per mint (prevents full no-signal outages when Jupiter feed hiccups)
+    async def _fetch_one(session: aiohttp.ClientSession, sym: str, mint: str):
+        try:
+            u = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
+            async with session.get(u, timeout=aiohttp.ClientTimeout(total=6)) as resp:
+                if resp.status != 200:
+                    return sym, 0.0
+                data = await resp.json(content_type=None)
+                pairs = data.get("pairs") or []
+                if not pairs:
+                    return sym, 0.0
+                # Pick pair with highest liquidity when available
+                best = max(pairs, key=lambda p: float((p.get("liquidity") or {}).get("usd") or 0.0))
+                raw = best.get("priceUsd")
+                return sym, float(raw) if raw is not None else 0.0
+        except Exception:
+            return sym, 0.0
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            tasks = [_fetch_one(session, sym, mint) for sym, mint in ALL_TOKENS.items()]
+            results = await asyncio.gather(*tasks)
+            prices = {sym: px for sym, px in results if px and px > 0}
+            if prices:
+                logger.warning("Scalper price fallback active: DexScreener (%d symbols)", len(prices))
+                return prices
+    except Exception as e:
+        logger.debug(f"Scalper DexScreener fallback error: {e}")
+
     return {}
 
 
