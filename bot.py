@@ -6942,10 +6942,12 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
     eff_min_move = min(cfg_min_move, 2.0)
     eff_min_vol = min(cfg_min_vol, 900000.0)
     try:
-        from zero_loss_manager import active_positions
+        from zero_loss_manager import active_positions, AUTOTRADE_STATE
         pos_count = len(active_positions) if isinstance(active_positions, dict) else 0
+        auto_state = AUTOTRADE_STATE if isinstance(AUTOTRADE_STATE, dict) else {}
     except Exception:
         pos_count = 0
+        auto_state = {}
 
     text = (
         "🛡️ *Autotrade Diagnostics*\n"
@@ -6962,6 +6964,11 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Dynamic floor: `{dynamic_floor:.4f}`\n"
         f"Funding OK (dynamic): `{'YES' if funding_ok else 'NO'}`\n"
         f"Active positions: `{pos_count}`\n"
+        f"Scan ts: `{auto_state.get('last_cycle_ts', '-')}`\n"
+        f"Signals scanned: `{auto_state.get('signals_scanned', 0)}` | candidates: `{auto_state.get('candidates', 0)}`\n"
+        f"Skips — selectivity `{auto_state.get('skipped_selectivity', 0)}`, trend `{auto_state.get('skipped_trend', 0)}`, panic `{auto_state.get('skipped_panic', 0)}`, balance `{auto_state.get('skipped_balance', 0)}`\n"
+        f"Last reason: `{auto_state.get('last_reason', '-')}`\n"
+        f"Last entry: `{auto_state.get('last_entry_symbol', '-')} @ {auto_state.get('last_entry_ts', '-')}`\n"
         "Tip: run `/ops_now` and check for zero-loss entry alerts."
     )
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)

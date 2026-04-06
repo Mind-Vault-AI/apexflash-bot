@@ -27,6 +27,18 @@ active_positions = {}
 last_trade_ts = {}
 # Centralized task tracker to prevent "Task destroyed" warnings
 _manager_tasks = {}
+AUTOTRADE_STATE = {
+    "last_cycle_ts": "-",
+    "signals_scanned": 0,
+    "candidates": 0,
+    "skipped_panic": 0,
+    "skipped_selectivity": 0,
+    "skipped_trend": 0,
+    "skipped_balance": 0,
+    "last_entry_symbol": "-",
+    "last_entry_ts": "-",
+    "last_reason": "-",
+}
 
 async def _notify_admin(bot, text: str) -> None:
     """Send a trade notification to all admins via Telegram."""
@@ -199,10 +211,19 @@ async def auto_trader_loop(bot=None):
     # ── 2. MAIN 24/7 LOOP ──
     while True:
         try:
+            AUTOTRADE_STATE["last_cycle_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            AUTOTRADE_STATE["signals_scanned"] = 0
+            AUTOTRADE_STATE["candidates"] = 0
+            AUTOTRADE_STATE["skipped_panic"] = 0
+            AUTOTRADE_STATE["skipped_selectivity"] = 0
+            AUTOTRADE_STATE["skipped_trend"] = 0
+            AUTOTRADE_STATE["skipped_balance"] = 0
+
             users = load_users()
-            admin_user = users.get(str(admin_id))
+            admin_user = users.get(admin_id) or users.get(str(admin_id))
             if not admin_user or not admin_user.get("wallet_secret_enc"):
                 logger.error("❌ Admin wallet missing. Auto Trader waiting for /start...")
+                AUTOTRADE_STATE["last_reason"] = "admin_wallet_missing"
                 await asyncio.sleep(60)
                 continue
                 
@@ -218,9 +239,13 @@ async def auto_trader_loop(bot=None):
             # ── 3. SEARCH FOR ALPHA (FETCH UPDATED SELECTIVITY) ──
             gov = get_governance_config()
             signals = await check_scalp_signals()
+            AUTOTRADE_STATE["signals_scanned"] = len(signals)
+            if not signals:
+                AUTOTRADE_STATE["last_reason"] = "no_signals"
             for s in signals:
                 sym = s['symbol']
                 if sym in active_positions: continue
+                AUTOTRADE_STATE["candidates"] = int(AUTOTRADE_STATE.get("candidates", 0)) + 1
                 
                 # Dynamic Selectivity: Use governance Grade A/B thresholds
                 configured_min_move = float(gov.get("grade_a_min_pct", 2.5) or 2.5)
@@ -233,6 +258,8 @@ async def auto_trader_loop(bot=None):
                 panic = get_market_panic_score()
                 if panic >= 85:
                     logger.warning(f"🛑 SHOCK BREAKER: Skipping {sym} buy due to market panic ({panic})")
+                    AUTOTRADE_STATE["skipped_panic"] = int(AUTOTRADE_STATE.get("skipped_panic", 0)) + 1
+                    AUTOTRADE_STATE["last_reason"] = f"panic_{panic}"
                     continue
 
                 # ── Security Scan (Rug-Guard) ──────────────────
@@ -245,7 +272,10 @@ async def auto_trader_loop(bot=None):
                 is_whale = (s.get('grade') == 'S')
                 if is_whale or s['pct_5m'] >= min_move or s['grade'] == "A" or (s['grade'] == "B" and s.get('volume_usd', 0) >= min_vol):
                     # Check Market Hedge
-                    if await check_market_trend() < -4.0: continue
+                    if await check_market_trend() < -4.0:
+                        AUTOTRADE_STATE["skipped_trend"] = int(AUTOTRADE_STATE.get("skipped_trend", 0)) + 1
+                        AUTOTRADE_STATE["last_reason"] = "market_trend_block"
+                        continue
                     
                     # Entry sizing (LEAN): auto-scale to available SOL so autotrade doesn't idle below default size.
                     wallet_pub = str(admin_user.get("wallet_pubkey") or "")
@@ -253,6 +283,8 @@ async def auto_trader_loop(bot=None):
                     trade_sol = min(float(AUTONOMOUS_TRADE_AMOUNT_SOL), max(0.0, avail_sol - float(MIN_SOL_RESERVE)))
                     if trade_sol < 0.05:
                         logger.info(f"⏸️ AUTOTRADE WAIT: balance={avail_sol:.4f} SOL, tradeable={trade_sol:.4f} SOL")
+                        AUTOTRADE_STATE["skipped_balance"] = int(AUTOTRADE_STATE.get("skipped_balance", 0)) + 1
+                        AUTOTRADE_STATE["last_reason"] = "insufficient_tradeable_balance"
                         continue
 
                     # Entry
@@ -272,8 +304,15 @@ async def auto_trader_loop(bot=None):
                         save_active_positions(active_positions)
                         await _notify_admin(bot, f"⚡ *ZERO-LOSS BUY* — {sym}\nAmt: *{trade_sol:.4f} SOL*\nTx: `{sig}`")
                         _manager_tasks[sym] = asyncio.create_task(position_manager(keypair, sym, mint, bot=bot))
+                        AUTOTRADE_STATE["last_entry_symbol"] = sym
+                        AUTOTRADE_STATE["last_entry_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                        AUTOTRADE_STATE["last_reason"] = "entry_executed"
+                else:
+                    AUTOTRADE_STATE["skipped_selectivity"] = int(AUTOTRADE_STATE.get("skipped_selectivity", 0)) + 1
+                    AUTOTRADE_STATE["last_reason"] = "below_selectivity"
         except Exception as e:
             logger.error(f"Auto-trader loop error: {e}")
+            AUTOTRADE_STATE["last_reason"] = f"loop_error:{type(e).__name__}"
         await asyncio.sleep(45)
 
 if __name__ == "__main__":
