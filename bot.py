@@ -4039,8 +4039,8 @@ async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYP
     is_sol_address = SOL_ADDR_RE.match(text)
     logger.info(f"HANDLER_ENTRY: user={uid} len={len(text)} is_addr={bool(is_sol_address)} text={text[:25]}")
 
-    # Admin: send visible confirmation that handler fires
-    if uid == 7851853521 and (is_sol_address or len(text) > 20):
+    # Admin debug ack only for actual SOL addresses (avoid noise on pasted status lines).
+    if uid == 7851853521 and is_sol_address:
         try:
             await update.message.reply_text(
                 f"Processing `{text[:20]}...`",
