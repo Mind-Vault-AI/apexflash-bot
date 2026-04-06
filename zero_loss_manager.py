@@ -38,6 +38,7 @@ AUTOTRADE_STATE = {
     "last_entry_symbol": "-",
     "last_entry_ts": "-",
     "last_reason": "-",
+    "last_entry_error": "-",
     "no_signal_cycles": 0,
 }
 
@@ -86,19 +87,19 @@ async def execute_trade(keypair, action, input_mint, output_mint, amount_raw):
     quote = await get_quote(input_mint, output_mint, amount_raw, slippage_bps=150)
     if not quote:
         logger.error(f"[{action}] No quote received for {input_mint} -> {output_mint}.")
-        return None, 0.0
+        return None, 0.0, "no_quote"
     
     out_amount = int(quote.get("outAmount", 0))
     if out_amount == 0:
-        return None, 0.0
+        return None, 0.0, "zero_out_amount"
 
     sig, err = await execute_swap(keypair, quote)
     if sig:
         logger.info(f"[{action}] Swap Success! Signature: {sig}")
-        return sig, out_amount
+        return sig, out_amount, ""
     else:
         logger.error(f"[{action}] Swap Failed: {err}")
-        return None, 0.0
+        return None, 0.0, f"swap_failed:{str(err)[:120]}"
 
 async def security_audit(mint: str) -> bool:
     """
@@ -191,7 +192,7 @@ async def position_manager(keypair, symbol, mint, bot=None):
             curr_price = pos['entry_price'] * (1 + (pnl/100))
             if curr_price <= pos['sl_price']:
                 logger.info(f"🛑 STOP OUT: {symbol}")
-                sig, _ = await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
+                sig, _, _ = await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
                 record_trade_result(ADMIN_IDS[0], symbol, pnl, pnl * orig_sol / 100)
                 await _notify_admin(bot, f"🛑 *STOP OUT* — {symbol}\nPNL: {pnl:+.2f}%\nTx: `{sig or 'failed'}`")
                 break
@@ -199,7 +200,7 @@ async def position_manager(keypair, symbol, mint, bot=None):
             # 4. Take Profit
             if pnl >= tp_pct:
                 logger.info(f"💰 TAKE PROFIT: {symbol}")
-                sig, _ = await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
+                sig, _, _ = await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
                 record_trade_result(ADMIN_IDS[0], symbol, pnl, pnl * orig_sol / 100)
                 
                 # Viral Loop Hook for CEO/Admin
@@ -344,7 +345,7 @@ async def auto_trader_loop(bot=None):
                     prefix = "🐋 WHALE ENTRY" if is_whale else "⚡ ENTRY"
                     logger.info(f"{prefix} DETECTED: {sym}")
                     mint = _resolve_mint(sym)
-                    sig, out_tokens = await execute_trade(keypair, "BUY", SOL_MINT, mint, int(trade_sol * 1e9))
+                    sig, out_tokens, entry_err = await execute_trade(keypair, "BUY", SOL_MINT, mint, int(trade_sol * 1e9))
                     
                     if sig and out_tokens > 0:
                         active_positions[sym] = {
@@ -360,6 +361,10 @@ async def auto_trader_loop(bot=None):
                         AUTOTRADE_STATE["last_entry_symbol"] = sym
                         AUTOTRADE_STATE["last_entry_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
                         AUTOTRADE_STATE["last_reason"] = "entry_executed"
+                        AUTOTRADE_STATE["last_entry_error"] = "-"
+                    else:
+                        AUTOTRADE_STATE["last_reason"] = "entry_failed"
+                        AUTOTRADE_STATE["last_entry_error"] = entry_err or "unknown"
                 else:
                     AUTOTRADE_STATE["skipped_selectivity"] = int(AUTOTRADE_STATE.get("skipped_selectivity", 0)) + 1
                     AUTOTRADE_STATE["last_reason"] = "below_selectivity"

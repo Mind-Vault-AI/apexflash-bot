@@ -6984,6 +6984,7 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Scalper fetch: prices `{scalper_state.get('prices_count', 0)}` | volume symbols `{scalper_state.get('volume_symbols', 0)}` | history ready `{scalper_state.get('history_ready', 0)}` | signals `{scalper_state.get('signals_generated', 0)}`\n"
         f"Scalper ts: `{scalper_state.get('last_fetch_ts', '-')}`\n"
         f"Last reason: `{auto_state.get('last_reason', '-')}`\n"
+        f"Last entry error: `{auto_state.get('last_entry_error', '-')}`\n"
         f"Last entry: `{auto_state.get('last_entry_symbol', '-')} @ {auto_state.get('last_entry_ts', '-')}`\n"
         "Tip: run `/ops_now` and check for zero-loss entry alerts."
     )
