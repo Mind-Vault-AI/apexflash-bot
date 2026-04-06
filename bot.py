@@ -1235,10 +1235,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             logger.error(f"Callback error [{data}] user={user_id}: {e}")
             from traceback import format_exc
             logger.error(format_exc())
-            try:
-                await query.answer("⚠️ Action failed. Try once more in a few seconds.", show_alert=False)
-            except Exception:
-                pass
+            # Silent fail to avoid user-facing noise; errors are logged for PDCA/debug.
         return
 
     # Handle /hot trending buy buttons — user tapped a trending token
