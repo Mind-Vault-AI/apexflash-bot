@@ -6934,6 +6934,14 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Dynamic sizing floor in zero_loss_manager
     dynamic_floor = 0.05
     funding_ok = tradeable_sol >= dynamic_floor
+    test_cap_sol = 0.0
+    try:
+        from core.persistence import _get_redis
+        _r = _get_redis()
+        if _r:
+            test_cap_sol = max(0.0, float(_r.get("apexflash:autotrade:test_cap_sol") or 0.0))
+    except Exception:
+        test_cap_sol = 0.0
 
     pos_count = 0
     gov = get_governance_config()
@@ -6964,6 +6972,7 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Strict min (configured): `{required:.4f}`\n"
         f"Selectivity cfg: move>={cfg_min_move:.2f}% | vol>={cfg_min_vol:,.0f} USD\n"
         f"Selectivity effective: move>={eff_min_move:.2f}% | vol>={eff_min_vol:,.0f} USD\n"
+        f"Test mode cap: `{test_cap_sol:.4f} SOL` ({'ON' if test_cap_sol > 0 else 'OFF'})\n"
         f"Dynamic floor: `{dynamic_floor:.4f}`\n"
         f"Funding OK (dynamic): `{'YES' if funding_ok else 'NO'}`\n"
         f"Active positions: `{pos_count}`\n"
@@ -6977,6 +6986,42 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Tip: run `/ops_now` and check for zero-loss entry alerts."
     )
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+
+
+async def cmd_autotrade_test_on(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: enable controlled autotrade test mode with mini-size cap."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+    cap = float(TEST_TRADE_SOL) if TEST_TRADE_SOL > 0 else 0.05
+    if context.args:
+        try:
+            cap = float(context.args[0])
+        except Exception:
+            pass
+    cap = max(0.01, min(cap, 0.10))
+    from core.persistence import _get_redis
+    r = _get_redis()
+    if r:
+        r.set("apexflash:autotrade:test_cap_sol", f"{cap:.4f}")
+    await update.message.reply_text(
+        f"🧪 *Autotrade Test Mode: ON*\n"
+        f"Cap set to *{cap:.4f} SOL* per entry.\n"
+        f"Use `/autotrade_test_off` to disable.",
+        parse_mode="Markdown",
+    )
+
+
+async def cmd_autotrade_test_off(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: disable controlled autotrade test mode."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+    from core.persistence import _get_redis
+    r = _get_redis()
+    if r:
+        r.delete("apexflash:autotrade:test_cap_sol")
+    await update.message.reply_text("✅ *Autotrade Test Mode: OFF*", parse_mode="Markdown")
 
 
 async def cmd_qa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7887,6 +7932,8 @@ def main() -> None:
     app.add_handler(CommandHandler("advisor", cmd_advisor))
     app.add_handler(CommandHandler("advisor_diag", cmd_advisor_diag))
     app.add_handler(CommandHandler("autotrade_diag", cmd_autotrade_diag))
+    app.add_handler(CommandHandler("autotrade_test_on", cmd_autotrade_test_on))
+    app.add_handler(CommandHandler("autotrade_test_off", cmd_autotrade_test_off))
     app.add_handler(CommandHandler("qa", cmd_qa))
     app.add_handler(CommandHandler("smoke", cmd_smoke))
     app.add_handler(CommandHandler("sla", cmd_sla))

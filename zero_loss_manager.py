@@ -11,7 +11,7 @@ from core.config import (
     AUTONOMOUS_TRADE_AMOUNT_SOL, BREAKEVEN_TRIGGER_PCT, 
     TAKE_PROFIT_PCT, STOP_LOSS_PCT, AUTONOMOUS_COOLDOWN, MIN_SOL_RESERVE
 )
-from core.persistence import load_users, record_trade_result, get_governance_config, get_market_panic_score
+from core.persistence import load_users, record_trade_result, get_governance_config, get_market_panic_score, _get_redis
 from core.wallet import load_keypair, get_sol_balance, get_token_balances
 from exchanges.jupiter import get_quote, execute_swap
 from scalper import check_scalp_signals, SCALP_TOKENS
@@ -39,6 +39,18 @@ AUTOTRADE_STATE = {
     "last_entry_ts": "-",
     "last_reason": "-",
 }
+
+
+def _get_autotrade_test_cap_sol() -> float:
+    """Runtime test cap from Redis. 0 means disabled."""
+    try:
+        r = _get_redis()
+        if not r:
+            return 0.0
+        raw = r.get("apexflash:autotrade:test_cap_sol")
+        return max(0.0, float(raw or 0.0))
+    except Exception:
+        return 0.0
 
 async def _notify_admin(bot, text: str) -> None:
     """Send a trade notification to all admins via Telegram."""
@@ -287,6 +299,9 @@ async def auto_trader_loop(bot=None):
                     wallet_pub = str(admin_user.get("wallet_pubkey") or "")
                     avail_sol = float(await get_sol_balance(wallet_pub) or 0.0) if wallet_pub else 0.0
                     trade_sol = min(float(AUTONOMOUS_TRADE_AMOUNT_SOL), max(0.0, avail_sol - float(MIN_SOL_RESERVE)))
+                    test_cap_sol = _get_autotrade_test_cap_sol()
+                    if test_cap_sol > 0:
+                        trade_sol = min(trade_sol, test_cap_sol)
                     if trade_sol < 0.05:
                         logger.info(f"⏸️ AUTOTRADE WAIT: balance={avail_sol:.4f} SOL, tradeable={trade_sol:.4f} SOL")
                         AUTOTRADE_STATE["skipped_balance"] = int(AUTOTRADE_STATE.get("skipped_balance", 0)) + 1
