@@ -5931,7 +5931,7 @@ async def _send_admin_panel(chat_id: int, context: ContextTypes.DEFAULT_TYPE) ->
     )
     kb = [
         [InlineKeyboardButton("\U0001f4ca Stats", callback_data="admin_stats")],
-        [InlineKeyboardButton("🛡️ Autotrade", callback_data="admin_autotrade")],
+        [InlineKeyboardButton("🛡️ Autotrade Controls", callback_data="admin_autotrade")],
         [InlineKeyboardButton("\U0001f465 Users", callback_data="admin_users")],
         [InlineKeyboardButton("\U0001f4e2 Broadcast", callback_data="admin_broadcast")],
         [_back_main()[0]],
