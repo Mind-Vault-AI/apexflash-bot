@@ -6926,8 +6926,13 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except Exception:
             sol_balance = 0.0
 
-    required = float(AUTONOMOUS_TRADE_AMOUNT_SOL) + float(MIN_SOL_RESERVE)
-    funding_ok = sol_balance >= required
+    reserve = float(MIN_SOL_RESERVE)
+    configured_trade = float(AUTONOMOUS_TRADE_AMOUNT_SOL)
+    required = configured_trade + reserve
+    tradeable_sol = max(0.0, sol_balance - reserve)
+    # Dynamic sizing floor in zero_loss_manager
+    dynamic_floor = 0.05
+    funding_ok = tradeable_sol >= dynamic_floor
 
     pos_count = 0
     try:
@@ -6943,8 +6948,11 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Wallet secret: `{'READY' if wallet_ready else 'MISSING'}`\n"
         f"Wallet pubkey: `{wallet_pub or '-'}`\n"
         f"SOL balance: `{sol_balance:.4f}`\n"
-        f"Required min: `{required:.4f}` (trade `{AUTONOMOUS_TRADE_AMOUNT_SOL}` + reserve `{MIN_SOL_RESERVE}`)\n"
-        f"Funding OK: `{'YES' if funding_ok else 'NO'}`\n"
+        f"Configured trade: `{configured_trade:.4f}` | Reserve: `{reserve:.4f}`\n"
+        f"Tradeable SOL now: `{tradeable_sol:.4f}`\n"
+        f"Strict min (configured): `{required:.4f}`\n"
+        f"Dynamic floor: `{dynamic_floor:.4f}`\n"
+        f"Funding OK (dynamic): `{'YES' if funding_ok else 'NO'}`\n"
         f"Active positions: `{pos_count}`\n"
         "Tip: run `/ops_now` and check for zero-loss entry alerts."
     )
@@ -6963,6 +6971,8 @@ async def cmd_qa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     admin_id = ADMIN_IDS[0] if isinstance(ADMIN_IDS, list) and ADMIN_IDS else (ADMIN_IDS if isinstance(ADMIN_IDS, int) else 0)
     admin_user = users.get(admin_id) if isinstance(admin_id, int) else None
+    if not admin_user and isinstance(admin_id, int):
+        admin_user = users.get(str(admin_id))
     if not admin_user and isinstance(admin_id, int):
         admin_user = users.get(str(admin_id))
     wallet_ready = bool((admin_user or {}).get("wallet_secret_enc"))
