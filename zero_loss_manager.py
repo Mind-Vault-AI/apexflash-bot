@@ -250,9 +250,9 @@ async def auto_trader_loop(bot=None):
                 # Dynamic Selectivity: Use governance Grade A/B thresholds
                 configured_min_move = float(gov.get("grade_a_min_pct", 2.5) or 2.5)
                 configured_min_vol = float(gov.get("min_volume_usd", 1500000) or 1500000)
-                # HOTFIX 67: active execution profile to reduce idle periods while keeping safety controls.
-                min_move = min(configured_min_move, 1.2)
-                min_vol = min(configured_min_vol, 500000.0)
+                # HOTFIX 68: execution profile tuned for calmer markets.
+                min_move = min(configured_min_move, 0.8)
+                min_vol = min(configured_min_vol, 250000.0)
                 
                 # --- SHOCK BREAKER: Skip Buys if Panic is High ---
                 panic = get_market_panic_score()
@@ -270,7 +270,13 @@ async def auto_trader_loop(bot=None):
                     continue
 
                 is_whale = (s.get('grade') == 'S')
-                if is_whale or s['pct_5m'] >= min_move or s['grade'] == "A" or (s['grade'] == "B" and s.get('volume_usd', 0) >= min_vol):
+                if (
+                    is_whale
+                    or abs(float(s.get('pct_5m', 0.0) or 0.0)) >= min_move
+                    or s['grade'] == "A"
+                    or (s['grade'] == "B" and s.get('volume_usd', 0) >= min_vol)
+                    or (s['grade'] == "C" and abs(float(s.get('pct_5m', 0.0) or 0.0)) >= 0.45)
+                ):
                     # Check Market Hedge
                     if await check_market_trend() < -4.0:
                         AUTOTRADE_STATE["skipped_trend"] = int(AUTOTRADE_STATE.get("skipped_trend", 0)) + 1

@@ -6939,8 +6939,8 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
     gov = get_governance_config()
     cfg_min_move = float(gov.get("grade_a_min_pct", 2.5) or 2.5)
     cfg_min_vol = float(gov.get("min_volume_usd", 1500000) or 1500000)
-    eff_min_move = min(cfg_min_move, 1.2)
-    eff_min_vol = min(cfg_min_vol, 500000.0)
+    eff_min_move = min(cfg_min_move, 0.8)
+    eff_min_vol = min(cfg_min_vol, 250000.0)
     try:
         from zero_loss_manager import active_positions, AUTOTRADE_STATE
         from scalper import SCALPER_STATE

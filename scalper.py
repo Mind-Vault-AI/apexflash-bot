@@ -172,19 +172,19 @@ def _grade_signal(pct_5m: float, pct_15m: float, volume_usd: float) -> str:
 
     if abs5 >= 2.0 and trend_aligned and has_high_vol:
         return "A"
-    if abs5 >= 1.0 or abs15 >= 2.0:
+    if abs5 >= 0.8 or abs15 >= 1.5:
         return "B" if has_std_vol else ""
-    if abs5 >= 0.6:
+    if abs5 >= 0.35:
         return "C" if has_std_vol else ""
 
     # Fallback mode when volume feed is unavailable:
     # keep stricter momentum thresholds, but don't fully block signal generation.
     if not has_volume:
-        if abs5 >= 2.0 and trend_aligned:
+        if abs5 >= 1.8 and trend_aligned:
             return "A"
-        if abs5 >= 1.2 or abs15 >= 2.0:
+        if abs5 >= 1.0 or abs15 >= 1.8:
             return "B"
-        if abs5 >= 0.6:
+        if abs5 >= 0.45:
             return "C"
     return ""
 
