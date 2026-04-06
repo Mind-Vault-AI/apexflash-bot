@@ -223,8 +223,11 @@ async def auto_trader_loop(bot=None):
                 if sym in active_positions: continue
                 
                 # Dynamic Selectivity: Use governance Grade A/B thresholds
-                min_move = gov.get("grade_a_min_pct", 2.5)
-                min_vol = gov.get("min_volume_usd", 1500000)
+                configured_min_move = float(gov.get("grade_a_min_pct", 2.5) or 2.5)
+                configured_min_vol = float(gov.get("min_volume_usd", 1500000) or 1500000)
+                # HOTFIX 66: keep selectivity strong but remove over-strict idle behavior.
+                min_move = min(configured_min_move, 2.0)
+                min_vol = min(configured_min_vol, 900000.0)
                 
                 # --- SHOCK BREAKER: Skip Buys if Panic is High ---
                 panic = get_market_panic_score()

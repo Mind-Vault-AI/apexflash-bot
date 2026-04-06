@@ -87,6 +87,7 @@ from core.persistence import (
     update_last_active, get_popular_tokens, get_funnel_stats, get_affiliate_stats,
     track_paid_conversion, track_user_active, track_visitor,
     get_user_bucket, track_bucket_kpi, track_user_profit, get_leaderboard_stats,
+    get_governance_config,
 )
 from agents.marketing import post_to_channel as marketing_post
 from agents.twitter_poster import post_tweet as twitter_post, post_thread as twitter_post_thread, get_stats_text as twitter_stats_text
@@ -6935,6 +6936,11 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
     funding_ok = tradeable_sol >= dynamic_floor
 
     pos_count = 0
+    gov = get_governance_config()
+    cfg_min_move = float(gov.get("grade_a_min_pct", 2.5) or 2.5)
+    cfg_min_vol = float(gov.get("min_volume_usd", 1500000) or 1500000)
+    eff_min_move = min(cfg_min_move, 2.0)
+    eff_min_vol = min(cfg_min_vol, 900000.0)
     try:
         from zero_loss_manager import active_positions
         pos_count = len(active_positions) if isinstance(active_positions, dict) else 0
@@ -6951,6 +6957,8 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Configured trade: `{configured_trade:.4f}` | Reserve: `{reserve:.4f}`\n"
         f"Tradeable SOL now: `{tradeable_sol:.4f}`\n"
         f"Strict min (configured): `{required:.4f}`\n"
+        f"Selectivity cfg: move>={cfg_min_move:.2f}% | vol>={cfg_min_vol:,.0f} USD\n"
+        f"Selectivity effective: move>={eff_min_move:.2f}% | vol>={eff_min_vol:,.0f} USD\n"
         f"Dynamic floor: `{dynamic_floor:.4f}`\n"
         f"Funding OK (dynamic): `{'YES' if funding_ok else 'NO'}`\n"
         f"Active positions: `{pos_count}`\n"
