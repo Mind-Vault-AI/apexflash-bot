@@ -55,6 +55,18 @@ def _get_autotrade_test_cap_sol() -> float:
         return 0.0
 
 
+def _is_autotrade_enabled() -> bool:
+    """Runtime toggle for autonomous entries. Defaults to enabled."""
+    try:
+        r = _get_redis()
+        if not r:
+            return True
+        raw = str(r.get("apexflash:autotrade:enabled") or "1").strip().lower()
+        return raw not in ("0", "false", "off", "no")
+    except Exception:
+        return True
+
+
 def _resolve_mint(symbol: str) -> str:
     """Resolve symbol -> mint across flat or chain-grouped SCALP_TOKENS structures."""
     try:
@@ -265,6 +277,11 @@ async def auto_trader_loop(bot=None):
                     _manager_tasks[sym] = asyncio.create_task(position_manager(keypair, sym, mint, bot=bot))
 
             # ── 3. SEARCH FOR ALPHA (FETCH UPDATED SELECTIVITY) ──
+            if not _is_autotrade_enabled():
+                AUTOTRADE_STATE["last_reason"] = "autotrade_disabled"
+                await asyncio.sleep(45)
+                continue
+
             gov = get_governance_config()
             signals = await check_scalp_signals()
             AUTOTRADE_STATE["signals_scanned"] = len(signals)

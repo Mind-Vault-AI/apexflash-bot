@@ -576,6 +576,29 @@ def _back_main() -> list:
     return [InlineKeyboardButton("\U0001f3e0 Main Menu", callback_data="main")]
 
 
+def _autotrade_enabled_flag() -> bool:
+    """Redis-backed runtime toggle. Defaults to enabled."""
+    try:
+        from core.persistence import _get_redis
+        r = _get_redis()
+        if not r:
+            return True
+        raw = str(r.get("apexflash:autotrade:enabled") or "1").strip().lower()
+        return raw not in ("0", "false", "off", "no")
+    except Exception:
+        return True
+
+
+def _set_autotrade_enabled_flag(enabled: bool) -> None:
+    try:
+        from core.persistence import _get_redis
+        r = _get_redis()
+        if r:
+            r.set("apexflash:autotrade:enabled", "1" if enabled else "0")
+    except Exception:
+        pass
+
+
 async def cmd_admin_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Pause auto-trading signals (Admin only)."""
     if not is_admin(update.effective_user.id): return
@@ -1207,6 +1230,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "admin_stats":   _cb_admin_stats,
         "admin_users":   _cb_admin_users,
         "admin_broadcast": _cb_admin_broadcast,
+        "admin_autotrade": _cb_admin_autotrade,
+        "admin_at_on": _cb_admin_at_on,
+        "admin_at_off": _cb_admin_at_off,
+        "admin_at_test_003": _cb_admin_at_test_003,
+        "admin_at_test_005": _cb_admin_at_test_005,
+        "admin_at_test_off": _cb_admin_at_test_off,
+        "admin_at_preset_safe": _cb_admin_at_preset_safe,
+        "admin_at_preset_bal": _cb_admin_at_preset_bal,
+        "admin_at_preset_active": _cb_admin_at_preset_active,
+        "admin_at_custom": _cb_admin_at_custom,
         "admin_pause":   _cb_admin_pause_logic,
         "admin_resume":  _cb_admin_resume_logic,
         # Withdraw
@@ -4171,6 +4204,49 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
         return
 
     # ── Handle withdraw address input (when awaiting) ──
+    if context.user_data.get("awaiting_input") == "autotrade_custom_profile":
+        context.user_data["awaiting_input"] = None
+        if not is_admin(update.effective_user.id):
+            await update.message.reply_text("⛔ Admin only.")
+            return
+
+        raw = text.replace(";", ",").replace(" ", "")
+        if "," not in raw:
+            await update.message.reply_text(
+                "⚠️ Invalid format. Use `min_move_pct,min_volume_usd` (example: `0.9,300000`).",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_autotrade")]]),
+            )
+            return
+
+        try:
+            move_s, vol_s = raw.split(",", 1)
+            move = float(move_s)
+            vol = float(vol_s)
+        except Exception:
+            await update.message.reply_text(
+                "⚠️ Invalid numbers. Example: `0.9,300000`.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_autotrade")]]),
+            )
+            return
+
+        move = max(0.30, min(move, 5.00))
+        vol = max(50_000.0, min(vol, 5_000_000.0))
+
+        from core.persistence import update_governance_config
+        update_governance_config("grade_a_min_pct", move)
+        update_governance_config("min_volume_usd", vol)
+
+        await update.message.reply_text(
+            f"✅ Custom profile saved\n"
+            f"• min_move_pct: `{move:.2f}`\n"
+            f"• min_volume_usd: `{vol:,.0f}`",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛡️ Autotrade Controls", callback_data="admin_autotrade")]]),
+        )
+        return
+
     if context.user_data.get("awaiting_input") == "withdraw_address":
         context.user_data["awaiting_input"] = None
         # Validate as SOL address
@@ -5521,6 +5597,147 @@ async def _cb_admin_resume_signals(query, user, context):
 
 # ══════════════════════════════════════════════
 
+async def _cb_admin_autotrade(query, user, context):
+    """Admin control panel for autotrade runtime and profile tuning."""
+    if not is_admin(query.from_user.id):
+        await query.answer("❌ Admin only.", show_alert=True)
+        return
+
+    enabled = _autotrade_enabled_flag()
+    gov = get_governance_config()
+    cfg_move = float(gov.get("grade_a_min_pct", 2.5) or 2.5)
+    cfg_vol = float(gov.get("min_volume_usd", 1500000) or 1500000)
+    eff_move = min(cfg_move, 0.8)
+    eff_vol = min(cfg_vol, 250000.0)
+
+    test_cap = 0.0
+    try:
+        from core.persistence import _get_redis
+        r = _get_redis()
+        if r:
+            test_cap = max(0.0, float(r.get("apexflash:autotrade:test_cap_sol") or 0.0))
+    except Exception:
+        test_cap = 0.0
+
+    text = (
+        "🛡️ *Autotrade Control Center*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Runtime: `{'ON' if enabled else 'OFF'}`\n"
+        f"Test mode cap: `{test_cap:.4f} SOL` ({'ON' if test_cap > 0 else 'OFF'})\n"
+        f"Profile cfg: move>={cfg_move:.2f}% | vol>={cfg_vol:,.0f}\n"
+        f"Profile effective: move>={eff_move:.2f}% | vol>={eff_vol:,.0f}\n\n"
+        "Use presets or set custom `min_move,min_volume`."
+    )
+    kb = [
+        [
+            InlineKeyboardButton("✅ Autotrade ON", callback_data="admin_at_on"),
+            InlineKeyboardButton("⏹️ Autotrade OFF", callback_data="admin_at_off"),
+        ],
+        [
+            InlineKeyboardButton("🧪 Test 0.03", callback_data="admin_at_test_003"),
+            InlineKeyboardButton("🧪 Test 0.05", callback_data="admin_at_test_005"),
+            InlineKeyboardButton("🧪 Test OFF", callback_data="admin_at_test_off"),
+        ],
+        [
+            InlineKeyboardButton("🟢 Safe preset", callback_data="admin_at_preset_safe"),
+            InlineKeyboardButton("🟡 Balanced", callback_data="admin_at_preset_bal"),
+            InlineKeyboardButton("🔴 Active", callback_data="admin_at_preset_active"),
+        ],
+        [InlineKeyboardButton("✍️ Custom min/max", callback_data="admin_at_custom")],
+        [InlineKeyboardButton("🔙 Admin Panel", callback_data="admin")],
+    ]
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+
+
+async def _cb_admin_at_on(query, user, context):
+    if not is_admin(query.from_user.id):
+        return
+    _set_autotrade_enabled_flag(True)
+    await _cb_admin_autotrade(query, user, context)
+
+
+async def _cb_admin_at_off(query, user, context):
+    if not is_admin(query.from_user.id):
+        return
+    _set_autotrade_enabled_flag(False)
+    await _cb_admin_autotrade(query, user, context)
+
+
+async def _cb_admin_at_test_003(query, user, context):
+    if not is_admin(query.from_user.id):
+        return
+    from core.persistence import _get_redis
+    r = _get_redis()
+    if r:
+        r.set("apexflash:autotrade:test_cap_sol", "0.03")
+    await _cb_admin_autotrade(query, user, context)
+
+
+async def _cb_admin_at_test_005(query, user, context):
+    if not is_admin(query.from_user.id):
+        return
+    from core.persistence import _get_redis
+    r = _get_redis()
+    if r:
+        r.set("apexflash:autotrade:test_cap_sol", "0.05")
+    await _cb_admin_autotrade(query, user, context)
+
+
+async def _cb_admin_at_test_off(query, user, context):
+    if not is_admin(query.from_user.id):
+        return
+    from core.persistence import _get_redis
+    r = _get_redis()
+    if r:
+        r.delete("apexflash:autotrade:test_cap_sol")
+    await _cb_admin_autotrade(query, user, context)
+
+
+async def _cb_admin_at_preset_safe(query, user, context):
+    if not is_admin(query.from_user.id):
+        return
+    from core.persistence import update_governance_config
+    update_governance_config("grade_a_min_pct", 1.2)
+    update_governance_config("min_volume_usd", 900000)
+    await _cb_admin_autotrade(query, user, context)
+
+
+async def _cb_admin_at_preset_bal(query, user, context):
+    if not is_admin(query.from_user.id):
+        return
+    from core.persistence import update_governance_config
+    update_governance_config("grade_a_min_pct", 0.8)
+    update_governance_config("min_volume_usd", 250000)
+    await _cb_admin_autotrade(query, user, context)
+
+
+async def _cb_admin_at_preset_active(query, user, context):
+    if not is_admin(query.from_user.id):
+        return
+    from core.persistence import update_governance_config
+    update_governance_config("grade_a_min_pct", 0.5)
+    update_governance_config("min_volume_usd", 100000)
+    await _cb_admin_autotrade(query, user, context)
+
+
+async def _cb_admin_at_custom(query, user, context):
+    if not is_admin(query.from_user.id):
+        return
+    context.user_data["awaiting_input"] = "autotrade_custom_profile"
+    await query.edit_message_text(
+        "✍️ *Custom Autotrade Profile*\n\n"
+        "Send in format:\n"
+        "`min_move_pct,min_volume_usd`\n"
+        "Example: `0.9,300000`",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_autotrade")],
+        ]),
+    )
+
+
+# ══════════════════════════════════════════════
+
 async def _cb_admin(query, user, context):
     """Admin dashboard."""
     if not is_admin(query.from_user.id):
@@ -5557,6 +5774,7 @@ async def _cb_admin(query, user, context):
 
     kb = [
         [InlineKeyboardButton("\U0001f4ca Revenue Stats", callback_data="admin_stats")],
+        [InlineKeyboardButton("🛡️ Autotrade Controls", callback_data="admin_autotrade")],
         [InlineKeyboardButton("\U0001f465 User List", callback_data="admin_users")],
         [InlineKeyboardButton("\U0001f4e2 Broadcast Info", callback_data="admin_broadcast")],
         [InlineKeyboardButton("▶️ Resume Auto-Trading" if is_paused else "⏸️ Pause Auto-Trading", 
@@ -5713,6 +5931,7 @@ async def _send_admin_panel(chat_id: int, context: ContextTypes.DEFAULT_TYPE) ->
     )
     kb = [
         [InlineKeyboardButton("\U0001f4ca Stats", callback_data="admin_stats")],
+        [InlineKeyboardButton("🛡️ Autotrade", callback_data="admin_autotrade")],
         [InlineKeyboardButton("\U0001f465 Users", callback_data="admin_users")],
         [InlineKeyboardButton("\U0001f4e2 Broadcast", callback_data="admin_broadcast")],
         [_back_main()[0]],
@@ -6934,6 +7153,7 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Dynamic sizing floor in zero_loss_manager
     dynamic_floor = 0.05
     test_cap_sol = 0.0
+    runtime_enabled = _autotrade_enabled_flag()
     try:
         from core.persistence import _get_redis
         _r = _get_redis()
@@ -6964,6 +7184,7 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
     text = (
         "🛡️ *Autotrade Diagnostics*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Autotrade runtime: `{'ON' if runtime_enabled else 'OFF'}`\n"
         f"Admin user found: `{'YES' if isinstance(admin_user, dict) else 'NO'}`\n"
         f"Wallet secret: `{'READY' if wallet_ready else 'MISSING'}`\n"
         f"Wallet pubkey: `{wallet_pub or '-'}`\n"
