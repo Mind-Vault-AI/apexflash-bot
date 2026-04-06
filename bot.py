@@ -7110,7 +7110,7 @@ async def cmd_path(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "4. 💎 *Compounding:* Reinvest 50% of profits into the bot.\n\n"
         "Your current progress: *Phase 1 (Active)*"
     )
-    kb = [[InlineKeyboardButton("⚡ Optimize Strategy", callback_data="advisor_analyze")]]
+    kb = [[InlineKeyboardButton("⚡ Optimize Strategy", callback_data="cmd_advisor")]]
     await update.message.reply_text(f"{title}\n\n{body}", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
 
