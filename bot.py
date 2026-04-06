@@ -5652,6 +5652,7 @@ async def _cb_admin_autotrade(query, user, context):
 async def _cb_admin_at_on(query, user, context):
     if not is_admin(query.from_user.id):
         return
+    await query.answer("Autotrade ON")
     _set_autotrade_enabled_flag(True)
     await _cb_admin_autotrade(query, user, context)
 
@@ -5659,6 +5660,7 @@ async def _cb_admin_at_on(query, user, context):
 async def _cb_admin_at_off(query, user, context):
     if not is_admin(query.from_user.id):
         return
+    await query.answer("Autotrade OFF")
     _set_autotrade_enabled_flag(False)
     await _cb_admin_autotrade(query, user, context)
 
@@ -5670,6 +5672,7 @@ async def _cb_admin_at_test_003(query, user, context):
     r = _get_redis()
     if r:
         r.set("apexflash:autotrade:test_cap_sol", "0.03")
+    await query.answer("Test cap 0.03 SOL")
     await _cb_admin_autotrade(query, user, context)
 
 
@@ -5680,6 +5683,7 @@ async def _cb_admin_at_test_005(query, user, context):
     r = _get_redis()
     if r:
         r.set("apexflash:autotrade:test_cap_sol", "0.05")
+    await query.answer("Test cap 0.05 SOL")
     await _cb_admin_autotrade(query, user, context)
 
 
@@ -5690,6 +5694,7 @@ async def _cb_admin_at_test_off(query, user, context):
     r = _get_redis()
     if r:
         r.delete("apexflash:autotrade:test_cap_sol")
+    await query.answer("Test mode OFF")
     await _cb_admin_autotrade(query, user, context)
 
 
@@ -5699,6 +5704,7 @@ async def _cb_admin_at_preset_safe(query, user, context):
     from core.persistence import update_governance_config
     update_governance_config("grade_a_min_pct", 1.2)
     update_governance_config("min_volume_usd", 900000)
+    await query.answer("Preset SAFE applied")
     await _cb_admin_autotrade(query, user, context)
 
 
@@ -5708,6 +5714,7 @@ async def _cb_admin_at_preset_bal(query, user, context):
     from core.persistence import update_governance_config
     update_governance_config("grade_a_min_pct", 0.8)
     update_governance_config("min_volume_usd", 250000)
+    await query.answer("Preset BALANCED applied")
     await _cb_admin_autotrade(query, user, context)
 
 
@@ -5717,6 +5724,7 @@ async def _cb_admin_at_preset_active(query, user, context):
     from core.persistence import update_governance_config
     update_governance_config("grade_a_min_pct", 0.5)
     update_governance_config("min_volume_usd", 100000)
+    await query.answer("Preset ACTIVE applied")
     await _cb_admin_autotrade(query, user, context)
 
 
