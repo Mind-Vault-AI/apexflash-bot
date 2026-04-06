@@ -5626,6 +5626,7 @@ async def _cb_admin_autotrade(query, user, context):
         f"Test mode cap: `{test_cap:.4f} SOL` ({'ON' if test_cap > 0 else 'OFF'})\n"
         f"Profile cfg: move>={cfg_move:.2f}% | vol>={cfg_vol:,.0f}\n"
         f"Profile effective: move>={eff_move:.2f}% | vol>={eff_vol:,.0f}\n\n"
+        f"Updated: `{datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}`\n\n"
         "Use presets or set custom `min_move,min_volume`."
     )
     kb = [
