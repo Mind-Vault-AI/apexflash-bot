@@ -53,6 +53,7 @@ _price_history: dict[str, deque] = {sym: deque(maxlen=30) for sym in ALL_TOKENS}
 _last_volume_cache: dict[str, float] = {}
 _last_volume_ts: float = 0.0
 _VOLUME_TTL = 120  # seconds
+_KNOWN_SYMBOLS = set(ALL_TOKENS.keys())
 
 
 async def _fetch_prices() -> dict[str, float]:
@@ -95,7 +96,7 @@ async def _fetch_volume_spikes() -> dict[str, float]:
                     for pool in (pools if isinstance(pools, list) else []):
                         for tok in (pool.get("tokens") or []):
                             sym = (tok.get("symbol") or "").upper()
-                            if sym in SCALP_TOKENS:
+                            if sym in _KNOWN_SYMBOLS:
                                 v = pool.get("volume_usd") or 0
                                 if sym not in volumes or v > volumes[sym]:
                                     volumes[sym] = float(v)
