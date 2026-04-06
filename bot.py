@@ -56,6 +56,7 @@ from core.config import (
     WALLET_ENCRYPTION_KEY, SOL_MINT,
     FEE_COLLECT_WALLET, REFERRAL_FEE_SHARE_PCT,
     TRADING_ENABLED, MAX_TRADE_SOL, MIN_SOL_RESERVE,
+    AUTONOMOUS_TRADE_AMOUNT_SOL,
     MAX_SLIPPAGE_BPS, DEFAULT_SLIPPAGE_BPS,
     PRICE_IMPACT_WARN_PCT, MAX_DAILY_TRADES, TEST_TRADE_SOL,
     TWITTER_API_KEY, TWITTER_API_SECRET,
@@ -6904,6 +6905,51 @@ async def cmd_smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
 
 
+async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin-only quick diagnostics for autonomous trading readiness."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    admin_id = ADMIN_IDS[0] if isinstance(ADMIN_IDS, list) and ADMIN_IDS else (ADMIN_IDS if isinstance(ADMIN_IDS, int) else 0)
+    admin_user = users.get(admin_id) if isinstance(admin_id, int) else None
+    if not admin_user and isinstance(admin_id, int):
+        admin_user = users.get(str(admin_id))
+
+    wallet_pub = str((admin_user or {}).get("wallet_pubkey") or "")
+    wallet_ready = bool((admin_user or {}).get("wallet_secret_enc"))
+    sol_balance = 0.0
+    if wallet_pub:
+        try:
+            sol_balance = float(await get_sol_balance(wallet_pub) or 0.0)
+        except Exception:
+            sol_balance = 0.0
+
+    required = float(AUTONOMOUS_TRADE_AMOUNT_SOL) + float(MIN_SOL_RESERVE)
+    funding_ok = sol_balance >= required
+
+    pos_count = 0
+    try:
+        from zero_loss_manager import active_positions
+        pos_count = len(active_positions) if isinstance(active_positions, dict) else 0
+    except Exception:
+        pos_count = 0
+
+    text = (
+        "🛡️ *Autotrade Diagnostics*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Admin user found: `{'YES' if isinstance(admin_user, dict) else 'NO'}`\n"
+        f"Wallet secret: `{'READY' if wallet_ready else 'MISSING'}`\n"
+        f"Wallet pubkey: `{wallet_pub or '-'}`\n"
+        f"SOL balance: `{sol_balance:.4f}`\n"
+        f"Required min: `{required:.4f}` (trade `{AUTONOMOUS_TRADE_AMOUNT_SOL}` + reserve `{MIN_SOL_RESERVE}`)\n"
+        f"Funding OK: `{'YES' if funding_ok else 'NO'}`\n"
+        f"Active positions: `{pos_count}`\n"
+        "Tip: run `/ops_now` and check for zero-loss entry alerts."
+    )
+    await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+
+
 async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin-only SLA snapshot from runtime watchdog/smoke states."""
     if not is_admin(update.effective_user.id):
@@ -7768,6 +7814,7 @@ def main() -> None:
     app.add_handler(CommandHandler("admin_marketing", cmd_admin_marketing))
     app.add_handler(CommandHandler("advisor", cmd_advisor))
     app.add_handler(CommandHandler("advisor_diag", cmd_advisor_diag))
+    app.add_handler(CommandHandler("autotrade_diag", cmd_autotrade_diag))
     app.add_handler(CommandHandler("smoke", cmd_smoke))
     app.add_handler(CommandHandler("sla", cmd_sla))
     app.add_handler(CommandHandler("ops_now", cmd_ops_now))
