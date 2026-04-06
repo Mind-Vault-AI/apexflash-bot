@@ -8042,6 +8042,103 @@ async def cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
 
 
+
+
+# TOKEN AUDIT (public -- like Trojan, via DexScreener)
+
+async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Public: /audit <token> -- instant token audit via DexScreener."""
+    user = get_user(update.effective_user)
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "\U0001f50d *Token Audit*\n\n"
+            "Usage: `/audit <symbol or mint>`\n"
+            "Example: `/audit BONK` or `/audit So11...`",
+            parse_mode="Markdown",
+        )
+        return
+    query = args[0].strip()
+    await update.message.reply_text("\U0001f50d Scanning token...", parse_mode="Markdown")
+    try:
+        import aiohttp
+        if len(query) > 30:
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{query}"
+        else:
+            url = f"https://api.dexscreener.com/latest/dex/search?q={query}"
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    await update.message.reply_text("\u26a0\ufe0f DexScreener unavailable.")
+                    return
+                data = await resp.json()
+        pairs = data.get("pairs", [])
+        if not pairs:
+            await update.message.reply_text(f"\u274c No data for `{query[:30]}`.", parse_mode="Markdown")
+            return
+        sol_pairs = [p for p in pairs if p.get("chainId") == "solana"]
+        pair = sol_pairs[0] if sol_pairs else pairs[0]
+        base = pair.get("baseToken", {})
+        symbol = base.get("symbol", "???")
+        name = base.get("name", symbol)
+        mint = base.get("address", "-")
+        price_usd = pair.get("priceUsd", "0")
+        liq = pair.get("liquidity", {}).get("usd", 0)
+        vol24 = pair.get("volume", {}).get("h24", 0)
+        mc = pair.get("marketCap", 0) or pair.get("fdv", 0)
+        chg5m = pair.get("priceChange", {}).get("m5", 0)
+        chg1h = pair.get("priceChange", {}).get("h1", 0)
+        chg24h = pair.get("priceChange", {}).get("h24", 0)
+        txns = pair.get("txns", {})
+        buys24 = txns.get("h24", {}).get("buys", 0)
+        sells24 = txns.get("h24", {}).get("sells", 0)
+        chain = pair.get("chainId", "unknown")
+        dex = pair.get("dexId", "unknown")
+        pair_url = pair.get("url", "")
+        flags = []
+        if liq and liq < 10000:
+            flags.append("\U0001f534 Low liquidity (<$10K)")
+        elif liq and liq < 50000:
+            flags.append("\U0001f7e1 Medium liquidity")
+        else:
+            flags.append("\U0001f7e2 Good liquidity")
+        if sells24 > 0 and buys24 > 0:
+            ratio = buys24 / sells24
+            if ratio < 0.5:
+                flags.append("\U0001f534 Heavy sell pressure")
+            elif ratio > 2.0:
+                flags.append("\U0001f7e2 Strong buy pressure")
+        if mc and mc < 50000:
+            flags.append("\u26a0\ufe0f Micro-cap (<$50K)")
+        flags_text = "\n".join(f"  {f}" for f in flags) if flags else "  \u2705 No major flags"
+        text = (
+            f"\U0001f50d *Token Audit: {name}* (`{symbol}`)\n"
+            "\u2501" * 21 + "\n"
+            f"Chain: `{chain}` | DEX: `{dex}`\n"
+            f"Mint: `{mint[:20]}...`\n\n"
+            f"\U0001f4b0 Price: `${price_usd}`\n"
+            f"\U0001f4ca MCap: `${mc:,.0f}`\n"
+            f"\U0001f4a7 Liquidity: `${liq:,.0f}`\n"
+            f"\U0001f4c8 Vol 24h: `${vol24:,.0f}`\n\n"
+            f"\u23f1 Changes:\n"
+            f"  5m: `{chg5m:+.1f}%` | 1h: `{chg1h:+.1f}%` | 24h: `{chg24h:+.1f}%`\n\n"
+            f"\U0001f504 Txns 24h: `{buys24}` buys / `{sells24}` sells\n\n"
+            f"\U0001f6e1\ufe0f Risk Flags:\n{flags_text}\n"
+        )
+        kb = []
+        if pair_url:
+            kb.append([InlineKeyboardButton("\U0001f4ca DexScreener", url=pair_url)])
+        if mint and len(mint) > 30:
+            kb.append([InlineKeyboardButton(f"\u26a1 Buy {symbol}", callback_data=f"hot_buy_{mint[:50]}")])
+        kb.append([_back_main()[0]])
+        from core.persistence import track_analytics_event
+        track_analytics_event("token_audit", {"symbol": symbol, "user_id": str(update.effective_user.id)})
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown", disable_web_page_preview=True)
+    except Exception as e:
+        logger.error(f"cmd_audit error: {e}")
+        await update.message.reply_text(f"\u26a0\ufe0f Audit failed: `{str(e)[:100]}`", parse_mode="Markdown")
+
+
 # ══════════════════════════════════════════════
 # INSPECTOR GADGET — ADMIN COMMANDS
 # ══════════════════════════════════════════════
@@ -8220,7 +8317,9 @@ def main() -> None:
     app.add_handler(CommandHandler("referrals", cmd_referrals))
     app.add_handler(CommandHandler("ref", cmd_referrals))     # alias
     app.add_handler(CommandHandler("addwallet", cmd_addwallet))    # Inspector: add alpha wallet
-    app.add_handler(CommandHandler("wallets", cmd_list_wallets))   # Inspector: list tracked wallets
+    app.add_handler(CommandHandler("wallets", cmd_list_wallets))
+    app.add_handler(CommandHandler("audit", cmd_audit))
+    app.add_handler(CommandHandler("scan", cmd_audit))  # alias   # Inspector: list tracked wallets
 
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))
