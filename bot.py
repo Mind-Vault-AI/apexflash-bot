@@ -8113,7 +8113,7 @@ async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         flags_text = "\n".join(f"  {f}" for f in flags) if flags else "  \u2705 No major flags"
         text = (
             f"\U0001f50d *Token Audit: {name}* (`{symbol}`)\n"
-            "\u2501" * 21 + "\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
             f"Chain: `{chain}` | DEX: `{dex}`\n"
             f"Mint: `{mint[:20]}...`\n\n"
             f"\U0001f4b0 Price: `${price_usd}`\n"
