@@ -33,6 +33,10 @@ SCALP_TOKENS = {
         "RENDER":"rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof",
         "MEW":  "MEW1gQWJ3nEXg2qgERiKu7FAFj79PHvQVREQUzScPP5",
         "POPCAT":"7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr",
+        "FARTCOIN":"9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump",
+        "GOAT":"CzLSujWBLFsSjncfkh59rUFqvafWcY5tzedWJSuypump",
+        "PNUT":"2qEHjDLDLbuBgRYvsxhc5D6uDWAivNFZGan56P1tpump",
+        "GIGA":"63LfDmNb3MQ8mw9MtZ2To9bEA2M71kZUUGq5tiJxcqj9",
     },
     "BASE": {
         "BRETT": "0x532f27101965dd16442e59d40670faf5ebb142e4",

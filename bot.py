@@ -8077,6 +8077,10 @@ async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "TRUMP": "6p1xzgVJfydnFP3VQRHRfmu45CCgQ4jE5NMXLhfeN2hN",
         "PEPE": "4Bskt3gjpvZetH1xKpH67qMDbypSFc58rt7NLRADYqWL",
         "FLOKI": "57DxWKEQxn55a7anKiQVaRMjivUQY7dQx9gYFpix9HqG",
+        "FARTCOIN":"9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump",
+        "GOAT":"CzLSujWBLFsSjncfkh59rUFqvafWcY5tzedWJSuypump",
+        "PNUT":"2qEHjDLDLbuBgRYvsxhc5D6uDWAivNFZGan56P1tpump",
+        "GIGA":"63LfDmNb3MQ8mw9MtZ2To9bEA2M71kZUUGq5tiJxcqj9",
     }
     if query.upper() in _KNOWN_MINTS:
         query = _KNOWN_MINTS[query.upper()]
