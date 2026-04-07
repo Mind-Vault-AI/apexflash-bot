@@ -8074,17 +8074,27 @@ async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = _KNOWN_MINTS[query.upper()]
     await update.message.reply_text("\U0001f50d Scanning token...", parse_mode="Markdown")
     try:
-        import aiohttp
+        import aiohttp, asyncio
         if len(query) > 30:
             url = f"https://api.dexscreener.com/latest/dex/tokens/{query}"
         else:
             url = f"https://api.dexscreener.com/latest/dex/search?q={query}"
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    await update.message.reply_text("\u26a0\ufe0f DexScreener unavailable.")
-                    return
-                data = await resp.json()
+        data = None
+        for _attempt in range(3):
+            try:
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+                    async with session.get(url) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            break
+                        if resp.status == 429:
+                            await asyncio.sleep(2)
+                            continue
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                await asyncio.sleep(1)
+        if data is None:
+            await update.message.reply_text("\u26a0\ufe0f DexScreener unavailable. Try again in a few seconds.")
+            return
         pairs = data.get("pairs", [])
         if not pairs:
             await update.message.reply_text(f"\u274c No data for `{query[:30]}`.", parse_mode="Markdown")
