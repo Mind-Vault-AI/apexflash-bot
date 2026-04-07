@@ -8174,6 +8174,64 @@ async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # FORCE TRADE (admin - direct test trade)
 
+
+
+async def cmd_copy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show Mizar copy trading bots."""
+    user = get_user(update.effective_user.id)
+    if user["tier"] == "free":
+        await update.message.reply_text(
+            "Copy Trading is Pro+ only.\n\n/upgrade",
+            parse_mode="Markdown",
+        )
+        return
+
+    await update.message.reply_text("Fetching traders...")
+
+    try:
+        from exchanges.mizar import get_marketplace_bots, get_referral_url
+        bots = await get_marketplace_bots(limit=5)
+        if not bots:
+            await update.message.reply_text("Mizar API down. Try later.")
+            return
+
+        text = "Top Copy Traders (30D PnL)\n\n"
+        for i, bot in enumerate(bots[:5], 1):
+            name = bot.get("name", "?")
+            pnl = bot.get("pnl_30d", 0)
+            text += f"{i}. {name}: {pnl:+.2f}%\n"
+
+        ref_url = get_referral_url()
+        text += f"\n[Start on Mizar]({ref_url})"
+
+        await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+    except Exception as e:
+        logger.error(f"cmd_copy: {e}")
+        await update.message.reply_text(f"Error: {str(e)[:80]}")
+
+
+async def cmd_dca(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """DCA bot info."""
+    user = get_user(update.effective_user.id)
+    if user["tier"] == "free":
+        await update.message.reply_text("DCA Bot is Pro+ only.\n\n/upgrade", parse_mode="Markdown")
+        return
+
+    from exchanges.mizar import get_referral_url
+    ref_url = get_referral_url()
+
+    text = (
+        "DCA Bot (Dollar Cost Averaging)\n\n"
+        "Auto-buy at intervals to smooth volatility.\n\n"
+        "Features:\n"
+        "- Set amount & frequency\n"
+        "- Auto-buy dips\n"
+        "- Stop-loss & TP\n\n"
+        f"[Create on Mizar]({ref_url})"
+    )
+
+    await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+
 async def cmd_force_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin: force 1 test trade on BONK/WIF/JUP zonder te wachten op signals."""
     uid = update.effective_user.id
@@ -8407,6 +8465,8 @@ def main() -> None:
     app.add_handler(CommandHandler("addwallet", cmd_addwallet))    # Inspector: add alpha wallet
     app.add_handler(CommandHandler("wallets", cmd_list_wallets))
     app.add_handler(CommandHandler("force_trade", cmd_force_trade))
+    app.add_handler(CommandHandler("copy", cmd_copy))
+    app.add_handler(CommandHandler("dca", cmd_dca))
     app.add_handler(CommandHandler("audit", cmd_audit))
     app.add_handler(CommandHandler("scan", cmd_audit))  # alias   # Inspector: list tracked wallets
 
