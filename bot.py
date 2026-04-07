@@ -8069,6 +8069,14 @@ async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "RAY": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
         "PYTH": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
         "ORCA": "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE",
+        "WBTC": "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh",
+        "RENDER":"rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof",
+        "MEW":  "MEW1gQWJ3nEXg2qgERiKu7FAFj79PHvQVREQUzScPP5",
+        "POPCAT":"7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr",
+        "PENGU": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
+        "TRUMP": "6p1xzgVJfydnFP3VQRHRfmu45CCgQ4jE5NMXLhfeN2hN",
+        "PEPE": "4Bskt3gjpvZetH1xKpH67qMDbypSFc58rt7NLRADYqWL",
+        "FLOKI": "57DxWKEQxn55a7anKiQVaRMjivUQY7dQx9gYFpix9HqG",
     }
     if query.upper() in _KNOWN_MINTS:
         query = _KNOWN_MINTS[query.upper()]
