@@ -8131,8 +8131,8 @@ async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if mint and len(mint) > 30:
             kb.append([InlineKeyboardButton(f"\u26a1 Buy {symbol}", callback_data=f"hot_buy_{mint[:50]}")])
         kb.append([_back_main()[0]])
-        from core.persistence import track_analytics_event
-        track_analytics_event("token_audit", {"symbol": symbol, "user_id": str(update.effective_user.id)})
+        from core.persistence import track_token_lookup
+        track_token_lookup(mint, symbol)
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown", disable_web_page_preview=True)
     except Exception as e:
         logger.error(f"cmd_audit error: {e}")
