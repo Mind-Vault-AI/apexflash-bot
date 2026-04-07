@@ -151,6 +151,33 @@ async def _fetch_volume_spikes() -> dict[str, float]:
                     return volumes
     except Exception as e:
         logger.debug(f"Scalper volume fetch error: {e}")
+
+    # Fallback: DexScreener volume for known tokens (prevents zero-volume deadlock)
+    if not _last_volume_cache or len(_last_volume_cache) < 3:
+        try:
+            fallback_vols = {}
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12)) as session:
+                for sym, mint in list(ALL_TOKENS.items())[:6]:
+                    try:
+                        url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
+                        async with session.get(url) as resp:
+                            if resp.status == 200:
+                                data = await resp.json(content_type=None)
+                                pairs = [p for p in (data.get("pairs") or []) if p.get("chainId") == "solana"]
+                                if pairs:
+                                    best = max(pairs, key=lambda p: float(p.get("volume", {}).get("h24", 0) or 0))
+                                    v = float(best.get("volume", {}).get("h24", 0) or 0)
+                                    if v > 0:
+                                        fallback_vols[sym] = v
+                    except Exception:
+                        pass
+            if fallback_vols:
+                _last_volume_cache = fallback_vols
+                _last_volume_ts = time.time()
+                logger.info(f"Scalper volume fallback (DexScreener): {len(fallback_vols)} tokens")
+        except Exception as e2:
+            logger.debug(f"Scalper DexScreener volume fallback error: {e2}")
+
     return _last_volume_cache
 
 
@@ -182,13 +209,13 @@ def _grade_signal(pct_5m: float, pct_15m: float, volume_usd: float) -> str:
         return "C" if has_std_vol else ""
 
     # Fallback mode when volume feed is unavailable:
-    # keep stricter momentum thresholds, but don't fully block signal generation.
+    # Use relaxed thresholds to keep signal flow alive in calm markets.
     if not has_volume:
-        if abs5 >= 1.8 and trend_aligned:
+        if abs5 >= 1.2 and trend_aligned:
             return "A"
-        if abs5 >= 1.0 or abs15 >= 1.8:
+        if abs5 >= 0.6 or abs15 >= 1.0:
             return "B"
-        if abs5 >= 0.45:
+        if abs5 >= 0.3:
             return "C"
     return ""
 

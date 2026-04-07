@@ -343,8 +343,8 @@ async def auto_trader_loop(bot=None):
                     is_whale
                     or abs(float(s.get('pct_5m', 0.0) or 0.0)) >= min_move
                     or s['grade'] == "A"
-                    or (s['grade'] == "B" and s.get('volume_usd', 0) >= min_vol)
-                    or (s['grade'] == "C" and abs(float(s.get('pct_5m', 0.0) or 0.0)) >= 0.45)
+                    or s['grade'] == "B"
+                    or (s['grade'] == "C" and abs(float(s.get('pct_5m', 0.0) or 0.0)) >= 0.35)
                 ):
                     # Check Market Hedge
                     if await check_market_trend() < -4.0:
