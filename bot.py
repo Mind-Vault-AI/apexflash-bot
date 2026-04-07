@@ -8210,6 +8210,21 @@ async def cmd_copy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"Error: {str(e)[:80]}")
 
 
+
+
+async def cmd_switch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Switch between SOL and BASE networks."""
+    user = get_user(update.effective_user.id)
+    current = user.get("active_chain", "SOL")
+    new_chain = "BASE" if current == "SOL" else "SOL"
+    user["active_chain"] = new_chain
+    save_users(users)
+    await update.message.reply_text(
+        f"Network switched to {new_chain}.\n\n"
+        f"All trades now route via {new_chain}.",
+        parse_mode="Markdown",
+    )
+
 async def cmd_dca(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """DCA bot info."""
     user = get_user(update.effective_user.id)
@@ -8467,6 +8482,7 @@ def main() -> None:
     app.add_handler(CommandHandler("force_trade", cmd_force_trade))
     app.add_handler(CommandHandler("copy", cmd_copy))
     app.add_handler(CommandHandler("dca", cmd_dca))
+    app.add_handler(CommandHandler("switch", cmd_switch))
     app.add_handler(CommandHandler("audit", cmd_audit))
     app.add_handler(CommandHandler("scan", cmd_audit))  # alias   # Inspector: list tracked wallets
 
