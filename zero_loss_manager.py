@@ -262,6 +262,14 @@ async def auto_trader_loop(bot=None):
             users = load_users()
             admin_user = users.get(admin_id) or users.get(str(admin_id))
             if not admin_user or not admin_user.get("wallet_secret_enc"):
+                # Fallback: try bot.py in-memory users dict
+                try:
+                    import bot as _bot_mod
+                    _mem_users = getattr(_bot_mod, "users", {})
+                    admin_user = _mem_users.get(admin_id) or _mem_users.get(str(admin_id))
+                except Exception:
+                    admin_user = None
+            if not admin_user or not admin_user.get("wallet_secret_enc"):
                 logger.error("❌ Admin wallet missing. Auto Trader waiting for /start...")
                 AUTOTRADE_STATE["last_reason"] = "admin_wallet_missing"
                 await asyncio.sleep(60)
