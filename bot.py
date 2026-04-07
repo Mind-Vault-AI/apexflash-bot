@@ -8059,6 +8059,19 @@ async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
     query = args[0].strip()
+    # Known token mints for common symbols (avoid memecoin confusion)
+    _KNOWN_MINTS = {
+        "SOL": "So11111111111111111111111111111111111111112",
+        "BONK": "DezXAZ8z7PnrnRJjz3wXBNTs2ZmBT5J2ySSd5VqEpump",
+        "WIF": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+        "JUP": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+        "RNDR": "rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof",
+        "RAY": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+        "PYTH": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+        "ORCA": "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE",
+    }
+    if query.upper() in _KNOWN_MINTS:
+        query = _KNOWN_MINTS[query.upper()]
     await update.message.reply_text("\U0001f50d Scanning token...", parse_mode="Markdown")
     try:
         import aiohttp
