@@ -8216,6 +8216,65 @@ async def cmd_copy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 
+
+
+async def cmd_whale_track(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: start tracking whale wallet (paper trading Week 1)."""
+    uid = update.effective_user.id
+    if uid not in ADMIN_IDS:
+        await update.message.reply_text("Admin only.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: /whale_track <wallet_address>\n\n"
+            "Example: /whale_track 5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1",
+            parse_mode="Markdown",
+        )
+        return
+
+    wallet = context.args[0].strip()
+    if len(wallet) < 32:
+        await update.message.reply_text("Invalid Solana wallet address.")
+        return
+
+    from exchanges.whale_copy import WHALE_COPY_STATE
+    if wallet not in WHALE_COPY_STATE["tracked_wallets"]:
+        WHALE_COPY_STATE["tracked_wallets"].append(wallet)
+
+    await update.message.reply_text(
+        f"Whale tracking started (PAPER TRADING)\n\n"
+        f"Wallet: {wallet[:8]}...\n\n"
+        f"Mode: Log only, no real trades\n"
+        f"Check /whale_stats for signals",
+        parse_mode="Markdown",
+    )
+
+
+async def cmd_whale_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show whale copy trading stats."""
+    uid = update.effective_user.id
+    if uid not in ADMIN_IDS:
+        await update.message.reply_text("Admin only.")
+        return
+
+    from exchanges.whale_copy import get_whale_stats
+    stats = get_whale_stats()
+
+    mode = "PAPER TRADING (Week 1)" if stats["paper_trading"] else "LIVE TRADING"
+
+    text = (
+        f"Whale Copy Trading Stats\n\n"
+        f"Mode: {mode}\n"
+        f"Tracked wallets: {stats['tracked_wallets']}\n"
+        f"Signals logged: {stats['signals_logged']}\n"
+        f"Would-be PnL: {stats['would_be_pnl_sol']:.4f} SOL\n\n"
+        f"Paper trading = signals logged, no real trades.\n"
+        f"Use /whale_track <address> to add wallets."
+    )
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
 async def cmd_switch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Switch between SOL and BASE networks."""
     user = get_user(update.effective_user.id)
@@ -8487,6 +8546,8 @@ def main() -> None:
     app.add_handler(CommandHandler("copy", cmd_copy))
     app.add_handler(CommandHandler("dca", cmd_dca))
     app.add_handler(CommandHandler("switch", cmd_switch))
+    app.add_handler(CommandHandler("whale_track", cmd_whale_track))
+    app.add_handler(CommandHandler("whale_stats", cmd_whale_stats))
     app.add_handler(CommandHandler("audit", cmd_audit))
     app.add_handler(CommandHandler("scan", cmd_audit))  # alias   # Inspector: list tracked wallets
 
