@@ -1,6 +1,6 @@
-﻿"""
+"""
 ApexFlash MEGA BOT - @{BOT_USERNAME}
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+═══════════════════════════════════════════════
 The all-in-one crypto whale tracking & trading bot.
 
 Features:
@@ -20,7 +20,7 @@ Revenue model:
 
 # ApexFlash v3.22.0 "Conversion Godmode"
 # PDCA Cycle 14 Implementation
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ═══════════════════════════════════════════════
 """
 VERSION = "3.22.0"
 import aiohttp
@@ -92,29 +92,29 @@ from core.persistence import (
 from agents.marketing import post_to_channel as marketing_post
 from agents.twitter_poster import post_tweet as twitter_post, post_thread as twitter_post_thread, get_stats_text as twitter_stats_text
 
-# â”€â”€ ApexFlash Godmode Agents â”€â”€
+# ── ApexFlash Godmode Agents ──
 from zero_loss_manager import auto_trader_loop
 from agents.ceo_agent import start_ceo_scheduler
 from whale_intent import analyze_whale_intent, can_user_analyze
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # LOGGING
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger("ApexFlash")
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# USER STORE  (persistent JSON â€” survives restarts)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
+# USER STORE  (persistent JSON — survives restarts)
+# ══════════════════════════════════════════════
 users: dict[int, dict] = load_users()
 seen_tx_hashes: set[str] = set()
 bot_start_time = datetime.now(timezone.utc)
-# Global kill switch â€” mutable at runtime via /killswitch
+# Global kill switch — mutable at runtime via /killswitch
 trading_enabled: bool = TRADING_ENABLED
-# Global platform stats (for social proof + digest) â€” loaded from disk if available
+# Global platform stats (for social proof + digest) — loaded from disk if available
 _saved_stats = load_stats()
 platform_stats = _saved_stats if _saved_stats else {
     "trades_today": 0,
@@ -256,10 +256,10 @@ def _build_daily_kpi_snapshot() -> dict:
 
 def _delta_line(label: str, current: float | int, previous: float | int | None, suffix: str = "") -> str:
     if previous is None:
-        return f"â€¢ {label}: `{current}{suffix}` (new baseline)"
+        return f"• {label}: `{current}{suffix}` (new baseline)"
     delta = current - previous
     sign = "+" if delta >= 0 else ""
-    return f"â€¢ {label}: `{current}{suffix}` ({sign}{delta}{suffix} vs yesterday)"
+    return f"• {label}: `{current}{suffix}` ({sign}{delta}{suffix} vs yesterday)"
 
 
 def _drift_signals(current: dict, previous: dict | None) -> list[str]:
@@ -273,20 +273,20 @@ def _drift_signals(current: dict, previous: dict | None) -> list[str]:
     curr_advisor = current.get("advisor_sla")
     if isinstance(prev_advisor, (int, float)) and isinstance(curr_advisor, (int, float)):
         if curr_advisor < prev_advisor - DRIFT_ADVISOR_SLA_DROP_PCT:
-            triggered.append(f"â€¢ Advisor SLA drop: `{prev_advisor:.2f}% -> {curr_advisor:.2f}%`")
+            triggered.append(f"• Advisor SLA drop: `{prev_advisor:.2f}% -> {curr_advisor:.2f}%`")
 
     prev_endpoint = previous.get("endpoint_sla")
     curr_endpoint = current.get("endpoint_sla")
     if isinstance(prev_endpoint, (int, float)) and isinstance(curr_endpoint, (int, float)):
         if curr_endpoint < prev_endpoint - DRIFT_ENDPOINT_SLA_DROP_PCT:
-            triggered.append(f"â€¢ Endpoint SLA drop: `{prev_endpoint:.2f}% -> {curr_endpoint:.2f}%`")
+            triggered.append(f"• Endpoint SLA drop: `{prev_endpoint:.2f}% -> {curr_endpoint:.2f}%`")
 
     prev_volume = previous.get("volume_total_usd")
     curr_volume = current.get("volume_total_usd")
     if isinstance(prev_volume, (int, float)) and isinstance(curr_volume, (int, float)) and prev_volume > 0:
         drop_pct = (prev_volume - curr_volume) / prev_volume * 100.0
         if drop_pct >= DRIFT_VOLUME_DROP_PCT:
-            triggered.append(f"â€¢ Volume drop: `{drop_pct:.2f}%` (`${prev_volume:,.2f} -> ${curr_volume:,.2f}`)")
+            triggered.append(f"• Volume drop: `{drop_pct:.2f}%` (`${prev_volume:,.2f} -> ${curr_volume:,.2f}`)")
 
     return triggered
 
@@ -330,9 +330,9 @@ def _runtime_integrity_snapshot() -> dict:
 
 _load_runtime_health()
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # DISCLAIMER TEXT
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 RISK_DISCLAIMER = (
     "\u26a0\ufe0f *Risk Disclaimer*\n"
@@ -356,9 +356,9 @@ RISK_DISCLAIMER = (
 )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # RISK MANAGEMENT HELPERS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 def _user_daily_trades(user: dict) -> int:
     """Count trades today for rate limiting."""
@@ -517,9 +517,9 @@ async def _legacy_cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # KEYBOARD BUILDERS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _legacy_cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Display the top profitable ApexFlash traders."""
@@ -527,24 +527,24 @@ async def _legacy_cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_
     stats = get_leaderboard_stats(limit=10)
     
     if not stats:
-        await update.message.reply_text("ðŸ† *Leaderboard is warming up...*\nNo trades tracked yet!", parse_mode="Markdown")
+        await update.message.reply_text("🏆 *Leaderboard is warming up...*\nNo trades tracked yet!", parse_mode="Markdown")
         return
         
     lines = []
-    emojis = ["ðŸ¥‡", "ðŸ¥ˆ", "ðŸ¥‰", "ðŸ‘¤", "ðŸ‘¤", "ðŸ‘¤", "ðŸ‘¤", "ðŸ‘¤", "ðŸ‘¤", "ðŸ‘¤"]
+    emojis = ["🥇", "🥈", "🥉", "👤", "👤", "👤", "👤", "👤", "👤", "👤"]
     for i, s in enumerate(stats):
-        emoji = emojis[i] if i < len(emojis) else "ðŸ‘¤"
+        emoji = emojis[i] if i < len(emojis) else "👤"
         uid_anon = f"User_{s['id'][-4:]}"
         lines.append(f"{emoji} *{uid_anon}*: `{float(s['profit']):.2f} SOL` profit")
         
     text = "\n".join(lines)
     await update.message.reply_text(
-        f"ðŸ† *APEXFLASH GLOBAL LEADERBOARD*\n"
-        f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+        f"🏆 *APEXFLASH GLOBAL LEADERBOARD*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Top profitable users (all-time):\n\n"
         f"{text}\n\n"
-        f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
-        f"ðŸš€ _Trade like a whale. ApexFlash v{VERSION}_",
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🚀 _Trade like a whale. ApexFlash v{VERSION}_",
         parse_mode="Markdown"
     )
 
@@ -605,7 +605,7 @@ async def cmd_admin_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     from core.persistence import _get_redis
     r = _get_redis()
     if r: r.set("signals:paused", "1")
-    await update.message.reply_text("â¸ï¸ *Auto-Trading PAUSED*\nNew signals will be ignored.", parse_mode="Markdown")
+    await update.message.reply_text("⏸️ *Auto-Trading PAUSED*\nNew signals will be ignored.", parse_mode="Markdown")
 
 async def cmd_admin_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Resume auto-trading signals (Admin only)."""
@@ -613,7 +613,7 @@ async def cmd_admin_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     from core.persistence import _get_redis
     r = _get_redis()
     if r: r.set("signals:paused", "0")
-    await update.message.reply_text("â–¶ï¸ *Auto-Trading RESUMED*\nSearching for Grade A signals...", parse_mode="Markdown")
+    await update.message.reply_text("▶️ *Auto-Trading RESUMED*\nSearching for Grade A signals...", parse_mode="Markdown")
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Welcome message with main menu. Also handles referral deep links."""
@@ -638,7 +638,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_new_user:
         track_funnel("new_user")
 
-    # â”€â”€ Handle deep links: /start ref_123456 OR /start buy_MINT_ref_123456 â”€â”€
+    # ── Handle deep links: /start ref_123456 OR /start buy_MINT_ref_123456 ──
     deep_link_mint = None  # Token to show after welcome
     if context.args:
         arg = context.args[0]
@@ -702,14 +702,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # Variant B: Revenue & Speed Focus
         welcome_header = (
             f"\u26a1 *ApexFlash MEGA BOT v{VERSION}*\n"
-            "â”â”â”â”â” Institutional Speed â”â”â”â”â”\n"
+            "━━━━━ Institutional Speed ━━━━━\n"
         )
         tagline = "The world's fastest autonomous scalp engine. Your path to financial immunity starts here."
     else:
         # Variant A: Safety & Zero-Loss Focus
         welcome_header = (
             f"\u26a1 *ApexFlash MEGA BOT v{VERSION}*\n"
-            "â”â”â”â”â” Godmode Zero-Loss â”â”â”â”â”\n"
+            "━━━━━ Godmode Zero-Loss ━━━━━\n"
         )
         tagline = "Protect your capital with the only bot that has a built-in Breakeven Lock. Zero-loss philosophy active."
 
@@ -744,7 +744,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         disable_web_page_preview=True,
     )
 
-    # â”€â”€ New user onboarding: show exchange deals + referral link immediately â”€â”€
+    # ── New user onboarding: show exchange deals + referral link immediately ──
     if is_new_user:
         try:
             bot_username = (await context.bot.get_me()).username
@@ -754,20 +754,20 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 "\U0001f525 *Quick wins before you start:*\n\n"
             )
             for aff in AFFILIATE_LINKS_ACTIVE.values():
-                onboard_text += f"âœ… *{aff['name']}* â€” {aff['commission']} fee rebate\n"
+                onboard_text += f"✅ *{aff['name']}* — {aff['commission']} fee rebate\n"
 
             onboard_text += (
                 "\n"
                 "Sign up via our links = save on every trade.\n\n"
-                "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
-                f"ðŸ¤ *Your referral link:*\n{ref_link}\n\n"
-                "_Share it â€” earn 25% of every trade your friends make. Forever._"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🤝 *Your referral link:*\n{ref_link}\n\n"
+                "_Share it — earn 25% of every trade your friends make. Forever._"
             )
 
             kb = []
             for key, aff in AFFILIATE_LINKS_ACTIVE.items():
                 kb.append([InlineKeyboardButton(
-                    f"ðŸ”— Open {aff['name']} ({aff['commission']} rebate)", callback_data=f"aff_click_{key}"
+                    f"🔗 Open {aff['name']} ({aff['commission']} rebate)", callback_data=f"aff_click_{key}"
                 )])
 
             await update.message.reply_text(
@@ -779,7 +779,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception as e:
             logger.warning(f"New user onboarding message failed: {e}")
 
-    # â”€â”€ Deep link: auto-show token buy screen if mint was in the link â”€â”€
+    # ── Deep link: auto-show token buy screen if mint was in the link ──
     if deep_link_mint and SOL_ADDR_RE.match(deep_link_mint):
         try:
             token_info = await get_token_info(deep_link_mint)
@@ -795,12 +795,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 bal_str = f"{sol_bal:.4f}" if sol_bal is not None else "N/A"
 
                 msg = (
-                    f"ðŸ”¥ *{name}* ({symbol})\n"
-                    "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-                    f"ðŸ”— `{deep_link_mint}`\n"
-                    f"ðŸ’¼ Your SOL: *{bal_str}*\n"
-                    f"ðŸ’° Fee: *{PLATFORM_FEE_PCT}%*\n\n"
-                    "â¬‡ï¸ *Choose buy amount:*"
+                    f"🔥 *{name}* ({symbol})\n"
+                    "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"🔗 `{deep_link_mint}`\n"
+                    f"💼 Your SOL: *{bal_str}*\n"
+                    f"💰 Fee: *{PLATFORM_FEE_PCT}%*\n\n"
+                    "⬇️ *Choose buy amount:*"
                 )
 
                 kb = [
@@ -808,7 +808,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                      InlineKeyboardButton("0.5 SOL", callback_data="buy_05")],
                     [InlineKeyboardButton("1 SOL", callback_data="buy_1"),
                      InlineKeyboardButton("5 SOL", callback_data="buy_5")],
-                    [InlineKeyboardButton("âœï¸ Custom", callback_data="buy_custom")],
+                    [InlineKeyboardButton("✏️ Custom", callback_data="buy_custom")],
                     [_back_main()[0]],
                 ]
 
@@ -835,14 +835,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception as e:
             logger.warning(f"Deep link token lookup failed: {e}")
 
-    # â”€â”€ Auto-trigger /hot if deep linked â”€â”€
+    # ── Auto-trigger /hot if deep linked ──
     if context.user_data.pop("_auto_hot", False):
         try:
             await cmd_hot(update, context)
         except Exception as e:
             logger.warning(f"Auto-hot trigger failed: {e}")
 
-    # â”€â”€ Auto-trigger Affiliate Redirect if deep linked (Strategy Pivot v1.2) â”€â”€
+    # ── Auto-trigger Affiliate Redirect if deep linked (Strategy Pivot v1.2) ──
     aff_key = context.user_data.pop("_auto_aff", None)
     if aff_key:
         try:
@@ -850,15 +850,15 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             if not isinstance(aff_info, dict):
                 raise ValueError("affiliate config missing")
             text = (
-                f"ðŸš€ <b>Affiliate Redirect</b>\n"
-                f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
+                f"🚀 <b>Affiliate Redirect</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"You are opening <b>{aff_info['name']}</b>.\n"
                 f"Benefit: <b>{aff_info['commission']} fee rebate</b>\n\n"
                 f"Click below to open in your browser:"
             )
             kb = [
-                [InlineKeyboardButton(f"ðŸ”— Open {aff_info['name']}", url=aff_info["url"])],
-                [InlineKeyboardButton("â¬…ï¸ Back to Menu", callback_data="main_menu")]
+                [InlineKeyboardButton(f"🔗 Open {aff_info['name']}", url=aff_info["url"])],
+                [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]
             ]
             await update.message.reply_text(
                 text, reply_markup=InlineKeyboardMarkup(kb),
@@ -1135,7 +1135,7 @@ async def _verify_and_activate(chat_id: int, uid: int, user: dict, license_key: 
 
     text += "\n\U0001f3e0 Use /start to explore your new features!"
 
-    logger.info(f"Gumroad activation: user {uid} â†’ {tier} (key: {license_key[:8]}...)")
+    logger.info(f"Gumroad activation: user {uid} → {tier} (key: {license_key[:8]}...)")
 
     await context.bot.send_message(
         chat_id=chat_id, text=text, parse_mode="Markdown",
@@ -1156,10 +1156,10 @@ async def _cb_switch_network(query, user, context):
     if user_chain == "SOL":
         # Callback already acknowledged in callback_handler; avoid double-answer errors.
         await query.edit_message_text(
-            "ðŸŒ *BASE/SOL Network*\n"
-            "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-            "ðŸš€ Base & Arbitrum signals are launching in v3.16.0.\n"
-            "âœ… Auto-trading currently runs on Solana (primary engine).\n\n"
+            "🌐 *BASE/SOL Network*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🚀 Base & Arbitrum signals are launching in v3.16.0.\n"
+            "✅ Auto-trading currently runs on Solana (primary engine).\n\n"
             "Use Trade to continue on SOL.",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
@@ -1169,7 +1169,7 @@ async def _cb_switch_network(query, user, context):
     user["active_chain"] = "SOL"
     _persist()
     await query.edit_message_text(
-        "âœ… *Network switched back to Solana (Primary Engine).*",
+        "✅ *Network switched back to Solana (Primary Engine).*",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
     )
@@ -1273,7 +1273,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             # Silent fail to avoid user-facing noise; errors are logged for PDCA/debug.
         return
 
-    # Handle /hot trending buy buttons â€” user tapped a trending token
+    # Handle /hot trending buy buttons — user tapped a trending token
     if data.startswith("hot_buy_"):
         mint = data[8:]  # Remove "hot_buy_" prefix
         # Prefix match against COMMON_TOKENS if truncated
@@ -1291,25 +1291,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             sol_bal = float(await get_sol_balance(user.get("wallet_pubkey", "")) or 0.0)
             bal_str = f"{sol_bal:.4f}" if sol_bal is not None else "N/A"
             await query.edit_message_text(
-                f"ðŸ”¥ *{token_info.get('name', symbol)}* ({symbol})\n"
-                "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-                f"ðŸ”— `{mint}`\n"
-                f"ðŸ’¼ Your SOL: *{bal_str}*\n"
-                f"ðŸ’° Fee: *{PLATFORM_FEE_PCT}%*\n\n"
-                "â¬‡ï¸ *Choose buy amount:*",
+                f"🔥 *{token_info.get('name', symbol)}* ({symbol})\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"🔗 `{mint}`\n"
+                f"💼 Your SOL: *{bal_str}*\n"
+                f"💰 Fee: *{PLATFORM_FEE_PCT}%*\n\n"
+                "⬇️ *Choose buy amount:*",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("0.1 SOL", callback_data="buy_01"),
                      InlineKeyboardButton("0.5 SOL", callback_data="buy_05")],
                     [InlineKeyboardButton("1 SOL", callback_data="buy_1"),
                      InlineKeyboardButton("5 SOL", callback_data="buy_5")],
-                    [InlineKeyboardButton("âœï¸ Custom", callback_data="buy_custom")],
+                    [InlineKeyboardButton("✏️ Custom", callback_data="buy_custom")],
                     [_back_main()[0]],
                 ]),
                 parse_mode="Markdown",
             )
         else:
             await query.edit_message_text(
-                f"âš ï¸ Could not load token info for `{mint[:20]}...`",
+                f"⚠️ Could not load token info for `{mint[:20]}...`",
                 reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
                 parse_mode="Markdown",
             )
@@ -1317,14 +1317,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     # Handle /hot refresh
     if data == "cmd_hot_refresh":
-        await query.edit_message_text("ðŸ”¥ *Refreshing...*", parse_mode="Markdown")
+        await query.edit_message_text("🔥 *Refreshing...*", parse_mode="Markdown")
         update.message = query.message
         await cmd_hot(update, context)
         return
 
     # Handle /market refresh
     if data == "cmd_market_refresh":
-        await query.edit_message_text("ðŸ“Š *Refreshing market...*", parse_mode="Markdown")
+        await query.edit_message_text("📊 *Refreshing market...*", parse_mode="Markdown")
         update.message = query.message
         await cmd_market(update, context)
         return
@@ -1334,7 +1334,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await _cb_portfolio(query, user, context)
         return
 
-    # Handle search result callbacks â€” user tapped a token from search
+    # Handle search result callbacks — user tapped a token from search
     if data.startswith("search_"):
         raw = data[7:]  # Remove "search_" prefix
         # Grade may be encoded as "MINT:GRADE" (from signal alerts)
@@ -1434,7 +1434,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 pass
         return
 
-    # sell_tok_{mint} â€” user selected a token from wallet list
+    # sell_tok_{mint} — user selected a token from wallet list
     if data.startswith("sell_tok_"):
         try:
             await _cb_sell_token_select(query, user, context, data)
@@ -1449,7 +1449,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 pass
         return
 
-    # sel_{pct}_{mint} â€” show sell preview/confirmation screen
+    # sel_{pct}_{mint} — show sell preview/confirmation screen
     if data.startswith("sel_"):
         try:
             await _cb_preview_sell(query, user, context, data)
@@ -1464,7 +1464,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 pass
         return
 
-    # csel_{pct}_{mint} â€” confirmed, execute the sell
+    # csel_{pct}_{mint} — confirmed, execute the sell
     if data.startswith("csel_"):
         try:
             await _cb_execute_sell(query, user, context, data)
@@ -1488,7 +1488,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             logger.error(f"Withdraw amount [{data}] error: {e}")
             try:
                 await query.edit_message_text(
-                    "âš ï¸ Withdrawal failed. Use /start to return.",
+                    "⚠️ Withdrawal failed. Use /start to return.",
                     parse_mode="Markdown",
                 )
             except Exception:
@@ -1504,7 +1504,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             logger.error(f"SL select [{data}] error: {e}")
             try:
                 await query.edit_message_text(
-                    "âš ï¸ SL/TP setup failed. Use /start to return.",
+                    "⚠️ SL/TP setup failed. Use /start to return.",
                     parse_mode="Markdown",
                 )
             except Exception:
@@ -1519,7 +1519,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             logger.error(f"TP select [{data}] error: {e}")
             try:
                 await query.edit_message_text(
-                    "âš ï¸ SL/TP setup failed. Use /start to return.",
+                    "⚠️ SL/TP setup failed. Use /start to return.",
                     parse_mode="Markdown",
                 )
             except Exception:
@@ -1536,7 +1536,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             logger.error(f"Cancel position [{data}] error: {e}")
             try:
                 await query.edit_message_text(
-                    "âš ï¸ Cancel failed. Use /start to return.",
+                    "⚠️ Cancel failed. Use /start to return.",
                     parse_mode="Markdown",
                 )
             except Exception:
@@ -1559,7 +1559,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             logger.error(f"CEO callback [{data}] error: {e}")
         return
 
-    # aff_click_{exchange} â€” track affiliate click then show link
+    # aff_click_{exchange} — track affiliate click then show link
     if data.startswith("aff_click_"):
         try:
             exchange = data.replace("aff_click_", "")
@@ -1569,14 +1569,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 raise ValueError("affiliate config missing")
             
             text = (
-                f"ðŸš€ *Affiliate Redirect*\n"
-                f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
+                f"🚀 *Affiliate Redirect*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"You are opening *{aff_info['name']}*.\n"
                 f"Benefit: *{aff_info['commission']} fee rebate*\n\n"
                 f"Click below to open in your browser:"
             )
             kb = [
-                [InlineKeyboardButton(f"ðŸ”— Open {aff_info['name']}", url=aff_info["url"])],
+                [InlineKeyboardButton(f"🔗 Open {aff_info['name']}", url=aff_info["url"])],
                 [_back_main()[0]]
             ]
             await query.edit_message_text(
@@ -1606,9 +1606,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         logger.warning(f"Unknown callback data: {data}")
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # NAVIGATION
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _cb_main(query, user, context):
     """Back to main menu."""
@@ -1627,9 +1627,9 @@ async def _cb_main(query, user, context):
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # WHALE SECTION
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _cb_whale(query, user, context):
     """Whale alerts sub-menu."""
@@ -1800,9 +1800,9 @@ async def _cb_whale_top(query, user, context):
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # TRADE SECTION (Jupiter Solana Swaps)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 # Solana address regex (base58, 32-44 chars)
 SOL_ADDR_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
@@ -1952,11 +1952,11 @@ async def _cb_trade_create_wallet(query, user, context):
         )
         logger.info(f"Wallet created for user {query.from_user.id}: {wallet_data['pubkey']}")
         track_funnel("wallet_created")
-        # CRITICAL: Instant backup â€” wallet = money, can't lose this
+        # CRITICAL: Instant backup — wallet = money, can't lose this
         try:
             await _send_backup_to_admin(
                 context.bot,
-                f"\U0001f510 WALLET CREATED â€” instant backup\nUser: {query.from_user.id}\nPubkey: {wallet_data['pubkey'][:20]}...\nTotal wallets: {sum(1 for u in users.values() if u.get('wallet_pubkey'))}",
+                f"\U0001f510 WALLET CREATED — instant backup\nUser: {query.from_user.id}\nPubkey: {wallet_data['pubkey'][:20]}...\nTotal wallets: {sum(1 for u in users.values() if u.get('wallet_pubkey'))}",
             )
         except Exception:
             pass
@@ -2064,8 +2064,8 @@ async def _cb_trade_wallet(query, user, context):
             InlineKeyboardButton("\U0001f4b5 Buy", callback_data="trade_buy"),
             InlineKeyboardButton("\U0001f4b8 Sell", callback_data="trade_sell"),
         ],
-        [InlineKeyboardButton("ðŸ“¤ Withdraw SOL", callback_data="withdraw_start")],
-        [InlineKeyboardButton("ðŸ“Š Positions (SL/TP)", callback_data="positions")],
+        [InlineKeyboardButton("📤 Withdraw SOL", callback_data="withdraw_start")],
+        [InlineKeyboardButton("📊 Positions (SL/TP)", callback_data="positions")],
         [InlineKeyboardButton("\U0001f504 Refresh", callback_data="trade_refresh")],
         [InlineKeyboardButton("\U0001f3c6 Leaderboard", callback_data="leaderboard")],
         [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
@@ -2082,16 +2082,16 @@ async def _cb_trade_refresh_balance(query, user, context):
     await _cb_trade_wallet(query, user, context)
 
 
-# â”€â”€ Withdraw SOL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Withdraw SOL ──────────────────────────────
 
 async def _cb_withdraw_start(query, user, context):
     """Prompt user to enter destination address for withdrawal."""
     pubkey = user.get("wallet_pubkey")
     if not pubkey:
         await query.edit_message_text(
-            "âš ï¸ No wallet found. Create one first!",
+            "⚠️ No wallet found. Create one first!",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ðŸ” Create Wallet", callback_data="trade_create")],
+                [InlineKeyboardButton("🔐 Create Wallet", callback_data="trade_create")],
                 [_back_main()[0]],
             ]),
             parse_mode="Markdown",
@@ -2102,12 +2102,12 @@ async def _cb_withdraw_start(query, user, context):
     available = sol_bal - MIN_SOL_RESERVE
     if available <= 0:
         await query.edit_message_text(
-            f"âš ï¸ *Insufficient balance*\n\n"
-            f"â—Ž Balance: {sol_bal:.4f} SOL\n"
-            f"ðŸ”’ Reserved for fees: {MIN_SOL_RESERVE} SOL\n\n"
+            f"⚠️ *Insufficient balance*\n\n"
+            f"◎ Balance: {sol_bal:.4f} SOL\n"
+            f"🔒 Reserved for fees: {MIN_SOL_RESERVE} SOL\n\n"
             f"You need more than {MIN_SOL_RESERVE} SOL to withdraw.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
                 [_back_main()[0]],
             ]),
             parse_mode="Markdown",
@@ -2116,13 +2116,13 @@ async def _cb_withdraw_start(query, user, context):
 
     context.user_data["awaiting_input"] = "withdraw_address"
     await query.edit_message_text(
-        "ðŸ“¤ *Withdraw SOL*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-        f"â—Ž Available: *{available:.4f} SOL*\n"
-        f"ðŸ”’ Reserved: {MIN_SOL_RESERVE} SOL (tx fees)\n\n"
-        "ðŸ“¤ *Send me the destination SOL address:*",
+        "📤 *Withdraw SOL*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"◎ Available: *{available:.4f} SOL*\n"
+        f"🔒 Reserved: {MIN_SOL_RESERVE} SOL (tx fees)\n\n"
+        "📤 *Send me the destination SOL address:*",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("âŒ Cancel", callback_data="trade_wallet")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="trade_wallet")],
         ]),
         parse_mode="Markdown",
     )
@@ -2136,14 +2136,14 @@ async def _cb_withdraw_amount(update_or_query, user, context):
     try:
         pct = int(pct_str)
     except ValueError:
-        await query.edit_message_text("âš ï¸ Invalid amount. Use /start to return.", parse_mode="Markdown")
+        await query.edit_message_text("⚠️ Invalid amount. Use /start to return.", parse_mode="Markdown")
         return
 
     dest = context.user_data.get("withdraw_dest")
     pubkey = user.get("wallet_pubkey")
     if not dest or not pubkey:
         await query.edit_message_text(
-            "âš ï¸ Session expired. Start a new withdrawal from your wallet.",
+            "⚠️ Session expired. Start a new withdrawal from your wallet.",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
             parse_mode="Markdown",
         )
@@ -2155,9 +2155,9 @@ async def _cb_withdraw_amount(update_or_query, user, context):
     if available <= 0:
         context.user_data.pop("withdraw_dest", None)
         await query.edit_message_text(
-            "âš ï¸ *Insufficient balance* â€” cannot withdraw.",
+            "⚠️ *Insufficient balance* — cannot withdraw.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
             ]),
             parse_mode="Markdown",
         )
@@ -2172,15 +2172,15 @@ async def _cb_withdraw_amount(update_or_query, user, context):
 
     dest_short = f"{dest[:6]}...{dest[-4:]}"
     await query.edit_message_text(
-        "ðŸ“¤ *Confirm Withdrawal*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-        f"ðŸ’° Amount: *{send_display:.4f} SOL*\n"
-        f"ðŸ“¤ To: `{dest_short}`\n"
-        f"ðŸ“‹ Full: `{dest}`\n\n"
-        "âš ï¸ This action cannot be undone!",
+        "📤 *Confirm Withdrawal*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"💰 Amount: *{send_display:.4f} SOL*\n"
+        f"📤 To: `{dest_short}`\n"
+        f"📋 Full: `{dest}`\n\n"
+        "⚠️ This action cannot be undone!",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("âœ… Confirm Send", callback_data="withdraw_confirm")],
-            [InlineKeyboardButton("âŒ Cancel", callback_data="withdraw_cancel")],
+            [InlineKeyboardButton("✅ Confirm Send", callback_data="withdraw_confirm")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="withdraw_cancel")],
         ]),
         parse_mode="Markdown",
     )
@@ -2201,9 +2201,9 @@ async def _cb_withdraw_confirm(query, user, context):
     if not all([dest, lamports, pubkey, encrypted]):
         _clear_withdraw()
         await query.edit_message_text(
-            "âš ï¸ Session expired. Start a new withdrawal from your wallet.",
+            "⚠️ Session expired. Start a new withdrawal from your wallet.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
             ]),
             parse_mode="Markdown",
         )
@@ -2216,18 +2216,18 @@ async def _cb_withdraw_confirm(query, user, context):
     if needed_sol > available:
         _clear_withdraw()
         await query.edit_message_text(
-            f"âš ï¸ *Balance changed!*\n\n"
+            f"⚠️ *Balance changed!*\n\n"
             f"Requested: {needed_sol:.4f} SOL\n"
             f"Available: {available:.4f} SOL\n\n"
             "Try again with updated balance.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
             ]),
             parse_mode="Markdown",
         )
         return
 
-    await query.edit_message_text("â³ *Processing withdrawal...*", parse_mode="Markdown")
+    await query.edit_message_text("⏳ *Processing withdrawal...*", parse_mode="Markdown")
 
     try:
         keypair = load_keypair(encrypted)
@@ -2236,12 +2236,12 @@ async def _cb_withdraw_confirm(query, user, context):
         logger.error(f"Withdraw error for user {user.get('user_id')}: {e}")
         _clear_withdraw()
         await query.edit_message_text(
-            "âŒ *Withdrawal failed*\n\n"
+            "❌ *Withdrawal failed*\n\n"
             f"Error: {str(e)[:100]}\n\n"
             "Please try again or contact support.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ðŸ”„ Try Again", callback_data="withdraw_start")],
-                [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+                [InlineKeyboardButton("🔄 Try Again", callback_data="withdraw_start")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
             ]),
             parse_mode="Markdown",
         )
@@ -2254,14 +2254,14 @@ async def _cb_withdraw_confirm(query, user, context):
         new_bal = await get_sol_balance(pubkey)
         dest_short = f"{dest[:6]}...{dest[-4:]}"
         await query.edit_message_text(
-            "âœ… *Withdrawal Successful!*\n"
-            "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-            f"ðŸ’° Sent: *{sol_sent:.4f} SOL*\n"
-            f"ðŸ“¤ To: `{dest_short}`\n"
-            f"â—Ž Remaining: *{new_bal:.4f} SOL*\n\n"
-            f"ðŸ”— [View on Solscan](https://solscan.io/tx/{tx_sig})",
+            "✅ *Withdrawal Successful!*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💰 Sent: *{sol_sent:.4f} SOL*\n"
+            f"📤 To: `{dest_short}`\n"
+            f"◎ Remaining: *{new_bal:.4f} SOL*\n\n"
+            f"🔗 [View on Solscan](https://solscan.io/tx/{tx_sig})",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
                 [_back_main()[0]],
             ]),
             parse_mode="Markdown",
@@ -2270,20 +2270,20 @@ async def _cb_withdraw_confirm(query, user, context):
         logger.info(f"Withdraw OK: user={user.get('user_id')} amount={sol_sent:.4f} tx={tx_sig}")
     else:
         await query.edit_message_text(
-            "âŒ *Withdrawal failed*\n\n"
+            "❌ *Withdrawal failed*\n\n"
             "Transaction could not be confirmed.\n"
-            "Your SOL is safe â€” please try again.",
+            "Your SOL is safe — please try again.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ðŸ”„ Try Again", callback_data="withdraw_start")],
-                [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+                [InlineKeyboardButton("🔄 Try Again", callback_data="withdraw_start")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
             ]),
             parse_mode="Markdown",
         )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # STOP LOSS / TAKE PROFIT (SL/TP)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 _sl_tp_lock = False  # prevents overlapping monitor cycles
 
@@ -2301,32 +2301,32 @@ async def _ask_sl_tp(chat_id, user, context, bot,
         "token_amount_raw": token_amount_raw,
         "token_decimals": token_decimals,
         "buy_tx": tx_sig,
-        "signal_grade": signal_grade,  # A/B/C/D â€” for win rate KPI breakdown
+        "signal_grade": signal_grade,  # A/B/C/D — for win rate KPI breakdown
     }
 
     await bot.send_message(
         chat_id=chat_id,
         text=(
-            "ðŸ›¡ï¸ *Protect your trade?*\n"
-            "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-            f"ðŸŽ¯ {token_name} | Entry: *{entry_sol:.4f} SOL*\n\n"
+            "🛡️ *Protect your trade?*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🎯 {token_name} | Entry: *{entry_sol:.4f} SOL*\n\n"
             "Set stop loss & take profit to auto-sell\n"
             "when price hits your targets. 24/7 monitoring."
         ),
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("ðŸ›¡ï¸ Set SL/TP", callback_data="set_sl_tp")],
-            [InlineKeyboardButton("â­ï¸ Skip", callback_data="skip_sl_tp")],
+            [InlineKeyboardButton("🛡️ Set SL/TP", callback_data="set_sl_tp")],
+            [InlineKeyboardButton("⏭️ Skip", callback_data="skip_sl_tp")],
         ]),
         parse_mode="Markdown",
     )
 
 
 async def _cb_sl_select_start(query, user, context):
-    """Start SL selection â€” show stop loss percentage options."""
+    """Start SL selection — show stop loss percentage options."""
     pending = context.user_data.get("pending_position")
     if not pending:
         await query.edit_message_text(
-            "âš ï¸ No pending trade found. Buy a token first!",
+            "⚠️ No pending trade found. Buy a token first!",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
             parse_mode="Markdown",
         )
@@ -2334,25 +2334,25 @@ async def _cb_sl_select_start(query, user, context):
 
     token = pending.get("token", "Token")
     await query.edit_message_text(
-        f"ðŸ”´ *Set Stop Loss for {token}*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
+        f"🔴 *Set Stop Loss for {token}*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
         "Auto-sell if your position drops by:\n\n"
-        "â€¢ -3% â†’ scalp (tight)\n"
-        "â€¢ -5% â†’ scalp (loose)\n"
-        "â€¢ -10% â†’ conservative\n"
-        "â€¢ -15% â†’ balanced\n"
-        "â€¢ -25% â†’ aggressive\n",
+        "• -3% → scalp (tight)\n"
+        "• -5% → scalp (loose)\n"
+        "• -10% → conservative\n"
+        "• -15% → balanced\n"
+        "• -25% → aggressive\n",
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("-3% ðŸŽ¯", callback_data="sl_3"),
-                InlineKeyboardButton("-5% âš¡", callback_data="sl_5"),
+                InlineKeyboardButton("-3% 🎯", callback_data="sl_3"),
+                InlineKeyboardButton("-5% ⚡", callback_data="sl_5"),
             ],
             [
                 InlineKeyboardButton("-10%", callback_data="sl_10"),
                 InlineKeyboardButton("-15%", callback_data="sl_15"),
                 InlineKeyboardButton("-25%", callback_data="sl_25"),
             ],
-            [InlineKeyboardButton("â­ï¸ No Stop Loss", callback_data="sl_none")],
+            [InlineKeyboardButton("⏭️ No Stop Loss", callback_data="sl_none")],
         ]),
         parse_mode="Markdown",
     )
@@ -2364,7 +2364,7 @@ async def _cb_sl_select(query, user, context):
     pending = context.user_data.get("pending_position")
     if not pending:
         await query.edit_message_text(
-            "âš ï¸ Session expired. Buy a token first!",
+            "⚠️ Session expired. Buy a token first!",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
             parse_mode="Markdown",
         )
@@ -2378,32 +2378,32 @@ async def _cb_sl_select(query, user, context):
     sl_text = f"-{sl_pct}%" if sl_pct > 0 else "None"
 
     await query.edit_message_text(
-        f"ðŸŸ¢ *Set Take Profit for {token}*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-        f"Stop Loss: *{sl_text}* âœ“\n\n"
+        f"🟢 *Set Take Profit for {token}*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Stop Loss: *{sl_text}* ✓\n\n"
         "Auto-sell when your position gains:\n\n"
-        "â€¢ +25% â†’ quick scalp\n"
-        "â€¢ +50% â†’ balanced\n"
-        "â€¢ +100% â†’ moon bag\n",
+        "• +25% → quick scalp\n"
+        "• +50% → balanced\n"
+        "• +100% → moon bag\n",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("+25%", callback_data="tp_25"),
                 InlineKeyboardButton("+50%", callback_data="tp_50"),
                 InlineKeyboardButton("+100%", callback_data="tp_100"),
             ],
-            [InlineKeyboardButton("â­ï¸ No Take Profit", callback_data="tp_none")],
+            [InlineKeyboardButton("⏭️ No Take Profit", callback_data="tp_none")],
         ]),
         parse_mode="Markdown",
     )
 
 
 async def _cb_tp_select(query, user, context):
-    """Handle TP selection â€” save position with SL/TP."""
+    """Handle TP selection — save position with SL/TP."""
     data = query.data  # tp_25, tp_50, tp_100, tp_none
     pending = context.user_data.get("pending_position")
     if not pending:
         await query.edit_message_text(
-            "âš ï¸ Session expired. Buy a token first!",
+            "⚠️ Session expired. Buy a token first!",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
             parse_mode="Markdown",
         )
@@ -2413,15 +2413,15 @@ async def _cb_tp_select(query, user, context):
     tp_pct = tp_map.get(data, 0)
     sl_pct = context.user_data.get("pending_sl", 0)
 
-    # Both zero = user chose no SL and no TP â†’ skip saving
+    # Both zero = user chose no SL and no TP → skip saving
     if sl_pct == 0 and tp_pct == 0:
         context.user_data.pop("pending_position", None)
         context.user_data.pop("pending_sl", None)
         await query.edit_message_text(
-            "â­ï¸ No SL/TP set â€” trade is unprotected.\n"
+            "⏭️ No SL/TP set — trade is unprotected.\n"
             "You can always set protection later from your positions.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
                 [_back_main()[0]],
             ]),
             parse_mode="Markdown",
@@ -2439,7 +2439,7 @@ async def _cb_tp_select(query, user, context):
         "tp_pct": tp_pct,
         "created": datetime.now(timezone.utc).isoformat(),
         "buy_tx": pending.get("buy_tx", ""),
-        "signal_grade": pending.get("signal_grade", ""),  # A/B/C/D â€” win rate tracking
+        "signal_grade": pending.get("signal_grade", ""),  # A/B/C/D — win rate tracking
     }
 
     if "active_positions" not in user:
@@ -2454,20 +2454,20 @@ async def _cb_tp_select(query, user, context):
     sl_text = f"-{sl_pct}%" if sl_pct > 0 else "Off"
     tp_text = f"+{tp_pct}%" if tp_pct > 0 else "Off"
     entry = position["entry_sol"]
-    sl_val = f"{entry * (1 - sl_pct / 100):.4f}" if sl_pct > 0 else "â€”"
-    tp_val = f"{entry * (1 + tp_pct / 100):.4f}" if tp_pct > 0 else "â€”"
+    sl_val = f"{entry * (1 - sl_pct / 100):.4f}" if sl_pct > 0 else "—"
+    tp_val = f"{entry * (1 + tp_pct / 100):.4f}" if tp_pct > 0 else "—"
 
     await query.edit_message_text(
-        "âœ… *Position Protected!*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-        f"ðŸŽ¯ {position['token']}\n"
-        f"ðŸ“¥ Entry: *{entry:.4f} SOL*\n\n"
-        f"ðŸ”´ Stop Loss: *{sl_text}* (trigger: {sl_val} SOL)\n"
-        f"ðŸŸ¢ Take Profit: *{tp_text}* (trigger: {tp_val} SOL)\n\n"
-        "ðŸ¤– Bot monitors 24/7 â€” auto-sells when triggered.",
+        "✅ *Position Protected!*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🎯 {position['token']}\n"
+        f"📥 Entry: *{entry:.4f} SOL*\n\n"
+        f"🔴 Stop Loss: *{sl_text}* (trigger: {sl_val} SOL)\n"
+        f"🟢 Take Profit: *{tp_text}* (trigger: {tp_val} SOL)\n\n"
+        "🤖 Bot monitors 24/7 — auto-sells when triggered.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("ðŸ“Š My Positions", callback_data="positions")],
-            [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+            [InlineKeyboardButton("📊 My Positions", callback_data="positions")],
+            [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
             [_back_main()[0]],
         ]),
         parse_mode="Markdown",
@@ -2480,17 +2480,17 @@ async def _cb_skip_sl_tp(query, user, context):
     context.user_data.pop("pending_position", None)
     context.user_data.pop("pending_sl", None)
     await query.edit_message_text(
-        "â­ï¸ No SL/TP set â€” trade is unprotected.\n\n"
-        "You can set protection anytime from ðŸ“Š Positions.",
+        "⏭️ No SL/TP set — trade is unprotected.\n\n"
+        "You can set protection anytime from 📊 Positions.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+            [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
             [_back_main()[0]],
         ]),
         parse_mode="Markdown",
     )
 
 
-# â”€â”€ View & Cancel Positions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── View & Cancel Positions ──────────────────
 
 async def _cb_positions(query, user, context):
     """Show all active SL/TP positions."""
@@ -2498,12 +2498,12 @@ async def _cb_positions(query, user, context):
 
     if not positions:
         await query.edit_message_text(
-            "ðŸ“Š *My Positions*\n"
-            "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
+            "📊 *My Positions*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
             "No active SL/TP positions.\n\n"
             "Buy a token and set SL/TP to start!",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+                [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
                 [_back_main()[0]],
             ]),
             parse_mode="Markdown",
@@ -2511,8 +2511,8 @@ async def _cb_positions(query, user, context):
         return
 
     text = (
-        "ðŸ“Š *My Positions (SL/TP)*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+        "📊 *My Positions (SL/TP)*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
     )
 
     kb = []
@@ -2522,7 +2522,7 @@ async def _cb_positions(query, user, context):
         entry = pos.get("entry_sol", 0)
 
         # Try to get current value via Jupiter quote
-        current_text = "â³"
+        current_text = "⏳"
         try:
             raw_amount = int(pos["token_amount_raw"])
             quote = await get_quote(
@@ -2534,23 +2534,23 @@ async def _cb_positions(query, user, context):
             if quote and quote.get("outAmount"):
                 current_sol = int(quote["outAmount"]) / 1_000_000_000
                 pnl_pct = ((current_sol - entry) / entry * 100) if entry > 0 else 0
-                pnl_emoji = "ðŸŸ¢" if pnl_pct >= 0 else "ðŸ”´"
+                pnl_emoji = "🟢" if pnl_pct >= 0 else "🔴"
                 current_text = f"{current_sol:.4f} SOL ({pnl_emoji} {pnl_pct:+.1f}%)"
         except Exception:
-            current_text = "âš ï¸ Price unavailable"
+            current_text = "⚠️ Price unavailable"
 
         text += (
             f"\n*{i + 1}. {pos['token']}*\n"
-            f"   ðŸ“¥ Entry: {entry:.4f} SOL\n"
-            f"   ðŸ“ˆ Now: {current_text}\n"
-            f"   ðŸ”´ SL: {sl_text} | ðŸŸ¢ TP: {tp_text}\n"
+            f"   📥 Entry: {entry:.4f} SOL\n"
+            f"   📈 Now: {current_text}\n"
+            f"   🔴 SL: {sl_text} | 🟢 TP: {tp_text}\n"
         )
         kb.append([InlineKeyboardButton(
-            f"âŒ Cancel #{i + 1} ({pos['token']})",
+            f"❌ Cancel #{i + 1} ({pos['token']})",
             callback_data=f"cancel_pos_{i}",
         )])
 
-    kb.append([InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")])
+    kb.append([InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")])
     kb.append([_back_main()[0]])
 
     await query.edit_message_text(
@@ -2564,7 +2564,7 @@ async def _cb_cancel_position(query, user, context, index: int):
     positions = user.get("active_positions", [])
     if index < 0 or index >= len(positions):
         await query.edit_message_text(
-            "âš ï¸ Position not found.",
+            "⚠️ Position not found.",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
             parse_mode="Markdown",
         )
@@ -2574,12 +2574,12 @@ async def _cb_cancel_position(query, user, context, index: int):
     _persist()
 
     await query.edit_message_text(
-        f"âŒ *SL/TP Cancelled for {removed['token']}*\n\n"
-        "Your tokens are safe â€” only the auto-sell was removed.\n"
+        f"❌ *SL/TP Cancelled for {removed['token']}*\n\n"
+        "Your tokens are safe — only the auto-sell was removed.\n"
         "You can still sell manually from the Trade menu.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("ðŸ“Š My Positions", callback_data="positions")],
-            [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+            [InlineKeyboardButton("📊 My Positions", callback_data="positions")],
+            [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
             [_back_main()[0]],
         ]),
         parse_mode="Markdown",
@@ -2587,14 +2587,14 @@ async def _cb_cancel_position(query, user, context, index: int):
     logger.info(f"SL/TP cancelled: user={query.from_user.id} token={removed['token']}")
 
 
-# â”€â”€ Background SL/TP Monitor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Background SL/TP Monitor ─────────────────
 
 async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
     """Check all active SL/TP positions every 30s.
 
-    Logic: For each position, get Jupiter quote (sell token â†’ SOL).
-    If current_sol <= entry Ã— (1 - sl_pct/100) â†’ stop loss triggered.
-    If current_sol >= entry Ã— (1 + tp_pct/100) â†’ take profit triggered.
+    Logic: For each position, get Jupiter quote (sell token → SOL).
+    If current_sol <= entry × (1 - sl_pct/100) → stop loss triggered.
+    If current_sol >= entry × (1 + tp_pct/100) → take profit triggered.
     """
     global _sl_tp_lock
     import asyncio
@@ -2621,7 +2621,7 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
 
         for chat_id, user, pos_index, pos in all_positions:
             if checked >= 10:
-                break  # rate limit â€” continue next cycle
+                break  # rate limit — continue next cycle
 
             try:
                 raw_amount = int(pos["token_amount_raw"])
@@ -2651,12 +2651,12 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
 
                 current_sol = int(quote["outAmount"]) / 1_000_000_000
 
-                # â”€â”€ Trailing SL: update peak and move SL floor up â”€â”€
+                # ── Trailing SL: update peak and move SL floor up ──
                 # Logic: lock in profits as price rises.
-                #   +10% gain â†’ SL moves to break-even (0%)
-                #   +25% gain â†’ SL moves to +10% (never lose this)
-                #   +50% gain â†’ SL moves to +25%
-                #   +100% gain â†’ SL moves to +50%
+                #   +10% gain → SL moves to break-even (0%)
+                #   +25% gain → SL moves to +10% (never lose this)
+                #   +50% gain → SL moves to +25%
+                #   +100% gain → SL moves to +50%
                 peak_sol = pos.get("peak_sol", entry_sol)
                 if current_sol > peak_sol:
                     pos["peak_sol"] = current_sol  # track all-time high for this position
@@ -2750,14 +2750,14 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
 
                     pnl_sol = sold_sol - entry
                     pnl_pct = (pnl_sol / entry * 100) if entry > 0 else 0
-                    pnl_emoji = "ðŸŸ¢" if pnl_sol >= 0 else "ðŸ”´"
+                    pnl_emoji = "🟢" if pnl_sol >= 0 else "🔴"
 
                     if trigger_type == "TRAIL_SL":
-                        trigger_label = "ðŸŸ¡ TRAILING SL"
+                        trigger_label = "🟡 TRAILING SL"
                     elif trigger_type == "SL":
-                        trigger_label = "ðŸ”´ STOP LOSS"
+                        trigger_label = "🔴 STOP LOSS"
                     else:
-                        trigger_label = "ðŸŸ¢ TAKE PROFIT"
+                        trigger_label = "🟢 TAKE PROFIT"
 
                     # Record trade
                     _record_trade(
@@ -2777,7 +2777,7 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
 
                     _persist()
 
-                    # â”€â”€ CEO TIER 2: Track consecutive losses + auto-pause â”€â”€
+                    # ── CEO TIER 2: Track consecutive losses + auto-pause ──
                     try:
                         from core.persistence import _get_redis as _pr
                         _r = _pr()
@@ -2795,9 +2795,9 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                                             await context.bot.send_message(
                                                 chat_id=admin_id,
                                                 text=(
-                                                    "ðŸ¤– *CEO Agent TIER 2 â€” ACTIE GENOMEN*\n"
-                                                    "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-                                                    f"âš ï¸ Signals **GEPAUZEERD**\n"
+                                                    "🤖 *CEO Agent TIER 2 — ACTIE GENOMEN*\n"
+                                                    "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                                                    f"⚠️ Signals **GEPAUZEERD**\n"
                                                     f"Reden: {pause_result.get('reason', '?')}\n"
                                                     f"Win rate: {pause_result.get('win_rate', '?')}%\n"
                                                     f"Trades: {pause_result.get('total_trades', '?')}\n\n"
@@ -2806,10 +2806,10 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                                                 ),
                                                 reply_markup=InlineKeyboardMarkup([[
                                                     InlineKeyboardButton(
-                                                        "â–¶ï¸ Hervat Signals", callback_data="admin_resume_signals"
+                                                        "▶️ Hervat Signals", callback_data="admin_resume_signals"
                                                     ),
                                                     InlineKeyboardButton(
-                                                        "ðŸ“Š Stats", callback_data="admin_stats"
+                                                        "📊 Stats", callback_data="admin_stats"
                                                     ),
                                                 ]]),
                                                 parse_mode="Markdown",
@@ -2827,12 +2827,12 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                         chat_id=chat_id,
                         text=(
                             f"{trigger_label} *TRIGGERED!*\n"
-                            "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-                            f"ðŸŽ¯ {pos['token']}\n"
-                            f"ðŸ“¥ Entry: *{entry:.4f} SOL*\n"
-                            f"ðŸ“¤ Sold: *{sold_sol:.4f} SOL*\n"
+                            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            f"🎯 {pos['token']}\n"
+                            f"📥 Entry: *{entry:.4f} SOL*\n"
+                            f"📤 Sold: *{sold_sol:.4f} SOL*\n"
                             f"{pnl_emoji} P/L: *{pnl_sol:+.4f} SOL* ({pnl_pct:+.1f}%)\n\n"
-                            f"ðŸ”— [View on Solscan](https://solscan.io/tx/{tx_sig})"
+                            f"🔗 [View on Solscan](https://solscan.io/tx/{tx_sig})"
                         ),
                         parse_mode="Markdown",
                         disable_web_page_preview=True,
@@ -2851,19 +2851,19 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                             from core.persistence import get_win_rate
                             wr = get_win_rate()
                             if wr and wr.get("total", 0) >= 5:
-                                win_streak = f"\nðŸ“Š Platform Win Rate: *{wr.get('win_rate', 0)}%* ({wr.get('total', 0)} trades)"
+                                win_streak = f"\n📊 Platform Win Rate: *{wr.get('win_rate', 0)}%* ({wr.get('total', 0)} trades)"
 
                             channel_text = (
-                                f"{'ðŸŸ¢ WIN' if pnl_sol > 0 else 'ðŸ”´ LOSS'} â€” *{pos['token']}*\n"
-                                "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-                                f"ðŸ“¥ Entry: {entry:.4f} SOL\n"
-                                f"ðŸ“¤ Exit: {sold_sol:.4f} SOL\n"
+                                f"{'🟢 WIN' if pnl_sol > 0 else '🔴 LOSS'} — *{pos['token']}*\n"
+                                "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                                f"📥 Entry: {entry:.4f} SOL\n"
+                                f"📤 Exit: {sold_sol:.4f} SOL\n"
                                 f"{pnl_emoji} *P/L: {pnl_sol:+.4f} SOL ({pnl_pct:+.1f}%)*\n"
-                                f"â± Trigger: {trigger_label}\n"
+                                f"⏱ Trigger: {trigger_label}\n"
                                 f"{win_streak}\n\n"
-                                f"ðŸ”— [Verify on Solscan](https://solscan.io/tx/{tx_sig})\n\n"
-                                f"ðŸ’¡ _Get these signals free â†’ @{BOT_USERNAME}_\n"
-                                "ðŸ”¥ _Copy top traders â†’ apexflash.pro_"
+                                f"🔗 [Verify on Solscan](https://solscan.io/tx/{tx_sig})\n\n"
+                                f"💡 _Get these signals free → @{BOT_USERNAME}_\n"
+                                "🔥 _Copy top traders → apexflash.pro_"
                             )
                             await context.bot.send_message(
                                 chat_id=ALERT_CHANNEL_ID,
@@ -2902,27 +2902,27 @@ async def _cb_trade_buy(query, user, context):
         return
 
     text = (
-        "ðŸ’° *Buy Tokens*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+        "💰 *Buy Tokens*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
         "\n"
         "Tap a token below to buy instantly!\n"
         "Or paste any Solana mint address.\n"
         "\n"
-        "ðŸ”¥ *Popular tokens:*"
+        "🔥 *Popular tokens:*"
     )
 
-    # Build clickable token buttons with fun icons â€” 1 tap = buy screen
+    # Build clickable token buttons with fun icons — 1 tap = buy screen
     TOKEN_ICONS = {
-        "USDC": "ðŸ’µ", "USDT": "ðŸ’²", "JUP": "ðŸª", "BONK": "ðŸ•",
-        "WIF": "ðŸ¶", "TRUMP": "ðŸ‡ºðŸ‡¸", "RAY": "â˜€ï¸", "ORCA": "ðŸ‹",
-        "PYTH": "ðŸ", "W": "ðŸŒ€", "SOL": "â—Ž",
+        "USDC": "💵", "USDT": "💲", "JUP": "🪐", "BONK": "🐕",
+        "WIF": "🐶", "TRUMP": "🇺🇸", "RAY": "☀️", "ORCA": "🐋",
+        "PYTH": "🐍", "W": "🌀", "SOL": "◎",
     }
     token_buttons = []
     shown = 0
     for sym, info in COMMON_TOKENS.items():
         if sym == "SOL":
             continue
-        icon = TOKEN_ICONS.get(sym, "ðŸª™")
+        icon = TOKEN_ICONS.get(sym, "🪙")
         token_buttons.append(
             InlineKeyboardButton(f"{icon} {sym}", callback_data=f"hot_buy_{info['mint']}")
         )
@@ -2935,9 +2935,9 @@ async def _cb_trade_buy(query, user, context):
     for i in range(0, len(token_buttons), 2):
         kb.append(token_buttons[i:i+2])
 
-    kb.append([InlineKeyboardButton("ðŸ”¥ Trending Tokens", callback_data="cmd_hot_refresh")])
-    kb.append([InlineKeyboardButton("ðŸ’¼ My Wallet", callback_data="trade_wallet")])
-    kb.append([InlineKeyboardButton("ðŸ’° Trade Menu", callback_data="trade")])
+    kb.append([InlineKeyboardButton("🔥 Trending Tokens", callback_data="cmd_hot_refresh")])
+    kb.append([InlineKeyboardButton("💼 My Wallet", callback_data="trade_wallet")])
+    kb.append([InlineKeyboardButton("💰 Trade Menu", callback_data="trade")])
     kb.append([_back_main()[0]])
 
     await query.edit_message_text(
@@ -3017,9 +3017,9 @@ async def _cb_trade_sell(query, user, context):
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# RISK MANAGEMENT â€” TERMS, CONFIRMATION, CHECKS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
+# RISK MANAGEMENT — TERMS, CONFIRMATION, CHECKS
+# ══════════════════════════════════════════════
 
 async def _cb_accept_terms(query, user, context):
     """User accepts risk disclaimer."""
@@ -3055,7 +3055,7 @@ def _apply_test_cap(sol_amount: float) -> float:
     """If TEST_TRADE_SOL is set, cap the trade to that micro amount.
     Prevents expensive mistakes during testing. 0 = disabled."""
     if TEST_TRADE_SOL > 0 and sol_amount > TEST_TRADE_SOL:
-        logger.warning(f"TEST MODE: capping trade {sol_amount} SOL â†’ {TEST_TRADE_SOL} SOL")
+        logger.warning(f"TEST MODE: capping trade {sol_amount} SOL → {TEST_TRADE_SOL} SOL")
         return TEST_TRADE_SOL
     return sol_amount
 
@@ -3164,10 +3164,10 @@ async def _cb_preview_buy(query, user, context, data):
     balance = await get_sol_balance(user["wallet_pubkey"])
     if balance is None:
         await query.edit_message_text(
-            "âš ï¸ *RPC Temporarily Unavailable*\n\n"
+            "⚠️ *RPC Temporarily Unavailable*\n\n"
             "Could not check your balance. Please try again in a moment.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ðŸ”„ Retry", callback_data=query.data)],
+                [InlineKeyboardButton("🔄 Retry", callback_data=query.data)],
                 [_back_main()[0]],
             ]),
             parse_mode="Markdown",
@@ -3255,7 +3255,7 @@ async def _cb_preview_buy(query, user, context, data):
             f"You may receive significantly less than expected!\n"
         )
 
-    # â”€â”€ Token Safety Check (DexPaprika â€” free, no key) â”€â”€
+    # ── Token Safety Check (DexPaprika — free, no key) ──
     safety_text = ""
     try:
         import aiohttp as _aio_safety
@@ -3302,15 +3302,15 @@ async def _cb_preview_buy(query, user, context, data):
                             safety_text += f"Pool Age: {_age_label}\n"
 
                         if _liq < 5_000:
-                            safety_text += "\u26a0\ufe0f _Very low liquidity â€” high rug risk!_\n"
+                            safety_text += "\u26a0\ufe0f _Very low liquidity — high rug risk!_\n"
                         elif _liq < 10_000:
-                            safety_text += "\u26a0\ufe0f _Low liquidity â€” trade with caution_\n"
+                            safety_text += "\u26a0\ufe0f _Low liquidity — trade with caution_\n"
                     else:
-                        safety_text = "\n\U0001f6e1 _No pool data found â€” unknown token, trade carefully!_\n"
+                        safety_text = "\n\U0001f6e1 _No pool data found — unknown token, trade carefully!_\n"
     except Exception:
-        pass  # Safety check is optional â€” never block a trade
+        pass  # Safety check is optional — never block a trade
 
-    # â”€â”€ RugCheck Safety Score (Solana-specific, free) â”€â”€
+    # ── RugCheck Safety Score (Solana-specific, free) ──
     try:
         import aiohttp as _aio_rug
         async with _aio_rug.ClientSession() as _rs:
@@ -3334,7 +3334,7 @@ async def _cb_preview_buy(query, user, context, data):
                             top_risks = [r.get("name", "?") for r in _risks[:3]]
                             safety_text += f"Flags: {', '.join(top_risks)}\n"
     except Exception:
-        pass  # RugCheck is bonus â€” never block a trade
+        pass  # RugCheck is bonus — never block a trade
 
     text = (
         "\U0001f4cb *Trade Confirmation*\n"
@@ -3472,12 +3472,12 @@ async def _cb_sell_token_select(query, user, context, data):
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # LEADERBOARD
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _cb_leaderboard(query, user, context):
-    """Show anonymized leaderboard â€” top traders by volume."""
+    """Show anonymized leaderboard — top traders by volume."""
     _reset_daily_stats()
 
     # Gather all users with trades
@@ -3550,12 +3550,12 @@ async def _cb_leaderboard(query, user, context):
     if my_trades > 0:
         my_rank = sum(1 for t in traders if t["volume"] > my_vol) + 1
         text += (
-            f"\n\nðŸ“Š *Your Stats:*\n"
-            f"â€¢ Rank: #{my_rank} of {len(traders)}\n"
-            f"â€¢ {my_trades} trades | ${my_vol:,.0f} volume\n"
+            f"\n\n📊 *Your Stats:*\n"
+            f"• Rank: #{my_rank} of {len(traders)}\n"
+            f"• {my_trades} trades | ${my_vol:,.0f} volume\n"
         )
     if my_refs > 0:
-        text += f"â€¢ {my_refs} referrals | {my_earnings:.4f} SOL earned\n"
+        text += f"• {my_refs} referrals | {my_earnings:.4f} SOL earned\n"
 
     # Share link
     try:
@@ -3565,12 +3565,12 @@ async def _cb_leaderboard(query, user, context):
         ref_link = None
 
     kb = [
-        [InlineKeyboardButton("ðŸ”¥ Hot Tokens", callback_data="cmd_hot_refresh")],
-        [InlineKeyboardButton("ðŸ’¼ My Wallet", callback_data="trade_wallet")],
-        [InlineKeyboardButton("ðŸ’° Trade Menu", callback_data="trade")],
+        [InlineKeyboardButton("🔥 Hot Tokens", callback_data="cmd_hot_refresh")],
+        [InlineKeyboardButton("💼 My Wallet", callback_data="trade_wallet")],
+        [InlineKeyboardButton("💰 Trade Menu", callback_data="trade")],
     ]
     if ref_link:
-        kb.insert(0, [InlineKeyboardButton("ðŸ¤ Invite & Earn 25%", url=f"https://t.me/share/url?url={ref_link}&text=Trade Solana tokens free on ApexFlash! ðŸš€")])
+        kb.insert(0, [InlineKeyboardButton("🤝 Invite & Earn 25%", url=f"https://t.me/share/url?url={ref_link}&text=Trade Solana tokens free on ApexFlash! 🚀")])
     kb.append([_back_main()[0]])
 
     await query.edit_message_text(
@@ -3578,9 +3578,9 @@ async def _cb_leaderboard(query, user, context):
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # TRADE EXECUTION (now requires confirmation)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _cb_execute_buy(query, user, context, data):
     """Execute a buy order. data = buy_01, buy_05, buy_1, buy_5"""
@@ -3633,7 +3633,7 @@ async def _cb_execute_buy(query, user, context, data):
     total_lamports = int(sol_amount * 1_000_000_000)
     swap_lamports, fee_lamports = calculate_fee(total_lamports)
 
-    # Get quote (reuse cached if fresh enough â€” within 30 seconds)
+    # Get quote (reuse cached if fresh enough — within 30 seconds)
     import time as _time
     cached_quote = context.user_data.get("pending_quote")
     cached_ts = context.user_data.get("pending_quote_ts", 0)
@@ -3712,17 +3712,17 @@ async def _cb_execute_buy(query, user, context, data):
         try:
             _bot_un = (await context.bot.get_me()).username
             share_link = f"https://t.me/{_bot_un}?start=buy_{target_mint}_ref_{query.from_user.id}"
-            share_text = f"I just bought ${token_name} on Solana via @{_bot_un}! ðŸš€ Trade it too:"
+            share_text = f"I just bought ${token_name} on Solana via @{_bot_un}! 🚀 Trade it too:"
             share_url = f"https://t.me/share/url?url={share_link}&text={share_text}"
         except Exception:
             share_url = None
 
         kb = [
-            [InlineKeyboardButton("ðŸ’¼ View Wallet", callback_data="trade_wallet")],
-            [InlineKeyboardButton("ðŸ’° Trade Menu", callback_data="trade")],
+            [InlineKeyboardButton("💼 View Wallet", callback_data="trade_wallet")],
+            [InlineKeyboardButton("💰 Trade Menu", callback_data="trade")],
         ]
         if share_url:
-            kb.insert(0, [InlineKeyboardButton("ðŸ”— Share & Earn 25%", url=share_url)])
+            kb.insert(0, [InlineKeyboardButton("🔗 Share & Earn 25%", url=share_url)])
         kb.append([_back_main()[0]])
 
         logger.info(f"TRADE OK: user={query.from_user.id} buy={sol_amount}SOL token={target_mint[:12]} tx={tx_sig}")
@@ -3742,17 +3742,17 @@ async def _cb_execute_buy(query, user, context, data):
         except Exception:
             pass
 
-        # â”€â”€ Record trade for PnL + leaderboard â”€â”€
+        # ── Record trade for PnL + leaderboard ──
         _record_trade(
             query.from_user.id, user, "BUY", token_name, target_mint,
             sol_amount, usd_value, tx_sig, entry_price_usd=sol_price,
         )
 
-        # â”€â”€ Fee collection (best-effort, async) â”€â”€
+        # ── Fee collection (best-effort, async) ──
         try:
-            # Collect platform fee â†’ ApexFlash hot wallet
+            # Collect platform fee → ApexFlash hot wallet
             if FEE_COLLECT_WALLET and fee_lamports > 5000:
-                # Check if user was referred â†’ split fee
+                # Check if user was referred → split fee
                 referrer_id = user.get("referred_by", 0)
                 if referrer_id and referrer_id in users:
                     referrer = users[referrer_id]
@@ -3763,19 +3763,19 @@ async def _cb_execute_buy(query, user, context, data):
 
                     # Platform fee
                     await collect_fee(keypair, platform_share, FEE_COLLECT_WALLET)
-                    # Referrer share â†’ referrer's bot wallet
+                    # Referrer share → referrer's bot wallet
                     if referrer.get("wallet_pubkey") and referral_share > 5000:
                         ref_kp = keypair  # fee comes from trader's wallet
                         await transfer_sol(ref_kp, referrer["wallet_pubkey"], referral_share)
                         referrer["referral_earnings"] = referrer.get("referral_earnings", 0) + referral_share / 1e9
                         logger.info(f"Referral fee ({ref_pct}%): {referral_share} lamports -> user {referrer_id}")
                 else:
-                    # No referrer â€” full fee to platform
+                    # No referrer — full fee to platform
                     await collect_fee(keypair, fee_lamports, FEE_COLLECT_WALLET)
         except Exception as fee_err:
             logger.warning(f"Fee collection failed (non-fatal): {fee_err}")
 
-        # â”€â”€ Social proof notifications (Discord + Telegram channel) â”€â”€
+        # ── Social proof notifications (Discord + Telegram channel) ──
         try:
             uname = query.from_user.username or "Anon"
             await notify_discord_trade(uname, "BUY", f"{sol_amount} SOL", token_name, tx_sig, fee_sol)
@@ -3787,7 +3787,7 @@ async def _cb_execute_buy(query, user, context, data):
         except Exception:
             pass
 
-        # â”€â”€ SL/TP prompt (send as separate message after the buy confirmation) â”€â”€
+        # ── SL/TP prompt (send as separate message after the buy confirmation) ──
         try:
             token_decimals = context.user_data.get("target_decimals", 0)
             await _ask_sl_tp(
@@ -3851,7 +3851,7 @@ async def _cb_execute_sell(query, user, context, data):
         "\u23f3 *Fetching token balance...*", parse_mode="Markdown",
     )
 
-    # Fresh balance fetch â€” always accurate even after bot restarts
+    # Fresh balance fetch — always accurate even after bot restarts
     tokens = await get_token_balances(user["wallet_pubkey"])
     token_info = next((t for t in tokens if t["mint"] == sell_mint), None)
     if not token_info:
@@ -3883,10 +3883,10 @@ async def _cb_execute_sell(query, user, context, data):
         parse_mode="Markdown",
     )
 
-    # Sell: swap ALL tokens â†’ SOL, then collect fee from SOL output
-    # (No upfront token deduction â€” fee is taken from SOL received)
+    # Sell: swap ALL tokens → SOL, then collect fee from SOL output
+    # (No upfront token deduction — fee is taken from SOL received)
 
-    # Get quote (token â†’ SOL)
+    # Get quote (token → SOL)
     quote = await get_quote(
         input_mint=sell_mint,
         output_mint=SOL_MINT,
@@ -3953,7 +3953,7 @@ async def _cb_execute_sell(query, user, context, data):
         except Exception:
             pass
 
-        # â”€â”€ Record trade for PnL + leaderboard â”€â”€
+        # ── Record trade for PnL + leaderboard ──
         prices = await get_crypto_prices()
         sol_price = prices.get("SOL", 0)
         sell_usd_value = sol_received * sol_price
@@ -3967,7 +3967,7 @@ async def _cb_execute_sell(query, user, context, data):
             sol_received, sell_usd_value, tx_sig,
         )
 
-        # â”€â”€ Fee collection from SOL received (best-effort) â”€â”€
+        # ── Fee collection from SOL received (best-effort) ──
         try:
             sol_fee_lamports = int(out_lamports * PLATFORM_FEE_PCT / 100)
             if FEE_COLLECT_WALLET and sol_fee_lamports > 5000:
@@ -3987,7 +3987,7 @@ async def _cb_execute_sell(query, user, context, data):
         except Exception as fee_err:
             logger.warning(f"Sell fee collection failed (non-fatal): {fee_err}")
 
-        # â”€â”€ Social proof notifications (Discord + Telegram channel) â”€â”€
+        # ── Social proof notifications (Discord + Telegram channel) ──
         try:
             uname = query.from_user.username or "Anon"
             await notify_discord_trade(uname, "SELL", f"{pct_label}", sell_token_name, tx_sig, sol_received * PLATFORM_FEE_PCT / 100)
@@ -3999,7 +3999,7 @@ async def _cb_execute_sell(query, user, context, data):
         except Exception:
             pass
 
-        # â”€â”€ CRITICAL: Sync active_positions after manual sell â”€â”€
+        # ── CRITICAL: Sync active_positions after manual sell ──
         # Without this, SL monitor keeps monitoring a sold position and
         # tries to sell tokens that no longer exist.
         try:
@@ -4007,7 +4007,7 @@ async def _cb_execute_sell(query, user, context, data):
             updated_positions = []
             for p in positions:
                 if p.get("mint") != sell_mint:
-                    updated_positions.append(p)  # different token â€” keep
+                    updated_positions.append(p)  # different token — keep
                     continue
                 # Track P&L for win rate KPI (manual sell)
                 try:
@@ -4023,10 +4023,10 @@ async def _cb_execute_sell(query, user, context, data):
                 except Exception:
                     pass
                 if pct >= 1.0:
-                    # 100% sell â†’ remove position entirely
+                    # 100% sell → remove position entirely
                     logger.info(f"Position removed after 100% manual sell: user={query.from_user.id} token={sell_token_name}")
                 else:
-                    # Partial sell â†’ update remaining raw amount
+                    # Partial sell → update remaining raw amount
                     original_raw = int(p.get("token_amount_raw", 0))
                     remaining_raw = original_raw - sell_raw
                     if remaining_raw > 0:
@@ -4091,7 +4091,7 @@ async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.error(traceback.format_exc())
         try:
             await update.message.reply_text(
-                f"âš ï¸ Error processing: {type(e).__name__}\n\nPlease try again.",
+                f"⚠️ Error processing: {type(e).__name__}\n\nPlease try again.",
                 parse_mode=None,
             )
         except Exception:
@@ -4099,7 +4099,7 @@ async def handle_token_address(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, cleaned_text: str = "") -> None:
-    """Inner handler â€” separated so crashes are caught and reported."""
+    """Inner handler — separated so crashes are caught and reported."""
     if not update.message:
         return
     # Use cleaned text from wrapper (prefix-matched, dots stripped) or fall back to raw
@@ -4108,7 +4108,7 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
         return
 
     # FIX: Strip trailing dots/ellipsis from truncated addresses (popular token list copies)
-    text = text.rstrip('.').rstrip(' ').rstrip('\u2026')  # Remove "..." and "â€¦"
+    text = text.rstrip('.').rstrip(' ').rstrip('\u2026')  # Remove "..." and "…"
 
     # FIX: If text looks like start of a known token address, expand to full address
     if len(text) >= 10 and not SOL_ADDR_RE.match(text):
@@ -4125,7 +4125,7 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
     if user_id == 7851853521 and SOL_ADDR_RE.match(text):
         logger.info(f"[ADMIN-DEBUG] Handler fired. Text={text[:20]}... awaiting={user.get('awaiting_input','')} ctx_await={context.user_data.get('awaiting_input','')}")
 
-    # â”€â”€ Handle license key input (when awaiting) â”€â”€
+    # ── Handle license key input (when awaiting) ──
     if user.get("awaiting_input") == "license_key":
         # Gumroad keys look like: XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX
         if re.match(r'^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{8}-[A-Fa-f0-9]{8}-[A-Fa-f0-9]{8}$', text):
@@ -4141,7 +4141,7 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
             )
             return
 
-    # â”€â”€ Handle custom buy amount input â”€â”€
+    # ── Handle custom buy amount input ──
     if context.user_data.get("awaiting_input") == "custom_buy_amount":
         context.user_data["awaiting_input"] = None
         try:
@@ -4203,19 +4203,19 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
         )
         return
 
-    # â”€â”€ Handle withdraw address input (when awaiting) â”€â”€
+    # ── Handle withdraw address input (when awaiting) ──
     if context.user_data.get("awaiting_input") == "autotrade_custom_profile":
         context.user_data["awaiting_input"] = None
         if not is_admin(update.effective_user.id):
-            await update.message.reply_text("â›” Admin only.")
+            await update.message.reply_text("⛔ Admin only.")
             return
 
         raw = text.replace(";", ",").replace(" ", "")
         if "," not in raw:
             await update.message.reply_text(
-                "âš ï¸ Invalid format. Use `min_move_pct,min_volume_usd` (example: `0.9,300000`).",
+                "⚠️ Invalid format. Use `min_move_pct,min_volume_usd` (example: `0.9,300000`).",
                 parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("ðŸ”™ Back", callback_data="admin_autotrade")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_autotrade")]]),
             )
             return
 
@@ -4225,9 +4225,9 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
             vol = float(vol_s)
         except Exception:
             await update.message.reply_text(
-                "âš ï¸ Invalid numbers. Example: `0.9,300000`.",
+                "⚠️ Invalid numbers. Example: `0.9,300000`.",
                 parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("ðŸ”™ Back", callback_data="admin_autotrade")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_autotrade")]]),
             )
             return
 
@@ -4239,11 +4239,11 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
         update_governance_config("min_volume_usd", vol)
 
         await update.message.reply_text(
-            f"âœ… Custom profile saved\n"
-            f"â€¢ min_move_pct: `{move:.2f}`\n"
-            f"â€¢ min_volume_usd: `{vol:,.0f}`",
+            f"✅ Custom profile saved\n"
+            f"• min_move_pct: `{move:.2f}`\n"
+            f"• min_volume_usd: `{vol:,.0f}`",
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("ðŸ›¡ï¸ Autotrade Controls", callback_data="admin_autotrade")]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛡️ Autotrade Controls", callback_data="admin_autotrade")]]),
         )
         return
 
@@ -4252,10 +4252,10 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
         # Validate as SOL address
         if not SOL_ADDR_RE.match(text):
             await update.message.reply_text(
-                "âš ï¸ That doesn't look like a valid Solana address.\n\n"
+                "⚠️ That doesn't look like a valid Solana address.\n\n"
                 "Please send a valid SOL address (32-44 characters, base58).",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("âŒ Cancel", callback_data="trade_wallet")],
+                    [InlineKeyboardButton("❌ Cancel", callback_data="trade_wallet")],
                 ]),
                 parse_mode="Markdown",
             )
@@ -4263,10 +4263,10 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
         # Block self-transfer
         if text == user.get("wallet_pubkey"):
             await update.message.reply_text(
-                "âš ï¸ Cannot withdraw to your own bot wallet.\n\n"
+                "⚠️ Cannot withdraw to your own bot wallet.\n\n"
                 "Send a *different* SOL address (e.g. your Trust Wallet, Phantom, exchange).",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("âŒ Cancel", callback_data="trade_wallet")],
+                    [InlineKeyboardButton("❌ Cancel", callback_data="trade_wallet")],
                 ]),
                 parse_mode="Markdown",
             )
@@ -4279,9 +4279,9 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
         if available <= 0:
             context.user_data.pop("withdraw_dest", None)
             await update.message.reply_text(
-                "âš ï¸ *Insufficient balance* â€” cannot withdraw.",
+                "⚠️ *Insufficient balance* — cannot withdraw.",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("ðŸ’¼ Wallet", callback_data="trade_wallet")],
+                    [InlineKeyboardButton("💼 Wallet", callback_data="trade_wallet")],
                 ]),
                 parse_mode="Markdown",
             )
@@ -4289,18 +4289,18 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
 
         dest_short = f"{text[:6]}...{text[-4:]}"
         await update.message.reply_text(
-            "ðŸ“¤ *Withdraw SOL*\n"
-            "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-            f"ðŸ“¤ To: `{dest_short}`\n"
-            f"â—Ž Available: *{available:.4f} SOL*\n\n"
-            "ðŸ’° *How much do you want to send?*",
+            "📤 *Withdraw SOL*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📤 To: `{dest_short}`\n"
+            f"◎ Available: *{available:.4f} SOL*\n\n"
+            "💰 *How much do you want to send?*",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("25%", callback_data="withdraw_amt_25"),
                     InlineKeyboardButton("50%", callback_data="withdraw_amt_50"),
                     InlineKeyboardButton("100%", callback_data="withdraw_amt_100"),
                 ],
-                [InlineKeyboardButton("âŒ Cancel", callback_data="withdraw_cancel")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="withdraw_cancel")],
             ]),
             parse_mode="Markdown",
         )
@@ -4308,7 +4308,7 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
 
     # Check if it looks like a Solana address
     if not SOL_ADDR_RE.match(text):
-        # Not an address â€” try token search by name/symbol (e.g. "PEPE", "bonk")
+        # Not an address — try token search by name/symbol (e.g. "PEPE", "bonk")
         if len(text) >= 2 and len(text) <= 20 and text.replace(" ", "").isalnum():
             results = await search_token(text)
             if results:
@@ -4318,9 +4318,9 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
                     sym = t.get("symbol", "???")
                     name = t.get("name", "Unknown")
                     mint = t.get("id") or t.get("address", "")
-                    msg += f"\u2022 *{sym}* â€” {name}\n  `{mint}`\n\n"
+                    msg += f"\u2022 *{sym}* — {name}\n  `{mint}`\n\n"
                     kb_rows.append([InlineKeyboardButton(
-                        f"{sym} â€” {name[:20]}", callback_data=f"search_{mint[:40]}"
+                        f"{sym} — {name[:20]}", callback_data=f"search_{mint[:40]}"
                     )])
                 msg += "_Tap a token or paste the mint address to buy!_"
                 kb_rows.append([InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")])
@@ -4368,11 +4368,11 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
         sol_bal = await get_sol_balance(user["wallet_pubkey"])
         if sol_bal is None:
             sol_bal = 0.0
-            bal_display = "âš ï¸ RPC busy â€” balance unavailable"
+            bal_display = "⚠️ RPC busy — balance unavailable"
         else:
             prices = await get_crypto_prices()
             sol_price = prices.get("SOL", 0)
-            bal_display = f"ðŸ’¼ Your SOL: *{sol_bal:.4f}*"
+            bal_display = f"💼 Your SOL: *{sol_bal:.4f}*"
             if sol_price:
                 bal_display += f" (${sol_bal * sol_price:,.2f})"
 
@@ -4406,7 +4406,7 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
             [_back_main()[0]],
         ]
 
-        # Try to send chart image first (non-blocking â€” if fails, just show text)
+        # Try to send chart image first (non-blocking — if fails, just show text)
         try:
             chart_url = await get_token_chart_url(text, hours=24)
             if chart_url:
@@ -4444,9 +4444,9 @@ async def _handle_token_address_inner(update: Update, context: ContextTypes.DEFA
         )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # TRADE SECTION (Copy Trade + DCA via MIZAR)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _cb_portfolio(query, user, context):
     """Show portfolio: SOL balance + token holdings + trade stats."""
@@ -4509,7 +4509,7 @@ async def _cb_portfolio(query, user, context):
                 symbol = f"{t['mint'][:6]}..."
             msg += f"  \u2022 *{symbol}:* {t['amount']:,.4f}\n"
     else:
-        msg += "\n\U0001f4ad No tokens â€” all SOL\n"
+        msg += "\n\U0001f4ad No tokens — all SOL\n"
 
     if positions:
         msg += f"\n\U0001f6e1\ufe0f *Active Positions:* {len(positions)}\n"
@@ -4535,7 +4535,7 @@ async def _cb_portfolio(query, user, context):
                         pnl_sign = "+" if pnl >= 0 else ""
                         msg += (
                             f"  {emoji} *{p.get('token', '?')}*\n"
-                            f"     Entry: {entry:.4f} â†’ Now: {current_val:.4f} SOL\n"
+                            f"     Entry: {entry:.4f} → Now: {current_val:.4f} SOL\n"
                             f"     P/L: *{pnl_sign}{pnl:.4f} SOL ({pnl_sign}{pnl_pct:.1f}%)*\n"
                             f"     SL: -{sl}% | TP: +{tp}%\n"
                         )
@@ -4581,7 +4581,7 @@ async def _cb_portfolio(query, user, context):
 
 
 async def _cb_copy_trade(query, user, context):
-    """Copy trading via MIZAR â€” with LIVE marketplace data."""
+    """Copy trading via MIZAR — with LIVE marketplace data."""
     tier = TIERS.get(user["tier"], TIERS["free"])
 
     if not tier.get("copy_trade"):
@@ -4634,7 +4634,7 @@ async def _cb_copy_trade(query, user, context):
             [_back_main()[0]],
         ]
     else:
-        # Pro/Elite users â€” live leaderboard + direct copy link
+        # Pro/Elite users — live leaderboard + direct copy link
         from exchanges.mizar import get_marketplace_bots
         top_bots = await get_marketplace_bots(limit=5)
 
@@ -4746,9 +4746,9 @@ async def _cb_dca_bot(query, user, context):
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # EXCHANGE SECTION
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _cb_exchanges(query, user, context):
     """Show partner hub with exchange + tools categories."""
@@ -4893,13 +4893,13 @@ async def _cb_aff_tools(query, user, context):
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # PREMIUM SECTION
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _get_tier_price_sol(tier: str) -> float:
     """Calculate SOL price dynamically from live SOL/USD rate.
-    Always charges the USD equivalent â€” SOL amount adjusts to market."""
+    Always charges the USD equivalent — SOL amount adjusts to market."""
     usd = PRO_PRICE_USD if tier == "pro" else ELITE_PRICE_USD
     prices = await get_crypto_prices()
     sol_usd = prices.get("SOL", 0)
@@ -5161,7 +5161,7 @@ async def _execute_sol_payment(query, user, context, tier: str, price_sol: float
             )
 
         track_paid_conversion(query.from_user.id, tier)
-        logger.info(f"Premium payment: user {query.from_user.id} â†’ {tier} ({price_sol} SOL)")
+        logger.info(f"Premium payment: user {query.from_user.id} → {tier} ({price_sol} SOL)")
 
         kb = InlineKeyboardMarkup([[_back_main()[0]]])
         await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
@@ -5192,9 +5192,9 @@ async def _execute_sol_payment(query, user, context, tier: str, price_sol: float
         await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # REFERRAL SECTION
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _legacy_cb_referral(query, user, context):
     """Referral program main menu."""
@@ -5338,7 +5338,7 @@ async def _cb_referral_stats(query, user, context):
     elif ref_count < 20:
         text += f"\U0001f4c8 _Get {20 - ref_count} more refs for 35% share!_\n"
     else:
-        text += "\U0001f451 _MAX TIER â€” 35% share!_\n"
+        text += "\U0001f451 _MAX TIER — 35% share!_\n"
     text += (
         "\n"
         "\U0001f4a1 _Earnings are automatically sent_\n"
@@ -5358,9 +5358,9 @@ async def _cb_referral_stats(query, user, context):
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # SETTINGS SECTION
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _cb_settings(query, user, context):
     """User settings panel."""
@@ -5405,9 +5405,9 @@ async def _cb_settings(query, user, context):
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # HELP SECTION
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _cb_help(query, user, context):
     """Help overview."""
@@ -5568,12 +5568,12 @@ async def _cb_help_dca(query, user, context):
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # ADMIN SECTION
 async def _cb_admin_resume_signals(query, user, context):
     """CEO TIER 2: Erik resumes signals after auto-pause."""
     if not is_admin(query.from_user.id):
-        await query.answer("âŒ Admin only.", show_alert=True)
+        await query.answer("❌ Admin only.", show_alert=True)
         return
     try:
         from core.persistence import _get_redis as _pr
@@ -5582,25 +5582,25 @@ async def _cb_admin_resume_signals(query, user, context):
             _r.set("signals:paused", "0")
             _r.set("winrate:consecutive_losses", "0")
         await query.edit_message_text(
-            "âœ… *Signals hervat*\n\n"
+            "✅ *Signals hervat*\n\n"
             "CEO Agent heeft de pauze opgeheven.\n"
             "Signals worden weer verzonden.\n\n"
             "_Consecutive loss teller gereset._",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ðŸ“Š Admin Stats", callback_data="admin_stats")],
+                [InlineKeyboardButton("📊 Admin Stats", callback_data="admin_stats")],
             ]),
         )
     except Exception as e:
-        await query.edit_message_text(f"âŒ Fout: {e}", parse_mode="Markdown")
+        await query.edit_message_text(f"❌ Fout: {e}", parse_mode="Markdown")
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _cb_admin_autotrade(query, user, context):
     """Admin control panel for autotrade runtime and profile tuning."""
     if not is_admin(query.from_user.id):
-        await query.answer("âŒ Admin only.", show_alert=True)
+        await query.answer("❌ Admin only.", show_alert=True)
         return
 
     enabled = _autotrade_enabled_flag()
@@ -5620,8 +5620,8 @@ async def _cb_admin_autotrade(query, user, context):
         test_cap = 0.0
 
     text = (
-        "ðŸ›¡ï¸ *Autotrade Control Center*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+        "🛡️ *Autotrade Control Center*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
         f"Runtime: `{'ON' if enabled else 'OFF'}`\n"
         f"Test mode cap: `{test_cap:.4f} SOL` ({'ON' if test_cap > 0 else 'OFF'})\n"
         f"Profile cfg: move>={cfg_move:.2f}% | vol>={cfg_vol:,.0f}\n"
@@ -5631,21 +5631,21 @@ async def _cb_admin_autotrade(query, user, context):
     )
     kb = [
         [
-            InlineKeyboardButton("âœ… Autotrade ON", callback_data="admin_at_on"),
-            InlineKeyboardButton("â¹ï¸ Autotrade OFF", callback_data="admin_at_off"),
+            InlineKeyboardButton("✅ Autotrade ON", callback_data="admin_at_on"),
+            InlineKeyboardButton("⏹️ Autotrade OFF", callback_data="admin_at_off"),
         ],
         [
-            InlineKeyboardButton("ðŸ§ª Test 0.03", callback_data="admin_at_test_003"),
-            InlineKeyboardButton("ðŸ§ª Test 0.05", callback_data="admin_at_test_005"),
-            InlineKeyboardButton("ðŸ§ª Test OFF", callback_data="admin_at_test_off"),
+            InlineKeyboardButton("🧪 Test 0.03", callback_data="admin_at_test_003"),
+            InlineKeyboardButton("🧪 Test 0.05", callback_data="admin_at_test_005"),
+            InlineKeyboardButton("🧪 Test OFF", callback_data="admin_at_test_off"),
         ],
         [
-            InlineKeyboardButton("ðŸŸ¢ Safe preset", callback_data="admin_at_preset_safe"),
-            InlineKeyboardButton("ðŸŸ¡ Balanced", callback_data="admin_at_preset_bal"),
-            InlineKeyboardButton("ðŸ”´ Active", callback_data="admin_at_preset_active"),
+            InlineKeyboardButton("🟢 Safe preset", callback_data="admin_at_preset_safe"),
+            InlineKeyboardButton("🟡 Balanced", callback_data="admin_at_preset_bal"),
+            InlineKeyboardButton("🔴 Active", callback_data="admin_at_preset_active"),
         ],
-        [InlineKeyboardButton("âœï¸ Custom min/max", callback_data="admin_at_custom")],
-        [InlineKeyboardButton("ðŸ”™ Admin Panel", callback_data="admin")],
+        [InlineKeyboardButton("✍️ Custom min/max", callback_data="admin_at_custom")],
+        [InlineKeyboardButton("🔙 Admin Panel", callback_data="admin")],
     ]
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
 
@@ -5655,7 +5655,7 @@ async def _cb_admin_at_on(query, user, context):
         return
     _set_autotrade_enabled_flag(True)
     try:
-        await context.bot.send_message(chat_id=query.message.chat_id, text="âœ… Autotrade runtime set to ON")
+        await context.bot.send_message(chat_id=query.message.chat_id, text="✅ Autotrade runtime set to ON")
     except Exception:
         pass
     await _cb_admin_autotrade(query, user, context)
@@ -5666,7 +5666,7 @@ async def _cb_admin_at_off(query, user, context):
         return
     _set_autotrade_enabled_flag(False)
     try:
-        await context.bot.send_message(chat_id=query.message.chat_id, text="â¹ï¸ Autotrade runtime set to OFF")
+        await context.bot.send_message(chat_id=query.message.chat_id, text="⏹️ Autotrade runtime set to OFF")
     except Exception:
         pass
     await _cb_admin_autotrade(query, user, context)
@@ -5680,7 +5680,7 @@ async def _cb_admin_at_test_003(query, user, context):
     if r:
         r.set("apexflash:autotrade:test_cap_sol", "0.03")
     try:
-        await context.bot.send_message(chat_id=query.message.chat_id, text="ðŸ§ª Test mode cap set to 0.03 SOL")
+        await context.bot.send_message(chat_id=query.message.chat_id, text="🧪 Test mode cap set to 0.03 SOL")
     except Exception:
         pass
     await _cb_admin_autotrade(query, user, context)
@@ -5694,7 +5694,7 @@ async def _cb_admin_at_test_005(query, user, context):
     if r:
         r.set("apexflash:autotrade:test_cap_sol", "0.05")
     try:
-        await context.bot.send_message(chat_id=query.message.chat_id, text="ðŸ§ª Test mode cap set to 0.05 SOL")
+        await context.bot.send_message(chat_id=query.message.chat_id, text="🧪 Test mode cap set to 0.05 SOL")
     except Exception:
         pass
     await _cb_admin_autotrade(query, user, context)
@@ -5708,7 +5708,7 @@ async def _cb_admin_at_test_off(query, user, context):
     if r:
         r.delete("apexflash:autotrade:test_cap_sol")
     try:
-        await context.bot.send_message(chat_id=query.message.chat_id, text="âœ… Test mode turned OFF")
+        await context.bot.send_message(chat_id=query.message.chat_id, text="✅ Test mode turned OFF")
     except Exception:
         pass
     await _cb_admin_autotrade(query, user, context)
@@ -5721,7 +5721,7 @@ async def _cb_admin_at_preset_safe(query, user, context):
     update_governance_config("grade_a_min_pct", 1.2)
     update_governance_config("min_volume_usd", 900000)
     try:
-        await context.bot.send_message(chat_id=query.message.chat_id, text="ðŸŸ¢ SAFE preset applied")
+        await context.bot.send_message(chat_id=query.message.chat_id, text="🟢 SAFE preset applied")
     except Exception:
         pass
     await _cb_admin_autotrade(query, user, context)
@@ -5734,7 +5734,7 @@ async def _cb_admin_at_preset_bal(query, user, context):
     update_governance_config("grade_a_min_pct", 0.8)
     update_governance_config("min_volume_usd", 250000)
     try:
-        await context.bot.send_message(chat_id=query.message.chat_id, text="ðŸŸ¡ BALANCED preset applied")
+        await context.bot.send_message(chat_id=query.message.chat_id, text="🟡 BALANCED preset applied")
     except Exception:
         pass
     await _cb_admin_autotrade(query, user, context)
@@ -5747,7 +5747,7 @@ async def _cb_admin_at_preset_active(query, user, context):
     update_governance_config("grade_a_min_pct", 0.5)
     update_governance_config("min_volume_usd", 100000)
     try:
-        await context.bot.send_message(chat_id=query.message.chat_id, text="ðŸ”´ ACTIVE preset applied")
+        await context.bot.send_message(chat_id=query.message.chat_id, text="🔴 ACTIVE preset applied")
     except Exception:
         pass
     await _cb_admin_autotrade(query, user, context)
@@ -5758,18 +5758,18 @@ async def _cb_admin_at_custom(query, user, context):
         return
     context.user_data["awaiting_input"] = "autotrade_custom_profile"
     await query.edit_message_text(
-        "âœï¸ *Custom Autotrade Profile*\n\n"
+        "✍️ *Custom Autotrade Profile*\n\n"
         "Send in format:\n"
         "`min_move_pct,min_volume_usd`\n"
         "Example: `0.9,300000`",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("ðŸ”™ Back", callback_data="admin_autotrade")],
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_autotrade")],
         ]),
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def _cb_admin(query, user, context):
     """Admin dashboard."""
@@ -5807,10 +5807,10 @@ async def _cb_admin(query, user, context):
 
     kb = [
         [InlineKeyboardButton("\U0001f4ca Revenue Stats", callback_data="admin_stats")],
-        [InlineKeyboardButton("ðŸ›¡ï¸ Autotrade Controls", callback_data="admin_autotrade")],
+        [InlineKeyboardButton("🛡️ Autotrade Controls", callback_data="admin_autotrade")],
         [InlineKeyboardButton("\U0001f465 User List", callback_data="admin_users")],
         [InlineKeyboardButton("\U0001f4e2 Broadcast Info", callback_data="admin_broadcast")],
-        [InlineKeyboardButton("â–¶ï¸ Resume Auto-Trading" if is_paused else "â¸ï¸ Pause Auto-Trading", 
+        [InlineKeyboardButton("▶️ Resume Auto-Trading" if is_paused else "⏸️ Pause Auto-Trading", 
                               callback_data="admin_resume" if is_paused else "admin_pause")],
         [_back_main()[0]],
     ]
@@ -5825,7 +5825,7 @@ async def _cb_admin_resume_logic(query, user, context):
     from core.persistence import _get_redis
     r = _get_redis()
     if r: r.set("signals:paused", "0")
-    await query.answer("â–¶ï¸ Auto-Trading RESUMED")
+    await query.answer("▶️ Auto-Trading RESUMED")
     await _cb_admin(query, user, context)
 
 async def _cb_admin_pause_logic(query, user, context):
@@ -5834,7 +5834,7 @@ async def _cb_admin_pause_logic(query, user, context):
     from core.persistence import _get_redis
     r = _get_redis()
     if r: r.set("signals:paused", "1")
-    await query.answer("â¸ï¸ Auto-Trading PAUSED")
+    await query.answer("⏸️ Auto-Trading PAUSED")
     await _cb_admin(query, user, context)
 
 
@@ -5964,7 +5964,7 @@ async def _send_admin_panel(chat_id: int, context: ContextTypes.DEFAULT_TYPE) ->
     )
     kb = [
         [InlineKeyboardButton("\U0001f4ca Stats", callback_data="admin_stats")],
-        [InlineKeyboardButton("ðŸ›¡ï¸ Autotrade Controls", callback_data="admin_autotrade")],
+        [InlineKeyboardButton("🛡️ Autotrade Controls", callback_data="admin_autotrade")],
         [InlineKeyboardButton("\U0001f465 Users", callback_data="admin_users")],
         [InlineKeyboardButton("\U0001f4e2 Broadcast", callback_data="admin_broadcast")],
         [_back_main()[0]],
@@ -5975,9 +5975,9 @@ async def _send_admin_panel(chat_id: int, context: ContextTypes.DEFAULT_TYPE) ->
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # WHALE ALERT FORMATTER
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 def format_whale_alert(alert: dict, prices: dict, sentiment: dict | None = None) -> str:
     """Format a whale alert message with signal quality, affiliate CTA and AI sentiment."""
@@ -5991,7 +5991,7 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict | None = None)
 
     # SWAP alerts = most actionable (whale buying a specific token)
     if alert_type == "SWAP":
-        emoji = "\U0001f6a8"  # ðŸš¨
+        emoji = "\U0001f6a8"  # 🚨
         amount = alert.get("amount", 0)
         amount_str = f"{amount:,.0f}" if amount >= 100 else f"{amount:,.2f}"
         wallet = alert.get("wallet_name", "Unknown Whale")
@@ -6000,7 +6000,7 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict | None = None)
         usd_value = value * price if value > 0 else 0
         usd_str = f"(~${usd_value:,.0f})" if usd_value > 0 else ""
 
-        # Special SWAP format â€” actionable
+        # Special SWAP format — actionable
         text = (
             f"{emoji} *WHALE BUY DETECTED* \u2502 {chain}\n"
             f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
@@ -6008,7 +6008,7 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict | None = None)
             f"\n"
             f"\U0001f4b0 *{wallet}* just bought:\n"
             f"\U0001f3af *{amount_str} {symbol}* {usd_str}\n"
-            f"\U0001f6a8 This is a LIVE swap â€” whale is accumulating!\n"
+            f"\U0001f6a8 This is a LIVE swap — whale is accumulating!\n"
         )
 
         # Signal quality
@@ -6082,7 +6082,7 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict | None = None)
         f"\U0001f4e5 To: `{alert['to_label']}`\n"
     )
 
-    # Signal quality (new â€” shows grade + action)
+    # Signal quality (new — shows grade + action)
     if sq_line:
         text += f"\n\U0001f3af *Signal Analysis*\n{sq_line}"
 
@@ -6113,9 +6113,9 @@ def format_whale_alert(alert: dict, prices: dict, sentiment: dict | None = None)
     return text
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # WHALE SCANNER (Job Queue)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Periodic whale scanner: fetch transfers and broadcast to subscribers."""
@@ -6164,7 +6164,7 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
             if not sq["pass"]:
                 logger.info(
                     f"Signal filtered: {alert.get('symbol')} grade={sq['grade']} "
-                    f"score={sq['quality']} â€” below threshold, not sending"
+                    f"score={sq['quality']} — below threshold, not sending"
                 )
 
         # Remove low-quality signals (grade D = likely bad trade)
@@ -6173,15 +6173,15 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
         if not new_alerts:
             return
 
-        # â”€â”€ CEO TIER 2: Check signals:paused before broadcasting â”€â”€
+        # ── CEO TIER 2: Check signals:paused before broadcasting ──
         try:
             from core.persistence import _get_redis as _pr
             _r = _pr()
             if _r and _r.get("signals:paused") == b"1":
-                logger.warning("CEO TIER 2: signals PAUSED â€” skipping broadcast this cycle")
+                logger.warning("CEO TIER 2: signals PAUSED — skipping broadcast this cycle")
                 return
         except Exception:
-            pass  # Redis unavailable â†’ proceed (fail open)
+            pass  # Redis unavailable → proceed (fail open)
 
         # Broadcast to subscribers
         for user_id, user_data in list(users.items()):
@@ -6196,7 +6196,7 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                     continue
 
                 try:
-                    # AI sentiment analysis (non-blocking â€” if HF fails, alert still sends)
+                    # AI sentiment analysis (non-blocking — if HF fails, alert still sends)
                     sentiment = alert.get("_sentiment")
                     text = format_whale_alert(alert, prices, sentiment=sentiment)
 
@@ -6224,7 +6224,7 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                         tx_hash = alert.get("tx_hash", "")
                         alert_kb.append([
                             InlineKeyboardButton(
-                                "ðŸ¤– Analyze Intent (AI)", 
+                                "🤖 Analyze Intent (AI)", 
                                 callback_data=f"whale_intent_{tx_hash[:20]}_{token_symbol}"
                             )
                         ])
@@ -6257,7 +6257,7 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                 except Exception as e:
                     logger.error(f"Alert send failed [{user_id}]: {e}")
 
-        # â”€â”€ Cross-platform distribution (Discord + Telegram Channel) â”€â”€
+        # ── Cross-platform distribution (Discord + Telegram Channel) ──
         for alert in new_alerts:
             try:
                 # Discord webhook
@@ -6266,7 +6266,7 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                 logger.debug(f"Discord notify error: {e}")
 
             try:
-                # Telegram public channel â€” with tradeable deep links + AI sentiment
+                # Telegram public channel — with tradeable deep links + AI sentiment
                 channel_text = format_whale_alert(alert, prices, sentiment=alert.get("_sentiment"))
                 token_symbol = alert.get("symbol", "")
                 token_mint = ""
@@ -6279,14 +6279,14 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                 if token_mint and token_mint != SOL_MINT:
                     # Deep link: opens bot with this token ready to buy
                     ch_buttons.append([InlineKeyboardButton(
-                        f"ðŸ’° Buy {token_symbol} Now",
+                        f"💰 Buy {token_symbol} Now",
                         url=f"https://t.me/{BOT_USERNAME}?start=buy_{token_mint}",
                     )])
                 ch_buttons.append([InlineKeyboardButton(
-                    "ðŸ”¥ Trending Tokens", url=f"https://t.me/{BOT_USERNAME}?start=hot",
+                    "🔥 Trending Tokens", url=f"https://t.me/{BOT_USERNAME}?start=hot",
                 )])
                 ch_buttons.append([InlineKeyboardButton(
-                    "âš¡ Start Trading", url=f"https://t.me/{BOT_USERNAME}",
+                    "⚡ Start Trading", url=f"https://t.me/{BOT_USERNAME}",
                 )])
 
                 channel_kb = InlineKeyboardMarkup(ch_buttons)
@@ -6302,9 +6302,9 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Scanner error: {e}")
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # DAILY DIGEST JOB
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def daily_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Post daily digest summary to Discord + TG channel. Runs once/day at 20:00 UTC."""
@@ -6343,12 +6343,12 @@ async def daily_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Daily digest error: {e}")
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # AUTO-SAVE & BACKUP JOBS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def auto_save_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Periodic auto-save every 60 seconds â€” safety net."""
+    """Periodic auto-save every 60 seconds — safety net."""
     try:
         _persist()
     except Exception as e:
@@ -6386,7 +6386,7 @@ async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Hourly heartbeat â€” admin knows the bot is alive 24/7."""
+    """Hourly heartbeat — admin knows the bot is alive 24/7."""
     if not ADMIN_IDS:
         return
     try:
@@ -6448,13 +6448,13 @@ async def marketing_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Marketing job (Twitter) error: {e}")
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# LIVE SCALPING MONITOR (Job Queue â€” every 30s)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
+# LIVE SCALPING MONITOR (Job Queue — every 30s)
+# ══════════════════════════════════════════════
 
 async def scalper_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Live scalping signal detector â€” fires every 30 seconds.
+    Live scalping signal detector — fires every 30 seconds.
     Monitors SOL/BONK/JUP/WIF/RAY/PYTH for rapid momentum moves.
     Alerts Grade A/B to channel; Grade C logged only.
     """
@@ -6467,12 +6467,12 @@ async def scalper_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             msg = format_scalp_alert(sig)
             is_high_conviction = (grade == "A")
 
-            # 1. Public Channel Alert â€” ONLY Grade A (Protect Social Proof)
+            # 1. Public Channel Alert — ONLY Grade A (Protect Social Proof)
             if is_high_conviction and ALERT_CHANNEL_ID:
                 try:
                     await context.bot.send_message(
                         chat_id=ALERT_CHANNEL_ID,
-                        text=f"â­ <b>HIGH CONVICION SIGNAL</b>\n{msg}",
+                        text=f"⭐ <b>HIGH CONVICION SIGNAL</b>\n{msg}",
                         parse_mode="HTML",
                         disable_web_page_preview=True,
                     )
@@ -6495,10 +6495,10 @@ async def scalper_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                 
                 if grade == "A":
                     should_alert = True
-                    alert_text = f"â­ <b>GOLD SIGNAL (Grade A)</b>\n{msg}"
+                    alert_text = f"⭐ <b>GOLD SIGNAL (Grade A)</b>\n{msg}"
                 elif grade in ("B", "C") and is_premium:
                     should_alert = True
-                    alert_text = f"âš ï¸ <b>PRO ALERT (Grade {grade} - High Risk)</b>\n{msg}"
+                    alert_text = f"⚠️ <b>PRO ALERT (Grade {grade} - High Risk)</b>\n{msg}"
                 
                 if not should_alert:
                     continue
@@ -6506,7 +6506,7 @@ async def scalper_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                 try:
                     kb = InlineKeyboardMarkup([[
                         InlineKeyboardButton(
-                            f"âš¡ Trade {sig['symbol']}",
+                            f"⚡ Trade {sig['symbol']}",
                             callback_data=f"search_{sig['symbol']}:{grade}",
                         )
                     ]])
@@ -6524,15 +6524,15 @@ async def scalper_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             if is_high_conviction:
                 logger.info(f"GOLD signal broadcast: {sig['symbol']} {sig['pct_5m']:+.2f}%")
             else:
-                logger.info(f"Scalp watch (Grade {grade}): {sig['symbol']} â€” sent to Pro users only")
+                logger.info(f"Scalp watch (Grade {grade}): {sig['symbol']} — sent to Pro users only")
 
     except Exception as e:
         logger.error(f"Scalper job error: {e}")
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # ADMIN: /backup & /restore COMMANDS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def cmd_backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin command: send manual backup file."""
@@ -6549,8 +6549,8 @@ async def cmd_backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """ðŸ”¥ Show trending Solana tokens by volume â€” DexScreener + DexPaprika."""
-    await update.message.reply_text("ðŸ”¥ *Loading trending tokens...*", parse_mode="Markdown")
+    """🔥 Show trending Solana tokens by volume — DexScreener + DexPaprika."""
+    await update.message.reply_text("🔥 *Loading trending tokens...*", parse_mode="Markdown")
 
     try:
         import aiohttp as _aiohttp
@@ -6589,14 +6589,14 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 timeout=_aiohttp.ClientTimeout(total=10),
             ) as resp:
                 if resp.status != 200:
-                    await update.message.reply_text("âš ï¸ Could not fetch trending data. Try again later.")
+                    await update.message.reply_text("⚠️ Could not fetch trending data. Try again later.")
                     return
                 data = await resp.json()
 
         # Parse: extract unique tokens (skip SOL/USDC/USDT base pairs)
         pools = data.get("pools", data) if isinstance(data, dict) else data
         if not isinstance(pools, list) or not pools:
-            await update.message.reply_text("âš ï¸ No trending data available.")
+            await update.message.reply_text("⚠️ No trending data available.")
             return
 
         # Skip stablecoins and base pairs
@@ -6609,7 +6609,7 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         }
 
         # Deduplicate: one entry per unique token (highest volume pool wins)
-        # Dedup on BOTH mint AND symbol â€” prevents same token from multiple pools
+        # Dedup on BOTH mint AND symbol — prevents same token from multiple pools
         seen_mints: set = set()
         seen_syms: set = set()
         trending = []
@@ -6650,7 +6650,7 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 break
 
         if not trending:
-            await update.message.reply_text("âš ï¸ No trending tokens found.")
+            await update.message.reply_text("⚠️ No trending tokens found.")
             return
 
         # Build message
@@ -6687,7 +6687,7 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "\u26a1 Powered by ApexFlash + DexScreener"
         )
 
-        kb_rows.append([InlineKeyboardButton("ðŸ”„ Refresh", callback_data="cmd_hot_refresh")])
+        kb_rows.append([InlineKeyboardButton("🔄 Refresh", callback_data="cmd_hot_refresh")])
         kb_rows.append([_back_main()[0]])
 
         await update.message.reply_text(
@@ -6698,11 +6698,11 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     except Exception as e:
         logger.error(f"cmd_hot error: {e}")
-        await update.message.reply_text("âš ï¸ Error loading trending tokens. Try again.")
+        await update.message.reply_text("⚠️ Error loading trending tokens. Try again.")
 
 
 async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show portfolio â€” wrapper for /portfolio command."""
+    """Show portfolio — wrapper for /portfolio command."""
     uid = update.effective_user.id
     user = get_user(uid)
     # Fake a query-like object to reuse _cb_portfolio
@@ -6717,7 +6717,7 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def cmd_policy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show no-risk policy."""
     text = (
-        "\U0001f6e1\ufe0f *ApexFlash â€” No Risk Policy*\n"
+        "\U0001f6e1\ufe0f *ApexFlash — No Risk Policy*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
         "*5-Point Protection:*\n\n"
@@ -6751,8 +6751,8 @@ async def cmd_policy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """ðŸ“Š Live market overview â€” gainers, losers, new tokens."""
-    await update.message.reply_text("ðŸ“Š *Loading market data...*", parse_mode="Markdown")
+    """📊 Live market overview — gainers, losers, new tokens."""
+    await update.message.reply_text("📊 *Loading market data...*", parse_mode="Markdown")
     update_last_active(update.effective_user.id)
 
     try:
@@ -6764,7 +6764,7 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                 timeout=_aiohttp.ClientTimeout(total=12),
             ) as resp:
                 if resp.status != 200:
-                    await update.message.reply_text("âš ï¸ Market data unavailable.")
+                    await update.message.reply_text("⚠️ Market data unavailable.")
                     return
                 data = await resp.json()
 
@@ -6778,7 +6778,7 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
         pools = data.get("pools", data) if isinstance(data, dict) else data
         if not isinstance(pools, list):
-            await update.message.reply_text("âš ï¸ No market data.")
+            await update.message.reply_text("⚠️ No market data.")
             return
 
         seen = set()
@@ -6810,32 +6810,32 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         losers = sorted([t for t in all_tokens if t["pct"] < 0], key=lambda x: x["pct"])[:5]
         by_volume = sorted(all_tokens, key=lambda x: -x["volume"])[:5]
 
-        msg = "ðŸ“Š *SOLANA MARKET*\nâ”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
+        msg = "📊 *SOLANA MARKET*\n━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-        msg += "ðŸŸ¢ *TOP GAINERS (24h)*\n"
+        msg += "🟢 *TOP GAINERS (24h)*\n"
         for i, t in enumerate(gainers, 1):
             msg += f"  {i}. *{t['symbol']}* +{t['pct']:.1f}%\n"
 
-        msg += "\nðŸ”´ *TOP LOSERS (24h)*\n"
+        msg += "\n🔴 *TOP LOSERS (24h)*\n"
         for i, t in enumerate(losers, 1):
             msg += f"  {i}. *{t['symbol']}* {t['pct']:.1f}%\n"
 
-        msg += "\nðŸ’Ž *HIGHEST VOLUME*\n"
+        msg += "\n💎 *HIGHEST VOLUME*\n"
         for i, t in enumerate(by_volume, 1):
             vol_str = f"${t['volume']:,.0f}" if t['volume'] >= 1 else "$0"
-            msg += f"  {i}. *{t['symbol']}* â€” {vol_str}\n"
+            msg += f"  {i}. *{t['symbol']}* — {vol_str}\n"
 
-        msg += "\nâ”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\nâš¡ Tap to buy instantly"
+        msg += "\n━━━━━━━━━━━━━━━━━━━━━\n⚡ Tap to buy instantly"
 
         kb = []
         # Top 3 gainers as buy buttons
         for t in gainers[:3]:
             kb.append([InlineKeyboardButton(
-                f"ðŸŸ¢ Buy {t['symbol']} (+{t['pct']:.0f}%)",
+                f"🟢 Buy {t['symbol']} (+{t['pct']:.0f}%)",
                 callback_data=f"hot_buy_{t['mint']}",
             )])
-        kb.append([InlineKeyboardButton("ðŸ”¥ Hot Tokens", callback_data="cmd_hot_refresh")])
-        kb.append([InlineKeyboardButton("ðŸ”„ Refresh", callback_data="cmd_market_refresh")])
+        kb.append([InlineKeyboardButton("🔥 Hot Tokens", callback_data="cmd_hot_refresh")])
+        kb.append([InlineKeyboardButton("🔄 Refresh", callback_data="cmd_market_refresh")])
         kb.append([_back_main()[0]])
 
         await update.message.reply_text(
@@ -6845,7 +6845,7 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     except Exception as e:
         logger.error(f"cmd_market error: {e}")
-        await update.message.reply_text("âš ï¸ Error loading market data.")
+        await update.message.reply_text("⚠️ Error loading market data.")
 
 
 async def cmd_admin_marketing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -6854,10 +6854,10 @@ async def cmd_admin_marketing(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
         
     hooks = get_marketing_playbook()
-    text = "ðŸš€ **SOCIAL DOMINANCE PLAYBOOK (v3.18.0)**\n"
+    text = "🚀 **SOCIAL DOMINANCE PLAYBOOK (v3.18.0)**\n"
     text += "Use these high-conversion hooks for TikTok/Reels:\n\n"
     for hook in hooks:
-        text += f"â€¢ `{hook}`\n\n"
+        text += f"• `{hook}`\n\n"
         
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -6884,7 +6884,7 @@ async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     r = _get_redis()
     referral_payouts_sol = float(r.get("kpi:total_referral_payouts_sol") or 0) if r else 0
     
-    # REVENUE MISSION TRACKER (â‚¬1M Goal)
+    # REVENUE MISSION TRACKER (€1M Goal)
     total_vol = platform_stats.get("volume_total_usd", 0)
     # Estimated gross revenue from 1% platform fee
     gross_revenue_usd = total_vol * 0.01
@@ -6905,18 +6905,18 @@ async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     whale_share = (whale_vol_usd / total_vol * 100) if total_vol > 0 else 0
     
     revenue_text = (
-        "\U0001f3af *MISSION: â‚¬1,000,000 NET REVENUE*\n"
+        "\U0001f3af *MISSION: €1,000,000 NET REVENUE*\n"
         f"\u25b6 Gross Revenue: *${gross_revenue_usd:,.2f}*\n"
         f"\u25b6 Referral Payouts: *-${payouts_usd:,.2f}* ({referral_payouts_sol:.2f} SOL)\n"
         f"\u25b6 *NET REVENUE:* *${max(0, net_revenue_usd):,.2f}*\n"
-        f"â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”\n"
+        f"————————————————————————\n"
         f"\U0001f40b *WHALE SEGMENTATION:*\n"
-        f"â€¢ Institutional/Whale: *${whale_vol_usd:,.0f}* ({whale_share:.1f}%)\n"
-        f"â€¢ Retail/Organic: *${retail_vol_usd:,.0f}*\n"
-        f"â€¢ Alpha Clan Signals: *{alpha_clan_hits}* triggers\n"
-        f"â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”\n"
-        f"\u25b6 Progress to â‚¬1M: *{progress_pct:.2f}%*\n"
-        f"â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”\n"
+        f"• Institutional/Whale: *${whale_vol_usd:,.0f}* ({whale_share:.1f}%)\n"
+        f"• Retail/Organic: *${retail_vol_usd:,.0f}*\n"
+        f"• Alpha Clan Signals: *{alpha_clan_hits}* triggers\n"
+        f"————————————————————————\n"
+        f"\u25b6 Progress to €1M: *{progress_pct:.2f}%*\n"
+        f"————————————————————————\n"
     )
 
     # Simplified formatting for long outputs
@@ -6933,17 +6933,17 @@ async def cmd_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         ("advisor_pricing_click", "Advisor pricing click"),
     ]
     funnel_text = "\U0001f4ca *Funnel Stats:*\n" + "\n".join(
-        [f"â€¢ {label}: {int(funnel.get(key, 0) or 0)}" for key, label in funnel_labels]
+        [f"• {label}: {int(funnel.get(key, 0) or 0)}" for key, label in funnel_labels]
     )
     advisor_conversion_text = (
-        "\n\nðŸ¤– *Advisor Paywall Conversion:*\n"
-        f"â€¢ Advisor used: *{advisor_used}*\n"
-        f"â€¢ Views: *{advisor_paywall_views}*\n"
-        f"â€¢ Upgrade clicks: *{advisor_upgrade_clicks}* ({advisor_upgrade_ctr:.2f}%)\n"
-        f"â€¢ Pricing clicks: *{advisor_pricing_clicks}* ({advisor_pricing_ctr:.2f}%)\n"
-        f"â€¢ Total intent CTR: *{advisor_total_intent_ctr:.2f}%*"
+        "\n\n🤖 *Advisor Paywall Conversion:*\n"
+        f"• Advisor used: *{advisor_used}*\n"
+        f"• Views: *{advisor_paywall_views}*\n"
+        f"• Upgrade clicks: *{advisor_upgrade_clicks}* ({advisor_upgrade_ctr:.2f}%)\n"
+        f"• Pricing clicks: *{advisor_pricing_clicks}* ({advisor_pricing_ctr:.2f}%)\n"
+        f"• Total intent CTR: *{advisor_total_intent_ctr:.2f}%*"
     )
-    popular_text = "\n\nðŸ”¥ *Popular Tokens:*\n" + "\n".join([f"â€¢ {t['symbol']}" for t in popular])
+    popular_text = "\n\n🔥 *Popular Tokens:*\n" + "\n".join([f"• {t['symbol']}" for t in popular])
     
     await update.message.reply_text(
         f"{revenue_text}\n{funnel_text}{advisor_conversion_text}{popular_text}",
@@ -6977,7 +6977,7 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if _r:
             redis_lock_acquired = bool(_r.set(advisor_lock_key, "1", ex=25, nx=True))
             if not redis_lock_acquired:
-                await _safe_send("â³ *AI Advisor is already processing your previous request...*")
+                await _safe_send("⏳ *AI Advisor is already processing your previous request...*")
                 return
     except Exception:
         redis_lock_acquired = False
@@ -6987,7 +6987,7 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     last_advisor_ts = float(context.user_data.get("advisor_last_ts", 0.0) or 0.0)
     now_ts = datetime.now(timezone.utc).timestamp()
     if advisor_busy or (now_ts - last_advisor_ts) < 8.0:
-        await _safe_send("â³ *AI Advisor is already processing your previous request...*")
+        await _safe_send("⏳ *AI Advisor is already processing your previous request...*")
         return
 
     context.user_data["advisor_busy"] = True
@@ -7000,23 +7000,23 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
             if bucket == 0:
                 paywall_text = (
-                    "ðŸ’Ž *ApexFlash AI Advisor (Elite)*\n\n"
+                    "💎 *ApexFlash AI Advisor (Elite)*\n\n"
                     "This professional feature is reserved for **Elite** members.\n"
                     "Upgrade now to unlock personalized Gemini trade coaching."
                 )
                 upgrade_kb = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("ðŸ’Ž Upgrade to Elite", callback_data="advisor_upgrade_elite")],
-                    [InlineKeyboardButton("ðŸ“ˆ View Pricing", callback_data="advisor_view_pricing")],
+                    [InlineKeyboardButton("💎 Upgrade to Elite", callback_data="advisor_upgrade_elite")],
+                    [InlineKeyboardButton("📈 View Pricing", callback_data="advisor_view_pricing")],
                 ])
             else:
                 paywall_text = (
-                    "ðŸš€ *AI Coach Pro Access (Elite)*\n\n"
+                    "🚀 *AI Coach Pro Access (Elite)*\n\n"
                     "You reached the highest-intent advisor path.\n"
                     "Activate Elite to access full AI coaching and faster execution guidance."
                 )
                 upgrade_kb = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("ðŸ“ˆ View Pricing", callback_data="advisor_view_pricing")],
-                    [InlineKeyboardButton("ðŸ’Ž Activate Elite", callback_data="advisor_upgrade_elite")],
+                    [InlineKeyboardButton("📈 View Pricing", callback_data="advisor_view_pricing")],
+                    [InlineKeyboardButton("💎 Activate Elite", callback_data="advisor_upgrade_elite")],
                 ])
 
             await _safe_send(
@@ -7030,10 +7030,10 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         history = user.get("trade_history", [])
         if not history:
-            await _safe_send("ðŸ“ˆ *No Trade History Found.*")
+            await _safe_send("📈 *No Trade History Found.*")
             return
 
-        msg = await _safe_send("ðŸ¤– *AI Advisor is analyzing your stats...*")
+        msg = await _safe_send("🤖 *AI Advisor is analyzing your stats...*")
         analysis = await analyze_trader_performance(uid, history)
         use_fallback_intro = "(Fallback Model)" in analysis or analysis.startswith("Fallback reason:")
         final_text = f"{get_advisor_intro(use_fallback=use_fallback_intro)}{analysis}"
@@ -7047,7 +7047,7 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 await _safe_send(final_text[:3900], parse_mode=None)
     except Exception as e:
         logger.error(f"cmd_advisor error user={uid}: {e}")
-        await _safe_send("âš ï¸ AI Advisor tijdelijk niet beschikbaar. Probeer opnieuw over 30 sec.", parse_mode=None)
+        await _safe_send("⚠️ AI Advisor tijdelijk niet beschikbaar. Probeer opnieuw over 30 sec.", parse_mode=None)
     finally:
         context.user_data["advisor_busy"] = False
         # Keep redis lock until TTL expires to absorb queued/double taps
@@ -7057,7 +7057,7 @@ async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def cmd_advisor_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin diagnostics for advisor runtime state."""
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("â›” Unauthorized.")
+        await update.message.reply_text("⛔ Unauthorized.")
         return
 
     from agents.advisor_agent import advisor_runtime_snapshot, advisor_live_probe
@@ -7067,26 +7067,26 @@ async def cmd_advisor_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     resolved = snap.get("resolved_chain", [])
 
     text = (
-        "ðŸ§ª *Advisor Runtime Diagnostics*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
-        f"GEMINI_API_KEY: {'âœ… present' if snap.get('gemini_key_present') else 'âŒ missing'}\n"
+        "🧪 *Advisor Runtime Diagnostics*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        f"GEMINI_API_KEY: {'✅ present' if snap.get('gemini_key_present') else '❌ missing'}\n"
         f"Configured chain ({len(configured)}):\n"
-        + "\n".join([f"â€¢ `{m}`" for m in configured[:8]])
+        + "\n".join([f"• `{m}`" for m in configured[:8]])
         + "\n\n"
         + f"Resolved chain ({len(resolved)}):\n"
-        + "\n".join([f"â€¢ `{m}`" for m in resolved[:12]])
+        + "\n".join([f"• `{m}`" for m in resolved[:12]])
     )
 
     probe = await advisor_live_probe()
     if probe.get("ok"):
         text += (
-            "\n\nâœ… *Live probe:* Gemini reachable\n"
+            "\n\n✅ *Live probe:* Gemini reachable\n"
             f"Model: `{probe.get('model')}`\n"
             f"Preview: `{str(probe.get('preview', ''))[:90]}`"
         )
     else:
         text += (
-            "\n\nâš ï¸ *Live probe:* Gemini unavailable\n"
+            "\n\n⚠️ *Live probe:* Gemini unavailable\n"
             f"Reason: `{probe.get('reason', 'unknown')}`"
         )
 
@@ -7096,7 +7096,7 @@ async def cmd_advisor_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def cmd_smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin-only live smoke test for core app/bot endpoints."""
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("â›” Unauthorized.")
+        await update.message.reply_text("⛔ Unauthorized.")
         return
 
     from agents.advisor_agent import advisor_live_probe
@@ -7121,14 +7121,14 @@ async def cmd_smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             except Exception:
                 ok = False
 
-            emoji = "âœ…" if ok else "âŒ"
+            emoji = "✅" if ok else "❌"
             lines.append(f"{emoji} `{status if status else 'ERR'}` {url}")
 
     probe = await advisor_live_probe()
     if probe.get("ok"):
-        advisor_line = f"âœ… Advisor probe: `{probe.get('model')}`"
+        advisor_line = f"✅ Advisor probe: `{probe.get('model')}`"
     else:
-        advisor_line = f"âš ï¸ Advisor probe fallback: `{probe.get('reason', 'unknown')}`"
+        advisor_line = f"⚠️ Advisor probe fallback: `{probe.get('reason', 'unknown')}`"
 
     # Update runtime snapshot for SLA command
     RUNTIME_HEALTH["advisor_ok"] = bool(probe.get("ok"))
@@ -7138,8 +7138,8 @@ async def cmd_smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if probe.get("ok"):
         RUNTIME_HEALTH["advisor_checks_ok"] = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0)) + 1
 
-    RUNTIME_HEALTH["endpoint_ok"] = all(line.startswith("âœ…") for line in lines)
-    RUNTIME_HEALTH["endpoint_failed"] = [line for line in lines if line.startswith("âŒ")][:8]
+    RUNTIME_HEALTH["endpoint_ok"] = all(line.startswith("✅") for line in lines)
+    RUNTIME_HEALTH["endpoint_failed"] = [line for line in lines if line.startswith("❌")][:8]
     RUNTIME_HEALTH["endpoint_checks_total"] = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0)) + 1
     if RUNTIME_HEALTH["endpoint_ok"]:
         RUNTIME_HEALTH["endpoint_checks_ok"] = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0)) + 1
@@ -7149,8 +7149,8 @@ async def cmd_smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _save_runtime_health()
 
     text = (
-        "ðŸ§ª *ApexFlash Live Smoke Test*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+        "🧪 *ApexFlash Live Smoke Test*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
         + "\n".join(lines)
         + "\n\n"
         + advisor_line
@@ -7162,7 +7162,7 @@ async def cmd_smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin-only quick diagnostics for autonomous trading readiness."""
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("â›” Unauthorized.")
+        await update.message.reply_text("⛔ Unauthorized.")
         return
 
     admin_id = ADMIN_IDS[0] if isinstance(ADMIN_IDS, list) and ADMIN_IDS else (ADMIN_IDS if isinstance(ADMIN_IDS, int) else 0)
@@ -7229,8 +7229,8 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
             pass
 
     text = (
-        "ðŸ›¡ï¸ *Autotrade Diagnostics*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+        "🛡️ *Autotrade Diagnostics*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
         f"Autotrade runtime: `{'ON' if runtime_enabled else 'OFF'}`\n"
         f"Admin user found: `{'YES' if isinstance(admin_user, dict) else 'NO'}`\n"
         f"Wallet secret: `{'READY' if wallet_ready else 'MISSING'}`\n"
@@ -7248,7 +7248,7 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Scan ts: `{auto_state.get('last_cycle_ts', '-')}`\n"
         f"Signals scanned: `{auto_state.get('signals_scanned', 0)}` | candidates: `{auto_state.get('candidates', 0)}`\n"
         f"No-signal cycles: `{auto_state.get('no_signal_cycles', 0)}`\n"
-        f"Skips â€” selectivity `{auto_state.get('skipped_selectivity', 0)}`, trend `{auto_state.get('skipped_trend', 0)}`, panic `{auto_state.get('skipped_panic', 0)}`, balance `{auto_state.get('skipped_balance', 0)}`\n"
+        f"Skips — selectivity `{auto_state.get('skipped_selectivity', 0)}`, trend `{auto_state.get('skipped_trend', 0)}`, panic `{auto_state.get('skipped_panic', 0)}`, balance `{auto_state.get('skipped_balance', 0)}`\n"
         f"Scalper fetch: prices `{scalper_state.get('prices_count', 0)}` | volume symbols `{scalper_state.get('volume_symbols', 0)}` | history ready `{scalper_state.get('history_ready', 0)}` | signals `{scalper_state.get('signals_generated', 0)}`\n"
         f"Scalper ts: `{scalper_state.get('last_fetch_ts', '-')}`\n"
         f"Last reason: `{last_reason}`\n"
@@ -7262,7 +7262,7 @@ async def cmd_autotrade_diag(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def cmd_autotrade_test_on(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin: enable controlled autotrade test mode with mini-size cap."""
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("â›” Unauthorized.")
+        await update.message.reply_text("⛔ Unauthorized.")
         return
     cap = float(TEST_TRADE_SOL) if TEST_TRADE_SOL > 0 else 0.05
     if context.args:
@@ -7276,7 +7276,7 @@ async def cmd_autotrade_test_on(update: Update, context: ContextTypes.DEFAULT_TY
     if r:
         r.set("apexflash:autotrade:test_cap_sol", f"{cap:.4f}")
     await update.message.reply_text(
-        f"ðŸ§ª *Autotrade Test Mode: ON*\n"
+        f"🧪 *Autotrade Test Mode: ON*\n"
         f"Cap set to *{cap:.4f} SOL* per entry.\n"
         f"Use `/autotrade_test_off` to disable.",
         parse_mode="Markdown",
@@ -7286,19 +7286,19 @@ async def cmd_autotrade_test_on(update: Update, context: ContextTypes.DEFAULT_TY
 async def cmd_autotrade_test_off(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin: disable controlled autotrade test mode."""
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("â›” Unauthorized.")
+        await update.message.reply_text("⛔ Unauthorized.")
         return
     from core.persistence import _get_redis
     r = _get_redis()
     if r:
         r.delete("apexflash:autotrade:test_cap_sol")
-    await update.message.reply_text("âœ… *Autotrade Test Mode: OFF*", parse_mode="Markdown")
+    await update.message.reply_text("✅ *Autotrade Test Mode: OFF*", parse_mode="Markdown")
 
 
 async def cmd_qa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin-only lean QA summary: integrity + watchdog + autotrade readiness."""
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("â›” Unauthorized.")
+        await update.message.reply_text("⛔ Unauthorized.")
         return
 
     integrity = _runtime_integrity_snapshot()
@@ -7314,8 +7314,8 @@ async def cmd_qa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     wallet_ready = bool((admin_user or {}).get("wallet_secret_enc"))
 
     text = (
-        "ðŸ§ª *Lean QA Snapshot*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+        "🧪 *Lean QA Snapshot*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
         f"Runtime integrity: `{'OK' if integrity.get('ok') else 'ISSUES'}`\n"
         f"Advisor watchdog: `{'OK' if advisor_ok is True else 'ISSUES' if advisor_ok is False else 'UNKNOWN'}`\n"
         f"Endpoint watchdog: `{'OK' if endpoint_ok is True else 'ISSUES' if endpoint_ok is False else 'UNKNOWN'}`\n"
@@ -7330,13 +7330,13 @@ async def cmd_qa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin-only SLA snapshot from runtime watchdog/smoke states."""
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("â›” Unauthorized.")
+        await update.message.reply_text("⛔ Unauthorized.")
         return
 
     advisor_ok = RUNTIME_HEALTH.get("advisor_ok")
     endpoint_ok = RUNTIME_HEALTH.get("endpoint_ok")
-    advisor_status = "âœ… online" if advisor_ok is True else "âš ï¸ fallback" if advisor_ok is False else "â” unknown"
-    endpoint_status = "âœ… healthy" if endpoint_ok is True else "âš ï¸ issues" if endpoint_ok is False else "â” unknown"
+    advisor_status = "✅ online" if advisor_ok is True else "⚠️ fallback" if advisor_ok is False else "❔ unknown"
+    endpoint_status = "✅ healthy" if endpoint_ok is True else "⚠️ issues" if endpoint_ok is False else "❔ unknown"
     failed = RUNTIME_HEALTH.get("endpoint_failed", []) or []
 
     advisor_total = int(RUNTIME_HEALTH.get("advisor_checks_total", 0))
@@ -7374,8 +7374,8 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         autotrade_positions = 0
 
     text = (
-        "ðŸ“¡ *ApexFlash SLA Snapshot*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+        "📡 *ApexFlash SLA Snapshot*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
         f"Advisor: {advisor_status}\n"
         f"Endpoints: {endpoint_status}\n"
         f"Model: `{RUNTIME_HEALTH.get('advisor_model', '') or '-'}" + "`\n"
@@ -7398,29 +7398,29 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
     if failed:
-        text += "\n\nâŒ Failed endpoints:\n" + "\n".join(failed[:6])
+        text += "\n\n❌ Failed endpoints:\n" + "\n".join(failed[:6])
 
     missing_env = RUNTIME_HEALTH.get("integrity_missing_env", []) or []
     invalid_aff = RUNTIME_HEALTH.get("integrity_affiliate_invalid", []) or []
     if missing_env:
-        text += "\n\nâš ï¸ Missing critical env:\n" + "\n".join([f"â€¢ `{k}`" for k in missing_env[:8]])
+        text += "\n\n⚠️ Missing critical env:\n" + "\n".join([f"• `{k}`" for k in missing_env[:8]])
     if invalid_aff:
-        text += "\n\nâš ï¸ Affiliate config issues:\n" + "\n".join([f"â€¢ `{k}`" for k in invalid_aff[:8]])
+        text += "\n\n⚠️ Affiliate config issues:\n" + "\n".join([f"• `{k}`" for k in invalid_aff[:8]])
 
     if recent:
-        text += "\n\nðŸ“ˆ Recent trend (last 12 points):\n"
+        text += "\n\n📈 Recent trend (last 12 points):\n"
         for h in recent[-6:]:
             text += (
-                f"â€¢ `{h.get('ts','-')}` [{h.get('source','-')}] "
+                f"• `{h.get('ts','-')}` [{h.get('source','-')}] "
                 f"A:{h.get('advisor_sla','-')}% ({h.get('advisor_state','-')}) | "
                 f"E:{h.get('endpoint_sla','-')}% ({h.get('endpoint_state','-')})\n"
             )
 
     if incident_points:
-        text += "\nðŸ§¯ Mini incident timeline:\n"
+        text += "\n🧯 Mini incident timeline:\n"
         for h in incident_points[-4:]:
             text += (
-                f"â€¢ `{h.get('ts','-')}` [{h.get('source','-')}] "
+                f"• `{h.get('ts','-')}` [{h.get('source','-')}] "
                 f"advisor_ok={h.get('advisor_ok')} endpoint_ok={h.get('endpoint_ok')}\n"
             )
 
@@ -7430,14 +7430,14 @@ async def cmd_sla(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_ops_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin-only trigger to force immediate autonomous ops checks."""
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("â›” Unauthorized.")
+        await update.message.reply_text("⛔ Unauthorized.")
         return
 
     if RUNTIME_HEALTH.get("ops_running"):
-        await update.message.reply_text("â³ Ops check already running. Please wait for completion.")
+        await update.message.reply_text("⏳ Ops check already running. Please wait for completion.")
         return
 
-    await update.message.reply_text("ðŸ›°ï¸ Running full autonomous ops check now...")
+    await update.message.reply_text("🛰️ Running full autonomous ops check now...")
 
     RUNTIME_HEALTH["ops_running"] = True
     RUNTIME_HEALTH["last_ops_status"] = "running"
@@ -7465,35 +7465,35 @@ async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     lang = user.get("language_code", "en")
     
     kb = [
-        [InlineKeyboardButton("English ðŸ‡ºðŸ‡¸", callback_data="set_lang_en"), InlineKeyboardButton("EspaÃ±ol ðŸ‡ªðŸ‡¸", callback_data="set_lang_es")],
-        [InlineKeyboardButton("ä¸­æ–‡ ðŸ‡¨ðŸ‡³", callback_data="set_lang_zh"), InlineKeyboardButton("Nederlands ðŸ‡³ðŸ‡±", callback_data="set_lang_nl")],
+        [InlineKeyboardButton("English 🇺🇸", callback_data="set_lang_en"), InlineKeyboardButton("Español 🇪🇸", callback_data="set_lang_es")],
+        [InlineKeyboardButton("中文 🇨🇳", callback_data="set_lang_zh"), InlineKeyboardButton("Nederlands 🇳🇱", callback_data="set_lang_nl")],
         [_back_main()[0]]
     ]
     await update.message.reply_text(get_text("SELECT_LANG", lang), reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
 
 async def cmd_path(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show the user their AI-personalized 'Road to â‚¬1M' path."""
+    """Show the user their AI-personalized 'Road to €1M' path."""
     user_id = update.effective_user.id
     lang = context.user_data.get("lang", "en")
     
     # Static content for now, but AI-ready for customization
-    title = "ðŸ† *THE APEX ROAD TO â‚¬1,000,000*"
+    title = "🏆 *THE APEX ROAD TO €1,000,000*"
     body = (
-        "1. ðŸš€ *Onboarding:* Fund your wallet with 0.1+ SOL.\n"
-        "2. ðŸ›¡ï¸ *Protection:* Lock in 0.5% Breakeven (Auto-Guard).\n"
-        "3. ðŸ“ˆ *Scaling:* Copy elite traders via 'Alpha Clan'.\n"
-        "4. ðŸ’Ž *Compounding:* Reinvest 50% of profits into the bot.\n\n"
+        "1. 🚀 *Onboarding:* Fund your wallet with 0.1+ SOL.\n"
+        "2. 🛡️ *Protection:* Lock in 0.5% Breakeven (Auto-Guard).\n"
+        "3. 📈 *Scaling:* Copy elite traders via 'Alpha Clan'.\n"
+        "4. 💎 *Compounding:* Reinvest 50% of profits into the bot.\n\n"
         "Your current progress: *Phase 1 (Active)*"
     )
-    kb = [[InlineKeyboardButton("âš¡ Optimize Strategy", callback_data="cmd_advisor")]]
+    kb = [[InlineKeyboardButton("⚡ Optimize Strategy", callback_data="cmd_advisor")]]
     await update.message.reply_text(f"{title}\n\n{body}", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
 
 async def scheduled_conversion_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Daily check for free users to send FOMO reports."""
     from agents.conversion_agent import check_conversion_eligibility, generate_opportunity_report
-    logger.info("ðŸ•’ Scheduled Job: Conversion AI (Cycle 14)")
+    logger.info("🕒 Scheduled Job: Conversion AI (Cycle 14)")
     
     from core.persistence import load_users
     users_data = load_users()
@@ -7505,8 +7505,8 @@ async def scheduled_conversion_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             if report:
                 try:
                     kb = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("ðŸ’Ž Upgrade to Elite", callback_data="advisor_upgrade_elite")],
-                        [InlineKeyboardButton("ðŸ“ˆ View Pricing", callback_data="advisor_view_pricing")],
+                        [InlineKeyboardButton("💎 Upgrade to Elite", callback_data="advisor_upgrade_elite")],
+                        [InlineKeyboardButton("📈 View Pricing", callback_data="advisor_view_pricing")],
                     ])
                     await context.bot.send_message(
                         chat_id=user_id,
@@ -7528,7 +7528,7 @@ async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     has_wallet = bool(user.get("wallet_pubkey"))
     h_count = sum(len(v) for v in context.application.handlers.values())
     msg = (
-        f"ðŸ”§ Debug Info\n"
+        f"🔧 Debug Info\n"
         f"Users in memory: {len(users)}\n"
         f"Your ID: {uid}\n"
         f"Your user exists: {uid in users}\n"
@@ -7625,9 +7625,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.message.reply_text(f"\u274c Auto-restore failed: {e}")
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # REFERRAL LEADERBOARD & STATS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def cmd_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show personal referral stats and the Global Leaderboard."""
@@ -7641,12 +7641,12 @@ async def cmd_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     bot_username = (await context.bot.get_me()).username
     ref_link = f"https://t.me/{bot_username}?start=ref_{uid}"
     
-    # ðŸ† Personal Stats
+    # 🏆 Personal Stats
     text = (
         "\U0001f91d *ApexFlash Referral Program*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
-        f"ðŸ‘¤ *Your Stats:*\n"
+        f"👤 *Your Stats:*\n"
         f"\u2022 Total Referrals: *{user.get('referral_count', 0)}*\n"
         f"\u2022 Total Earned: *{stats['earnings']:.4f} SOL*\n"
         f"\u2022 Global Rank: *#{stats['rank'] if stats['rank'] > 0 else 'N/A'}*\n\n"
@@ -7654,12 +7654,12 @@ async def cmd_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         f"_Share this link to earn 25-40% of every trade fee your friends pay!_\n\n"
     )
     
-    # ðŸ¥‡ Global Leaderboard
+    # 🥇 Global Leaderboard
     if leaderboard:
-        text += "ðŸ† *GLOBAL REFERRAL LEADERS:*\n"
-        emojis = ["ðŸ¥‡", "ðŸ¥ˆ", "ðŸ¥‰", "ðŸ‘¤", "ðŸ‘¤"]
+        text += "🏆 *GLOBAL REFERRAL LEADERS:*\n"
+        emojis = ["🥇", "🥈", "🥉", "👤", "👤"]
         for i, entry in enumerate(leaderboard):
-            emoji = emojis[i] if i < len(emojis) else "ðŸ‘¤"
+            emoji = emojis[i] if i < len(emojis) else "👤"
             # Anonymize user ID
             anon_name = f"User_{str(entry['user_id'])[-4:]}"
             text += f"{emoji} *{anon_name}*: `{entry['total_sol']:.2f} SOL` earned\n"
@@ -7708,7 +7708,7 @@ async def _cb_switch_network_v320_legacy(query, user, context):
     user["active_chain"] = new_chain
     _persist()
     
-    await query.answer(f"ðŸŒ Switched to {new_chain} network")
+    await query.answer(f"🌐 Switched to {new_chain} network")
     # Refresh menu
     await query.edit_message_reply_markup(reply_markup=main_menu_kb(query.from_user.id))
 
@@ -7722,7 +7722,7 @@ async def _cb_language_menu(query, user, context):
 async def _cb_advisor(query, user, context):
     """Callback to show AI advisor analysis."""
     try:
-        await query.answer("ðŸ¤– AI Coach starting...")
+        await query.answer("🤖 AI Coach starting...")
     except Exception:
         pass
 
@@ -7734,7 +7734,7 @@ async def _cb_advisor(query, user, context):
             cb_lock_key = f"apexflash:advisor:cb:{query.message.chat.id}:{query.message.message_id}"
             if not bool(_r.set(cb_lock_key, "1", ex=20, nx=True)):
                 try:
-                    await query.answer("â³ AI Advisor is bezig met je vorige klik.", show_alert=False)
+                    await query.answer("⏳ AI Advisor is bezig met je vorige klik.", show_alert=False)
                 except Exception:
                     pass
                 return
@@ -7743,7 +7743,7 @@ async def _cb_advisor(query, user, context):
 
     if context.user_data.get("advisor_busy"):
         try:
-            await query.answer("â³ AI Advisor is bezig met je vorige request.", show_alert=False)
+            await query.answer("⏳ AI Advisor is bezig met je vorige request.", show_alert=False)
         except Exception:
             pass
         return
@@ -7761,14 +7761,14 @@ async def _cb_advisor_upgrade_elite(query, user, context):
     track_bucket_kpi(get_user_bucket(uid), "advisor_upgrade_click")
 
     text = (
-        "ðŸ’Ž *Upgrade to ApexFlash Elite*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+        "💎 *Upgrade to ApexFlash Elite*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
         "Unlock full AI Advisor, advanced signals, and conversion-grade tooling.\n\n"
         "Choose your upgrade path below:"
     )
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("ðŸš€ Open Elite Upgrade", url=f"https://t.me/{BOT_USERNAME}?start=elite")],
-        [InlineKeyboardButton("ðŸ“ˆ Compare Plans", url=f"{WEBSITE_URL}#pricing")],
+        [InlineKeyboardButton("🚀 Open Elite Upgrade", url=f"https://t.me/{BOT_USERNAME}?start=elite")],
+        [InlineKeyboardButton("📈 Compare Plans", url=f"{WEBSITE_URL}#pricing")],
         [_back_main()[0]],
     ])
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
@@ -7781,13 +7781,13 @@ async def _cb_advisor_view_pricing(query, user, context):
     track_bucket_kpi(get_user_bucket(uid), "advisor_pricing_click")
 
     text = (
-        "ðŸ“ˆ *ApexFlash Pricing*\n"
-        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+        "📈 *ApexFlash Pricing*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
         "Review Pro vs Elite and choose the best growth path."
     )
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("ðŸ’³ Open Pricing Page", url=f"{WEBSITE_URL}#pricing")],
-        [InlineKeyboardButton("ðŸ’Ž Go Elite in Telegram", url=f"https://t.me/{BOT_USERNAME}?start=elite")],
+        [InlineKeyboardButton("💳 Open Pricing Page", url=f"{WEBSITE_URL}#pricing")],
+        [InlineKeyboardButton("💎 Go Elite in Telegram", url=f"https://t.me/{BOT_USERNAME}?start=elite")],
         [_back_main()[0]],
     ])
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
@@ -7800,7 +7800,7 @@ async def _cb_set_lang_nl(query, user, context): await _set_lang(query, user, "n
 async def _set_lang(query, user, lang_code):
     user["language_code"] = lang_code
     _persist()
-    await query.answer(f"ðŸ—£ Language: {lang_code.upper()}")
+    await query.answer(f"🗣 Language: {lang_code.upper()}")
     await query.edit_message_reply_markup(reply_markup=main_menu_kb(query.from_user.id))
 
 
@@ -7816,21 +7816,21 @@ async def _cb_referral(query, user, context):
 async def _cb_whale_intent(query, user, context):
     """Callback for Elite users to analyze whale intent via AI."""
     if not can_user_analyze(user.get("tier", "free")):
-        await query.answer("ðŸ’Ž Elite feature! Upgrade to analyze whale intent.", show_alert=True)
+        await query.answer("💎 Elite feature! Upgrade to analyze whale intent.", show_alert=True)
         return
 
     data = query.data.split("_")
     if len(data) < 4:
-        await query.answer("âš ï¸ Analysis data incomplete.")
+        await query.answer("⚠️ Analysis data incomplete.")
         return
     
     tx_hash_prefix = data[2]
     token_symbol = data[3]
     
-    await query.answer("ðŸ¤– AI is analyzing whale history...")
+    await query.answer("🤖 AI is analyzing whale history...")
     await query.edit_message_text(
         f"{query.message.text}\n\n"
-        f"â³ *AI ANALYZING INTENT...*",
+        f"⏳ *AI ANALYZING INTENT...*",
         parse_mode="Markdown"
     )
 
@@ -7958,12 +7958,12 @@ async def cmd_deals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # LEADERBOARD COMMAND
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 async def cmd_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show top traders by win rate and P/L â€” public social proof."""
+    """Show top traders by win rate and P/L — public social proof."""
     from core.persistence import get_win_rate
 
     platform = get_win_rate()
@@ -8363,15 +8363,15 @@ async def cmd_force_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.error(f"cmd_force_trade error: {e}")
         await update.message.reply_text(f"Error: `{str(e)[:100]}`", parse_mode="Markdown")
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# INSPECTOR GADGET â€” ADMIN COMMANDS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
+# INSPECTOR GADGET — ADMIN COMMANDS
+# ══════════════════════════════════════════════
 
 async def cmd_addwallet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Admin: /addwallet <address> [label] â€” add an alpha wallet to track."""
+    """Admin: /addwallet <address> [label] — add an alpha wallet to track."""
     uid = update.effective_user.id
     if uid not in ADMIN_IDS:
-        await update.message.reply_text("â›” Admin only.")
+        await update.message.reply_text("⛔ Admin only.")
         return
 
     args = context.args
@@ -8388,7 +8388,7 @@ async def cmd_addwallet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     # Basic Solana address validation (base58, 32-44 chars)
     if not (32 <= len(address) <= 44):
-        await update.message.reply_text("âŒ Invalid Solana address length.")
+        await update.message.reply_text("❌ Invalid Solana address length.")
         return
 
     try:
@@ -8396,7 +8396,7 @@ async def cmd_addwallet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         add_alpha_wallet(address, label)
         wallets = get_alpha_wallets()
         await update.message.reply_text(
-            f"âœ… *Alpha wallet added*\n"
+            f"✅ *Alpha wallet added*\n"
             f"Label: `{label}`\n"
             f"Address: `{address}`\n"
             f"Total tracked: {len(wallets)}",
@@ -8404,14 +8404,14 @@ async def cmd_addwallet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
     except Exception as e:
         logger.error(f"cmd_addwallet error: {e}")
-        await update.message.reply_text(f"âŒ Error: {e}")
+        await update.message.reply_text(f"❌ Error: {e}")
 
 
 async def cmd_list_wallets(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Admin: /wallets â€” list all tracked alpha wallets."""
+    """Admin: /wallets — list all tracked alpha wallets."""
     uid = update.effective_user.id
     if uid not in ADMIN_IDS:
-        await update.message.reply_text("â›” Admin only.")
+        await update.message.reply_text("⛔ Admin only.")
         return
 
     try:
@@ -8421,14 +8421,14 @@ async def cmd_list_wallets(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await update.message.reply_text("No alpha wallets tracked yet.\nUse `/addwallet <address> [label]`")
             return
 
-        lines = ["ðŸ•µï¸ *Inspector Gadget â€” Tracked Wallets*\nâ”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"]
+        lines = ["🕵️ *Inspector Gadget — Tracked Wallets*\n━━━━━━━━━━━━━━━━━━━━━\n"]
         for i, (addr, label) in enumerate(wallets.items(), 1):
             short = addr[:6] + "..." + addr[-4:]
             lines.append(f"{i}. *{label}*\n   `{short}`")
 
         text = "\n".join(lines)
         kb = [[InlineKeyboardButton(
-            "ðŸ” View on Solscan",
+            "🔍 View on Solscan",
             url=f"https://solscan.io/account/{list(wallets.keys())[0]}",
         )]]
         await update.message.reply_text(
@@ -8438,12 +8438,12 @@ async def cmd_list_wallets(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
     except Exception as e:
         logger.error(f"cmd_list_wallets error: {e}")
-        await update.message.reply_text(f"âŒ Error: {e}")
+        await update.message.reply_text(f"❌ Error: {e}")
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 # MAIN
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════
 
 def _check_critical_env():
     """Verify all critical env vars are present at startup. Alert admin if missing."""
@@ -8466,7 +8466,7 @@ def _check_critical_env():
     }
     missing = [k for k, v in CRITICAL.items() if not v]
     if missing:
-        logger.critical(f"MISSING ENV VARS: {missing} â€” bot may malfunction!")
+        logger.critical(f"MISSING ENV VARS: {missing} — bot may malfunction!")
         # Will alert admin via Telegram after bot starts (startup_alert logic)
         return missing
     logger.info(f"Env check OK: {len(CRITICAL)} critical vars present")
@@ -8495,7 +8495,7 @@ def main() -> None:
     try:
         from agents.viral_agent import viral_poster_job
         app.job_queue.run_repeating(viral_poster_job, interval=3600, first=10)
-        logger.info("ðŸ“± VIRAL AGENT: Loop scheduled (every 1h)")
+        logger.info("📱 VIRAL AGENT: Loop scheduled (every 1h)")
     except Exception as viral_err:
         logger.error(f"Failed to start Viral Agent: {viral_err}")
 
@@ -8554,10 +8554,10 @@ def main() -> None:
     # Inline callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))
 
-    # Document handler â€” admin can forward backup JSON to auto-restore
+    # Document handler — admin can forward backup JSON to auto-restore
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
-    # Token address detection â€” TWO handlers for maximum compatibility
+    # Token address detection — TWO handlers for maximum compatibility
     # Handler 1: explicit TEXT filter (standard text messages)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_token_address))
     # Handler 2: catch messages with entities (URLs, etc.) that TEXT might miss
@@ -8581,7 +8581,7 @@ def main() -> None:
         name="conversion_nudge",
     )
 
-    # Daily digest â€” posts to Discord + TG channel at 20:00 UTC
+    # Daily digest — posts to Discord + TG channel at 20:00 UTC
     app.job_queue.run_daily(
         daily_digest_job,
         time=dt_time(hour=20, minute=0, tzinfo=timezone.utc),
@@ -8593,7 +8593,7 @@ def main() -> None:
         auto_save_job, interval=60, first=60, name="auto_save",
     )
 
-    # Auto-backup to admin every 30 min (deploy resilience â€” Render has no persistent disk)
+    # Auto-backup to admin every 30 min (deploy resilience — Render has no persistent disk)
     app.job_queue.run_repeating(
         auto_backup_job, interval=30 * 60, first=300, name="auto_backup",
     )
@@ -8601,24 +8601,24 @@ def main() -> None:
     # Heartbeat monitor (legacy compact pulse) disabled to prevent duplicate heartbeat spam.
     # Use `system_heartbeat_job` below as single heartbeat channel.
 
-    # SL/TP monitor â€” checks positions every 15s for stop loss / take profit triggers
+    # SL/TP monitor — checks positions every 15s for stop loss / take profit triggers
     # Fast enough for scalping (-3% SL can trigger quickly)
     app.job_queue.run_repeating(
         sl_tp_monitor_job, interval=15, first=60, name="sl_tp_monitor",
     )
 
-    # Marketing auto-poster â€” repeating every 4 hours (survives restarts!)
+    # Marketing auto-poster — repeating every 4 hours (survives restarts!)
     # run_daily loses schedule on restart; run_repeating always fires
     app.job_queue.run_repeating(
         marketing_job, interval=4 * 3600, first=300, name="marketing_auto",
     )
 
-    # Live scalping monitor â€” every 30s (price momentum on SOL/BONK/JUP/WIF/RAY/PYTH)
+    # Live scalping monitor — every 30s (price momentum on SOL/BONK/JUP/WIF/RAY/PYTH)
     app.job_queue.run_repeating(
         scalper_job, interval=30, first=60, name="scalper",
     )
 
-    # CEO Agent daily briefing â€” 08:00 Amsterdam time (UTC+1 winter / UTC+2 summer)
+    # CEO Agent daily briefing — 08:00 Amsterdam time (UTC+1 winter / UTC+2 summer)
     # Reads all KPIs from Redis, prioritises via Gemini, sends Telegram briefing to Erik
     async def ceo_briefing_job(context) -> None:
         try:
@@ -8633,7 +8633,7 @@ def main() -> None:
         name="ceo_daily_briefing",
     )
 
-    # â”€â”€ War Watch: geopolitical news scanner (every 10 min) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── War Watch: geopolitical news scanner (every 10 min) ───────────────────
     async def war_watch_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         try:
             from agents.news_scanner import scan_once
@@ -8650,7 +8650,7 @@ def main() -> None:
         name="war_watch",
     )
 
-    # â”€â”€ Zero Loss Manager: autonomous breakeven-lock scalper (24/7) â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Zero Loss Manager: autonomous breakeven-lock scalper (24/7) ────────
     _zero_loss_task = None  # Track the background task
 
     async def zero_loss_start_job(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -8659,19 +8659,19 @@ def main() -> None:
         try:
             import asyncio as _aio
             _zero_loss_task = _aio.create_task(auto_trader_loop(bot=context.bot))
-            logger.info("ðŸ›¡ï¸ Zero Loss Manager: 24/7 autonomous trader STARTED")
+            logger.info("🛡️ Zero Loss Manager: 24/7 autonomous trader STARTED")
             # Notify admin
             for admin_id in ADMIN_IDS:
                 try:
                     await context.bot.send_message(
                         chat_id=admin_id,
                         text=(
-                            "ðŸ›¡ï¸ *Zero Loss Manager ONLINE*\n"
-                            "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
-                            "âœ… Grade A signals only\n"
-                            "âœ… Breakeven lock active\n"
-                            "âœ… Auto stop-loss / take-profit\n"
-                            "âœ… 24/7 autonomous execution\n\n"
+                            "🛡️ *Zero Loss Manager ONLINE*\n"
+                            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            "✅ Grade A signals only\n"
+                            "✅ Breakeven lock active\n"
+                            "✅ Auto stop-loss / take-profit\n"
+                            "✅ 24/7 autonomous execution\n\n"
                             "_All trades reported to this chat._"
                         ),
                         parse_mode="Markdown",
@@ -8687,7 +8687,7 @@ def main() -> None:
         name="zero_loss_start",
     )
 
-    # â”€â”€ Inspector Gadget: Alpha wallet copy-trade intelligence (every 60s) â”€â”€â”€â”€â”€
+    # ── Inspector Gadget: Alpha wallet copy-trade intelligence (every 60s) ─────
     async def _inspector_copy_signal(signal: dict) -> None:
         """Callback: broadcast Inspector copy-trade signal to all alert subscribers."""
         try:
@@ -8697,10 +8697,10 @@ def main() -> None:
 
             kb = [
                 [InlineKeyboardButton(
-                    "âš¡ Copy Trade Now",
+                    "⚡ Copy Trade Now",
                     url=f"https://t.me/{BOT_USERNAME}?start=buy_{mint}",
                 )],
-                [InlineKeyboardButton("ðŸ“Š Chart", url=f"https://dexscreener.com/solana/{mint}")],
+                [InlineKeyboardButton("📊 Chart", url=f"https://dexscreener.com/solana/{mint}")],
             ]
 
             # Send to Erik + all admin (signal test phase first)
@@ -8747,7 +8747,7 @@ def main() -> None:
 
     app.job_queue.run_repeating(
         inspector_gadget_job,
-        interval=60,   # every 60s â€” alpha wallets checked every minute
+        interval=60,   # every 60s — alpha wallets checked every minute
         first=90,      # first run 90s after startup
         name="inspector_gadget",
     )
@@ -8773,12 +8773,12 @@ def main() -> None:
 
             msg = (
                 f"\U0001f493 *APEXFLASH HEARTBEAT*\n"
-                f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
                 f"Status: **System Healthy**\n"
                 f"{emoji} SOL Trend: **{trend:+.2f}%**\n"
-                f"ðŸ“¡ Scanning: **Grade A/B+ active**\n"
-                f"ðŸ¤– Advisor SLA: **{advisor_sla:.2f}%** ({advisor_state})\n"
-                f"ðŸŒ Endpoint SLA: **{endpoint_sla:.2f}%** ({endpoint_state})\n"
+                f"📡 Scanning: **Grade A/B+ active**\n"
+                f"🤖 Advisor SLA: **{advisor_sla:.2f}%** ({advisor_state})\n"
+                f"🌐 Endpoint SLA: **{endpoint_sla:.2f}%** ({endpoint_state})\n"
                 f"\n"
                 f"_Bot is monitoring markets 24/7._"
             )
@@ -8814,19 +8814,19 @@ def main() -> None:
             if integrity_last_ok is None or integrity_last_ok != current_ok:
                 if current_ok:
                     text = (
-                        "âœ… *Runtime Integrity: OK*\n"
-                        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                        "✅ *Runtime Integrity: OK*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
                         "Critical env + affiliate/referral config are valid."
                     )
                 else:
                     lines = []
                     for k in (snap.get("missing_env", []) or [])[:8]:
-                        lines.append(f"â€¢ missing env: `{k}`")
+                        lines.append(f"• missing env: `{k}`")
                     for k in (snap.get("affiliate_invalid", []) or [])[:8]:
-                        lines.append(f"â€¢ affiliate: `{k}`")
+                        lines.append(f"• affiliate: `{k}`")
                     text = (
-                        "âš ï¸ *Runtime Integrity: ISSUES*\n"
-                        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                        "⚠️ *Runtime Integrity: ISSUES*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
                         + ("\n".join(lines) if lines else "Unknown integrity issue")
                     )
 
@@ -8847,7 +8847,7 @@ def main() -> None:
         name="runtime_integrity",
     )
 
-    # Advisor runtime watchdog â€” checks Gemini health every 30 min and only alerts on state changes
+    # Advisor runtime watchdog — checks Gemini health every 30 min and only alerts on state changes
     advisor_probe_last_ok = RUNTIME_HEALTH.get("advisor_ok")
 
     async def advisor_watchdog_job(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -8875,15 +8875,15 @@ def main() -> None:
             if curr_breach != prev_breach:
                 if curr_breach:
                     sla_text = (
-                        "ðŸš¨ *Advisor SLA BREACH*\n"
-                        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                        "🚨 *Advisor SLA BREACH*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
                         f"Window: `{advisor_ok_count}/{advisor_total}` ({advisor_sla:.2f}%)\n"
                         "Target: `99.90%`"
                     )
                 else:
                     sla_text = (
-                        "âœ… *Advisor SLA RECOVERED*\n"
-                        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                        "✅ *Advisor SLA RECOVERED*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
                         f"Window: `{advisor_ok_count}/{advisor_total}` ({advisor_sla:.2f}%)"
                     )
                 for admin_id in ADMIN_IDS:
@@ -8896,14 +8896,14 @@ def main() -> None:
             if advisor_probe_last_ok is None or advisor_probe_last_ok != current_ok:
                 if current_ok:
                     text = (
-                        "âœ… *Advisor Watchdog: RECOVERED*\n"
-                        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                        "✅ *Advisor Watchdog: RECOVERED*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
                         f"Model: `{probe.get('model')}`"
                     )
                 else:
                     text = (
-                        "âš ï¸ *Advisor Watchdog: FALLBACK ACTIVE*\n"
-                        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                        "⚠️ *Advisor Watchdog: FALLBACK ACTIVE*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
                         f"Reason: `{probe.get('reason', 'unknown')}`"
                     )
 
@@ -8926,7 +8926,7 @@ def main() -> None:
         name="advisor_watchdog",
     )
 
-    # Production endpoint watchdog â€” verifies key app/telegram links and alerts on state changes only.
+    # Production endpoint watchdog — verifies key app/telegram links and alerts on state changes only.
     endpoint_watchdog_last_ok = RUNTIME_HEALTH.get("endpoint_ok")
     endpoint_watchdog_urls = [
         WEBSITE_URL,
@@ -8954,7 +8954,7 @@ def main() -> None:
 
             all_ok = all(item[1] for item in results)
             RUNTIME_HEALTH["endpoint_ok"] = all_ok
-            RUNTIME_HEALTH["endpoint_failed"] = [f"â€¢ `{u}` â†’ {s if s else 'ERR'}" for u, ok, s in results if not ok][:8]
+            RUNTIME_HEALTH["endpoint_failed"] = [f"• `{u}` → {s if s else 'ERR'}" for u, ok, s in results if not ok][:8]
             RUNTIME_HEALTH["last_watchdog_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
             RUNTIME_HEALTH["endpoint_checks_total"] = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0)) + 1
             if all_ok:
@@ -8970,15 +8970,15 @@ def main() -> None:
             if curr_ep_breach != prev_ep_breach:
                 if curr_ep_breach:
                     sla_text = (
-                        "ðŸš¨ *Endpoint SLA BREACH*\n"
-                        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                        "🚨 *Endpoint SLA BREACH*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
                         f"Window: `{endpoint_ok_count}/{endpoint_total}` ({endpoint_sla:.2f}%)\n"
                         "Target: `99.90%`"
                     )
                 else:
                     sla_text = (
-                        "âœ… *Endpoint SLA RECOVERED*\n"
-                        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                        "✅ *Endpoint SLA RECOVERED*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
                         f"Window: `{endpoint_ok_count}/{endpoint_total}` ({endpoint_sla:.2f}%)"
                     )
                 for admin_id in ADMIN_IDS:
@@ -8991,15 +8991,15 @@ def main() -> None:
             if endpoint_watchdog_last_ok is None or endpoint_watchdog_last_ok != all_ok:
                 if all_ok:
                     text = (
-                        "âœ… *Endpoint Watchdog: ALL GREEN*\n"
-                        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                        "✅ *Endpoint Watchdog: ALL GREEN*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
                         "Core app/API/Telegram endpoints are reachable."
                     )
                 else:
-                    failed = [f"â€¢ `{u}` â†’ {s if s else 'ERR'}" for u, ok, s in results if not ok]
+                    failed = [f"• `{u}` → {s if s else 'ERR'}" for u, ok, s in results if not ok]
                     text = (
-                        "âš ï¸ *Endpoint Watchdog: FAILURE*\n"
-                        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                        "⚠️ *Endpoint Watchdog: FAILURE*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
                         + "\n".join(failed[:8])
                     )
 
@@ -9022,7 +9022,7 @@ def main() -> None:
         name="endpoint_watchdog",
     )
 
-    # Autonomous ops check â€” runs /sla + /smoke + /advisor_diag equivalent and pushes summary.
+    # Autonomous ops check — runs /sla + /smoke + /advisor_diag equivalent and pushes summary.
     async def ops_autocheck_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         if RUNTIME_HEALTH.get("ops_running"):
             logger.info("ops_autocheck skipped: another ops cycle is running")
@@ -9060,7 +9060,7 @@ def main() -> None:
 
             endpoint_ok = all(item[1] for item in results)
             RUNTIME_HEALTH["endpoint_ok"] = endpoint_ok
-            RUNTIME_HEALTH["endpoint_failed"] = [f"â€¢ `{u}` â†’ {s if s else 'ERR'}" for u, ok, s in results if not ok][:8]
+            RUNTIME_HEALTH["endpoint_failed"] = [f"• `{u}` → {s if s else 'ERR'}" for u, ok, s in results if not ok][:8]
             RUNTIME_HEALTH["endpoint_checks_total"] = int(RUNTIME_HEALTH.get("endpoint_checks_total", 0)) + 1
             if endpoint_ok:
                 RUNTIME_HEALTH["endpoint_checks_ok"] = int(RUNTIME_HEALTH.get("endpoint_checks_ok", 0)) + 1
@@ -9079,10 +9079,10 @@ def main() -> None:
             endpoint_sla = (endpoint_ok_count / endpoint_total * 100.0) if endpoint_total else 0.0
 
             text = (
-                "ðŸ›°ï¸ *ApexFlash Auto Ops Check*\n"
-                "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
-                f"Advisor: {'âœ… online' if advisor_ok else 'âš ï¸ fallback'}\n"
-                f"Endpoints: {'âœ… healthy' if endpoint_ok else 'âš ï¸ issues'}\n"
+                "🛰️ *ApexFlash Auto Ops Check*\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
+                f"Advisor: {'✅ online' if advisor_ok else '⚠️ fallback'}\n"
+                f"Endpoints: {'✅ healthy' if endpoint_ok else '⚠️ issues'}\n"
                 f"Model: `{RUNTIME_HEALTH.get('advisor_model', '') or '-'}`\n"
                 f"Fallback reason: `{RUNTIME_HEALTH.get('advisor_reason', '') or '-'}`\n"
                 f"Advisor SLA: `{advisor_ok_count}/{advisor_total}` ({advisor_sla:.2f}%)\n"
@@ -9091,7 +9091,7 @@ def main() -> None:
             )
 
             if RUNTIME_HEALTH["endpoint_failed"]:
-                text += "\n\nâŒ Failed:\n" + "\n".join(RUNTIME_HEALTH["endpoint_failed"][:6])
+                text += "\n\n❌ Failed:\n" + "\n".join(RUNTIME_HEALTH["endpoint_failed"][:6])
 
             for admin_id in ADMIN_IDS:
                 try:
@@ -9162,8 +9162,8 @@ def main() -> None:
             _save_runtime_health()
 
             text = (
-                "ðŸ“… *Daily Self-Check (KPI Drift)*\n"
-                "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                "📅 *Daily Self-Check (KPI Drift)*\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
                 f"Date: `{today_key}`\n"
                 + _delta_line("Users", current["users_total"], previous.get("users_total") if isinstance(previous, dict) else None)
                 + "\n"
@@ -9184,9 +9184,9 @@ def main() -> None:
             )
 
             if is_drift_alert:
-                text += "\n\nðŸš¨ *Drift Escalation Triggered*\n" + "\n".join(drift_hits)
+                text += "\n\n🚨 *Drift Escalation Triggered*\n" + "\n".join(drift_hits)
             elif prev_drift_state:
-                text += "\n\nâœ… *Drift state recovered* (back within thresholds)."
+                text += "\n\n✅ *Drift state recovered* (back within thresholds)."
 
             for admin_id in ADMIN_IDS:
                 try:
@@ -9216,7 +9216,7 @@ def main() -> None:
                 BotCommand("help", "How to use ApexFlash"),
                 BotCommand("myid", "Show your Telegram ID"),
             ])
-            logger.info("âœ… Menu commands set")
+            logger.info("✅ Menu commands set")
         except Exception as e:
             logger.warning(f"set_my_commands failed: {e}")
 
@@ -9240,15 +9240,15 @@ def main() -> None:
 
             if probe.get("ok"):
                 text = (
-                    "ðŸ¤– *Advisor Probe: ONLINE*\n"
-                    "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                    "🤖 *Advisor Probe: ONLINE*\n"
+                    "━━━━━━━━━━━━━━━━━━━━━\n"
                     f"Model: `{probe.get('model')}`\n"
                     f"Preview: `{str(probe.get('preview', ''))[:90]}`"
                 )
             else:
                 text = (
-                    "âš ï¸ *Advisor Probe: FALLBACK MODE*\n"
-                    "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                    "⚠️ *Advisor Probe: FALLBACK MODE*\n"
+                    "━━━━━━━━━━━━━━━━━━━━━\n"
                     f"Reason: `{probe.get('reason', 'unknown')}`"
                 )
 
@@ -9267,7 +9267,7 @@ def main() -> None:
                     await application.bot.send_message(
                         chat_id=admin_id,
                         text=(
-                            "\u26a0\ufe0f *DATA LOST â€” Render restart detected*\n\n"
+                            "\u26a0\ufe0f *DATA LOST — Render restart detected*\n\n"
                             "Users: 0 | Wallets: 0\n\n"
                             "\U0001f504 *To restore:* Forward the latest backup "
                             "JSON file to this chat.\n\n"
@@ -9277,7 +9277,7 @@ def main() -> None:
                     )
                 except Exception:
                     pass
-            logger.warning("NO USER DATA â€” sent restore request to admins")
+            logger.warning("NO USER DATA — sent restore request to admins")
 
         if ALERT_CHANNEL_ID:
             try:
@@ -9300,17 +9300,17 @@ def main() -> None:
             except Exception as e:
                 logger.warning(f"Startup notification failed: {e}")
 
-        # ðŸš€ START GODMODE AGENTS
+        # 🚀 START GODMODE AGENTS
         try:
             # CEO Agent Scheduler (Daily 08:00 Amsterdam)
             start_ceo_scheduler(application.job_queue.scheduler)
-            logger.info("ðŸ¤– CEO Agent: scheduler hooked to JobQueue")
+            logger.info("🤖 CEO Agent: scheduler hooked to JobQueue")
             
         except Exception as e:
             logger.error(f"Godmode Agent activation failed: {e}")
 
     app.post_init = post_init
-    # â”€â”€ Gumroad Revenue Sync: Poll for new sales (every 15 min) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Gumroad Revenue Sync: Poll for new sales (every 15 min) ───────────────
     async def gumroad_sync_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         """Poll Gumroad for recent sales and sync to KPI tracking."""
         try:
@@ -9358,7 +9358,7 @@ def main() -> None:
                 # 2. Get Progress Data
                 r = _get_redis()
                 total_usd = float(r.get("kpi:total_revenue_usd") or 0) if r else price
-                total_eur = total_usd * 0.92  # Approx conversion for â‚¬1M goal progress
+                total_eur = total_usd * 0.92  # Approx conversion for €1M goal progress
                 progress_pct = (total_eur / 1_000_000) * 100
 
                 # 3. Notify Admin
@@ -9370,14 +9370,14 @@ def main() -> None:
                         await context.bot.send_message(
                             chat_id=admin_id,
                             text=(
-                                f"ðŸ’° <b>NEW GUMROAD SALE!</b>\n"
-                                f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n"
+                                f"💰 <b>NEW GUMROAD SALE!</b>\n"
+                                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
                                 f"Tier: <b>{tier.upper()}</b>\n"
                                 f"Amount: <b>{formatted_price}</b>\n"
                                 f"Product: <i>{sale.get('product_name', 'Unknown')}</i>\n\n"
-                                f"ðŸ“ˆ <b>Progress to â‚¬1,000,000:</b>\n"
-                                f"Total: <b>â‚¬{total_eur:,.2f}</b> ({progress_pct:.4f}%)\n\n"
-                                f"ðŸš€ <i>Every sale counts! Godmode active.</i>"
+                                f"📈 <b>Progress to €1,000,000:</b>\n"
+                                f"Total: <b>€{total_eur:,.2f}</b> ({progress_pct:.4f}%)\n\n"
+                                f"🚀 <i>Every sale counts! Godmode active.</i>"
                             ),
                             parse_mode="HTML"
                         )
