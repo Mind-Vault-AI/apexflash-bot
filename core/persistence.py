@@ -840,6 +840,17 @@ def track_paid_conversion(user_id: int, tier: str):
         logger.debug(f"track_paid_conversion failed: {e}")
 
 
+def track_new_user():
+    """Increment platform:total_users in Redis. Call once per new /start user."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        r.incr("platform:total_users")
+    except Exception as e:
+        logger.debug(f"track_new_user failed: {e}")
+
+
 def track_user_active(user_id: int):
     """
     Track daily active user for churn KPI.

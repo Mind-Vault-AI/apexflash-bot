@@ -85,7 +85,7 @@ from core.persistence import (
     save_users, load_users, save_stats, load_stats, export_backup, import_backup,
     track_funnel, track_token_lookup, track_token_trade, track_affiliate_click,
     update_last_active, get_popular_tokens, get_funnel_stats, get_affiliate_stats,
-    track_paid_conversion, track_user_active, track_visitor,
+    track_paid_conversion, track_user_active, track_visitor, track_new_user,
     get_user_bucket, track_bucket_kpi, track_user_profit, get_leaderboard_stats,
     get_governance_config,
 )
@@ -637,6 +637,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     if is_new_user:
         track_funnel("new_user")
+        track_new_user()
 
     # ── Handle deep links: /start ref_123456 OR /start buy_MINT_ref_123456 ──
     deep_link_mint = None  # Token to show after welcome
