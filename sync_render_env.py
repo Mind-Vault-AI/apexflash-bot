@@ -95,6 +95,13 @@ def sync():
         # OKX
         "OKX_PASSPHRASE": "OkX_ApI=13!",
         "OKX_ACCOUNT_ID": "797696059626980898",
+        # ── Reddit auto-poster (viral_agent.py) ──────────────────────────────
+        # Fill in after creating app at: reddit.com/prefs/apps
+        # Leave empty = Reddit posting disabled (no crash)
+        "REDDIT_CLIENT_ID": os.getenv("REDDIT_CLIENT_ID", ""),
+        "REDDIT_CLIENT_SECRET": os.getenv("REDDIT_CLIENT_SECRET", ""),
+        "REDDIT_USERNAME": os.getenv("REDDIT_USERNAME", ""),
+        "REDDIT_PASSWORD": os.getenv("REDDIT_PASSWORD", ""),
         # ── GODMODE INFINITY — production trading params ──────────────────────
         # TEST_TRADE_SOL=0 = PRODUCTION MODE (cap disabled)
         # Set to 0.001 to re-enable test mode (€0.15/trade max)

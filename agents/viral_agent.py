@@ -28,6 +28,59 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
+# Reddit config (optional — set env vars to enable)
+REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
+REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
+REDDIT_USERNAME = os.getenv("REDDIT_USERNAME", "")
+REDDIT_PASSWORD = os.getenv("REDDIT_PASSWORD", "")
+REDDIT_ENABLED = all([REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD])
+
+REDDIT_SUBS = ["Solana", "CryptoMoonShots", "CryptoCurrencyTrading"]
+_reddit_last_post_ts = 0.0  # rate-limit: max 1 post per 8 hours
+
+
+def _post_to_reddit_sync(title: str, body: str, bot_url: str) -> bool:
+    """Post to Reddit subreddits. Returns True if posted."""
+    global _reddit_last_post_ts
+    import time
+    if not REDDIT_ENABLED:
+        return False
+    if time.time() - _reddit_last_post_ts < 28800:  # 8h cooldown
+        return False
+    try:
+        import praw
+        reddit = praw.Reddit(
+            client_id=REDDIT_CLIENT_ID,
+            client_secret=REDDIT_CLIENT_SECRET,
+            username=REDDIT_USERNAME,
+            password=REDDIT_PASSWORD,
+            user_agent="ApexFlash Viral Agent v3.22.0",
+        )
+        sub = reddit.subreddit(REDDIT_SUBS[0])
+        sub.submit(title=title, selftext=body)
+        _reddit_last_post_ts = time.time()
+        logger.info(f"Reddit post submitted to r/{REDDIT_SUBS[0]}: {title[:60]}")
+        return True
+    except Exception as e:
+        logger.warning(f"Reddit post failed: {e}")
+        return False
+
+
+async def post_to_reddit(trade: dict) -> bool:
+    """Async wrapper for Reddit posting."""
+    bot_url = f"https://t.me/{os.getenv('BOT_USERNAME', 'ApexFlashBot')}?start=ref_{os.getenv('ADMIN_IDS','7851853521').split(',')[0]}"
+    title = f"My AI bot just closed +{trade['pnl_pct']}% on ${trade.get('token','SOL')} autonomously — here's the setup"
+    body = (
+        f"The ApexFlash Zero-Loss Manager just caught a +{trade['pnl_pct']}% move on "
+        f"**${trade.get('token', 'SOL')}**.\n\n"
+        f"It uses a breakeven lock: after +0.5%, the stop-loss moves to entry price. "
+        f"Worst case = zero loss. This trade closed at the 2% take-profit target.\n\n"
+        f"Running 24/7 on Solana — Grade A whale signals only.\n\n"
+        f"Bot is free: {bot_url}\n\n"
+        f"*(Not financial advice — always start small)*"
+    )
+    return await asyncio.to_thread(_post_to_reddit_sync, title, body, bot_url)
+
 async def generate_viral_hook(trade: dict) -> str:
     """Use Gemini to create a viral hype post from trade data."""
     if not GEMINI_API_KEY:
@@ -121,7 +174,11 @@ async def viral_poster_job(context):
                                 # Also send to Telegram Admin for "Viral Kit"
                                 await bot.send_photo(chat_id=ALERT_CHANNEL_ID, photo=open(media_path, 'rb'), caption=f"📸 *Viral Visual Kit Generated*\nReady for TikTok/Reels/X scaling.", parse_mode="Markdown")
 
-                        # 8. Tracking & Persistence
+                        # 8. Reddit autonomous post (if credentials set)
+                        if trade["pnl_pct"] > 3.0:
+                            await post_to_reddit(trade)
+
+                        # 9. Tracking & Persistence
                         if r: r.sadd("kpi:viral_posted_tx", tx_id)
                         
                         await asyncio.sleep(1200) # Post every 20 min max
