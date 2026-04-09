@@ -9306,7 +9306,12 @@ def main() -> None:
             # CEO Agent Scheduler (Daily 08:00 Amsterdam)
             start_ceo_scheduler(application.job_queue.scheduler)
             logger.info("🤖 CEO Agent: scheduler hooked to JobQueue")
-            
+
+            # Marketing Agency: async Redis queue consumer for discord/twitter tasks
+            from agents.marketing_agency import agency_loop
+            asyncio.ensure_future(agency_loop())
+            logger.info("📣 Marketing Agency: background worker STARTED")
+
         except Exception as e:
             logger.error(f"Godmode Agent activation failed: {e}")
 
@@ -9384,7 +9389,22 @@ def main() -> None:
                         )
                     except Exception:
                         pass
-            
+
+                # 4. Push to marketing queue → Discord auto-broadcast
+                if r:
+                    import json as _json
+                    discord_msg = (
+                        f"💰 **NEW SALE — {tier.upper()}**\n"
+                        f"Amount: **{formatted_price}**\n"
+                        f"Product: {sale.get('product_name', 'Unknown')}\n"
+                        f"Progress to €1M: **€{total_eur:,.2f}** ({progress_pct:.4f}%)\n"
+                        f"🚀 Godmode active."
+                    )
+                    r.lpush("queue:marketing", _json.dumps({
+                        "action": "discord_alert",
+                        "data": {"msg": discord_msg},
+                    }))
+
             if new_count > 0:
                 logger.info(f"Gumroad Sync: {new_count} new sales synced to Redis")
         except Exception as e:
