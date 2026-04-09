@@ -62,6 +62,8 @@ def sync():
         "BITUNIX_REF": "xc6jzk",
         "MEXC_REF": "BPM0e8Rm",
         "BLOFIN_REF": "b996a0111c1b4497b53d9b3cc82e4539",
+        "BITVAVO_REF": "6A3E846932",
+        "GMGN_REF": "cBB5zbUF",
         # AI / LLM keys
         "GEMINI_API_KEY": "AIzaSyAtG0vWvL91DmYEZxG42fELXyPZms29HHI",
         "DEEPSEEK_API_KEY": "sk-e8d8d36841c340409f10ec61dc23eb84",
@@ -93,8 +95,27 @@ def sync():
         # OKX
         "OKX_PASSPHRASE": "OkX_ApI=13!",
         "OKX_ACCOUNT_ID": "797696059626980898",
-        # Safety cap for test trades (0 = disabled in production, set >0 to cap all buys)
-        "TEST_TRADE_SOL": "0.001",
+        # ── GODMODE INFINITY — production trading params ──────────────────────
+        # TEST_TRADE_SOL=0 = PRODUCTION MODE (cap disabled)
+        # Set to 0.001 to re-enable test mode (€0.15/trade max)
+        "TEST_TRADE_SOL": "0",
+        # Autonomous trade size per position (SOL). Starts conservative.
+        # Increase to 0.1 or 0.25 once win rate >65% confirmed.
+        "AUTONOMOUS_TRADE_AMOUNT_SOL": "0.05",
+        # Zero-Loss Manager: move SL to breakeven after this % gain
+        "BREAKEVEN_TRIGGER_PCT": "0.5",
+        # Take profit target (%)
+        "TAKE_PROFIT_PCT": "2.0",
+        # Stop loss (%) — worst case loss before breakeven kicks in
+        "STOP_LOSS_PCT": "1.0",
+        # Min SOL to keep in wallet at all times (reserve, not traded)
+        "MIN_SOL_RESERVE": "0.1",
+        # Cooldown between autonomous trades (seconds)
+        "AUTONOMOUS_COOLDOWN": "300",
+        # Bot username for deep links (no @)
+        "BOT_USERNAME": "ApexFlashBot",
+        # Site URL for affiliate tracking
+        "SITE_URL": "https://apexflash.pro",
     }
     for k, v in extra_keys.items():
         if k not in master:
