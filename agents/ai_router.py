@@ -50,10 +50,11 @@ MODELS = {
     "groq-llama":       ("llama-3.3-70b-versatile",                          "groq",       800),
     "groq-fast":        ("llama-3.1-8b-instant",                             "groq",       800),
     "cerebras-llama":   ("llama-3.3-70b",                                    "cerebras",   800),
-    "gemini-flash":     ("models/gemini-2.0-flash",                          "gemini",     800),
-    "gemini-flash-15":  ("models/gemini-1.5-flash-latest",                   "gemini",     800),
+    "gemini-flash":     ("gemini-2.5-flash",                                 "gemini",     800),
+    "gemini-flash-15":  ("gemini-1.5-flash",                                 "gemini",     800),
     "openrouter-ds":    ("deepseek/deepseek-r1:free",                        "openrouter", 800),
     "openrouter-llama": ("meta-llama/llama-3.3-70b-instruct:free",           "openrouter", 800),
+    "openrouter-qwen":  ("qwen/qwen3-80b:free",                              "openrouter", 800),
     "nebius-llama":     ("meta-llama/Meta-Llama-3.1-70B-Instruct",           "nebius",     800),
     "nebius-mistral":   ("mistralai/Mistral-Nemo-Instruct-2407",             "nebius",     800),
     "deepseek":         ("deepseek-chat",                                     "deepseek",   800),
@@ -62,12 +63,12 @@ MODELS = {
 # Job → ordered list of model keys
 # Groq first: free, 14400 req/day, ultra-fast. Gemini when key is valid.
 JOB_CHAINS: Dict[str, List[str]] = {
-    "ADVISOR":    ["groq-llama",  "cerebras-llama",  "gemini-flash",    "openrouter-ds",     "nebius-llama",   "deepseek"],
-    "CEO":        ["groq-llama",  "cerebras-llama",  "openrouter-ds",   "gemini-flash",      "nebius-llama",   "deepseek"],
-    "NEWS":       ["groq-fast",   "cerebras-llama",  "groq-llama",      "gemini-flash",      "openrouter-llama","nebius-mistral"],
-    "MARKETING":  ["groq-llama",  "cerebras-llama",  "gemini-flash-15", "openrouter-llama",  "nebius-llama",   "deepseek"],
-    "CONVERSION": ["groq-fast",   "cerebras-llama",  "gemini-flash-15", "openrouter-llama",  "nebius-mistral", "deepseek"],
-    "GENERIC":    ["groq-llama",  "cerebras-llama",  "gemini-flash",    "openrouter-ds",     "nebius-llama",   "deepseek"],
+    "ADVISOR":    ["groq-llama",  "cerebras-llama",  "gemini-flash",    "openrouter-qwen",   "openrouter-llama", "nebius-llama",  "deepseek"],
+    "CEO":        ["groq-llama",  "cerebras-llama",  "openrouter-ds",   "gemini-flash",      "openrouter-qwen",  "nebius-llama",  "deepseek"],
+    "NEWS":       ["groq-fast",   "cerebras-llama",  "groq-llama",      "gemini-flash",      "openrouter-llama", "nebius-mistral","deepseek"],
+    "MARKETING":  ["groq-llama",  "cerebras-llama",  "gemini-flash-15", "openrouter-qwen",   "openrouter-llama", "nebius-llama",  "deepseek"],
+    "CONVERSION": ["groq-fast",   "cerebras-llama",  "gemini-flash-15", "openrouter-llama",  "openrouter-qwen",  "nebius-mistral","deepseek"],
+    "GENERIC":    ["groq-llama",  "cerebras-llama",  "gemini-flash",    "openrouter-ds",     "openrouter-qwen",  "nebius-llama",  "deepseek"],
 }
 
 # Per-model cooldown tracking (blocked until timestamp)
@@ -241,7 +242,7 @@ async def complete(
             elif "notfound" in low or "not found" in low or "not supported" in low:
                 _BLOCKED_UNTIL[model_key] = now + COOLDOWN_NOTFOUND
 
-    reason = " | ".join(errors[-4:])
+    reason = " | ".join(errors)
     logger.error("AIRouter [%s] ALL models failed: %s", job, reason)
     return None, None, reason
 
