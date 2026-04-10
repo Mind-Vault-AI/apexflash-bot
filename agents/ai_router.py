@@ -31,33 +31,39 @@ import google.generativeai as genai
 logger = logging.getLogger("AIRouter")
 
 # ─── Keys ────────────────────────────────────────────────────────────────────
-_GEMINI_KEY   = os.getenv("GEMINI_API_KEY", "").strip()
-_DEEPSEEK_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
-_NEBIUS_KEY   = os.getenv("NEBIUS_API_KEY", "").strip()
-_GROQ_KEY     = os.getenv("GROQ_API_KEY", "").strip()
+_GEMINI_KEY      = os.getenv("GEMINI_API_KEY", "").strip()
+_DEEPSEEK_KEY    = os.getenv("DEEPSEEK_API_KEY", "").strip()
+_NEBIUS_KEY      = os.getenv("NEBIUS_API_KEY", "").strip()
+_GROQ_KEY        = os.getenv("GROQ_API_KEY", "").strip()
+_OPENROUTER_KEY  = os.getenv("OPENROUTER_API_KEY", "").strip()
 
 if _GEMINI_KEY:
     genai.configure(api_key=_GEMINI_KEY)
 
 # ─── Model registry ───────────────────────────────────────────────────────────
 # Each entry: (model_id, provider_tag, max_tokens)
+# Priority order: Groq (fast+free) → Gemini (smart) → OpenRouter (free models) → Nebius → DeepSeek
 MODELS = {
-    "gemini-flash":    ("models/gemini-2.0-flash",          "gemini",   800),
-    "gemini-flash-15": ("models/gemini-1.5-flash-latest",   "gemini",   800),
-    "deepseek":        ("deepseek-chat",                     "deepseek", 800),
-    "nebius-llama":    ("meta-llama/Meta-Llama-3.1-70B-Instruct-fast", "nebius", 800),
-    "groq-llama":      ("llama-3.3-70b-versatile",           "groq",     800),
-    "groq-fast":       ("llama-3.1-8b-instant",              "groq",     800),
+    "groq-llama":      ("llama-3.3-70b-versatile",                          "groq",       800),
+    "groq-fast":       ("llama-3.1-8b-instant",                             "groq",       800),
+    "gemini-flash":    ("models/gemini-2.0-flash",                          "gemini",     800),
+    "gemini-flash-15": ("models/gemini-1.5-flash-latest",                   "gemini",     800),
+    "openrouter-ds":   ("deepseek/deepseek-r1:free",                        "openrouter", 800),
+    "openrouter-llama":("meta-llama/llama-3.3-70b-instruct:free",           "openrouter", 800),
+    "nebius-llama":    ("meta-llama/Meta-Llama-3.1-70B-Instruct",           "nebius",     800),
+    "nebius-mistral":  ("mistralai/Mistral-Nemo-Instruct-2407",             "nebius",     800),
+    "deepseek":        ("deepseek-chat",                                     "deepseek",   800),
 }
 
-# Job → ordered list of model keys (first = preferred)
+# Job → ordered list of model keys
+# Groq first: free, 14400 req/day, ultra-fast. Gemini when key is valid.
 JOB_CHAINS: Dict[str, List[str]] = {
-    "ADVISOR":    ["gemini-flash", "deepseek", "nebius-llama", "groq-llama"],
-    "CEO":        ["deepseek",     "gemini-flash", "nebius-llama", "groq-llama"],
-    "NEWS":       ["groq-fast",    "gemini-flash", "deepseek",   "nebius-llama"],
-    "MARKETING":  ["deepseek",     "gemini-flash-15", "groq-llama", "nebius-llama"],
-    "CONVERSION": ["gemini-flash-15", "deepseek", "groq-fast",  "nebius-llama"],
-    "GENERIC":    ["deepseek",     "gemini-flash", "groq-llama", "nebius-llama"],
+    "ADVISOR":    ["groq-llama",   "gemini-flash",    "openrouter-ds",    "nebius-llama",   "deepseek"],
+    "CEO":        ["groq-llama",   "openrouter-ds",   "gemini-flash",     "nebius-llama",   "deepseek"],
+    "NEWS":       ["groq-fast",    "groq-llama",      "gemini-flash",     "openrouter-llama","nebius-mistral"],
+    "MARKETING":  ["groq-llama",   "gemini-flash-15", "openrouter-llama", "nebius-llama",   "deepseek"],
+    "CONVERSION": ["groq-fast",    "gemini-flash-15", "openrouter-llama", "nebius-mistral", "deepseek"],
+    "GENERIC":    ["groq-llama",   "gemini-flash",    "openrouter-ds",    "nebius-llama",   "deepseek"],
 }
 
 # Per-model cooldown tracking (blocked until timestamp)
@@ -71,6 +77,11 @@ COOLDOWN_KEYINV  = int(os.getenv("AI_KEYINVALID_COOLDOWN_SEC","86400"))  # 24h
 
 # ─── Health snapshot (for /ai_status dashboard) ───────────────────────────────
 _health: Dict[str, dict] = {k: {"calls": 0, "ok": 0, "last_error": ""} for k in MODELS}
+
+# Re-initialize if new keys are added at import time (router hot-reload safe)
+for _k in MODELS:
+    if _k not in _health:
+        _health[_k] = {"calls": 0, "ok": 0, "last_error": ""}
 
 
 def get_health_snapshot() -> Dict[str, dict]:
@@ -95,10 +106,11 @@ def get_health_snapshot() -> Dict[str, dict]:
 
 def _key_present(provider: str) -> bool:
     return {
-        "gemini":   bool(_GEMINI_KEY),
-        "deepseek": bool(_DEEPSEEK_KEY),
-        "nebius":   bool(_NEBIUS_KEY),
-        "groq":     bool(_GROQ_KEY),
+        "gemini":     bool(_GEMINI_KEY),
+        "deepseek":   bool(_DEEPSEEK_KEY),
+        "nebius":     bool(_NEBIUS_KEY),
+        "groq":       bool(_GROQ_KEY),
+        "openrouter": bool(_OPENROUTER_KEY),
     }.get(provider, False)
 
 
@@ -156,6 +168,10 @@ async def _call_model(model_key: str, prompt: str) -> str:
     elif provider == "groq":
         return await _call_openai_compat(
             "https://api.groq.com/openai/v1", _GROQ_KEY, model_id, prompt, max_tokens
+        )
+    elif provider == "openrouter":
+        return await _call_openai_compat(
+            "https://openrouter.ai/api/v1", _OPENROUTER_KEY, model_id, prompt, max_tokens
         )
     raise ValueError(f"Unknown provider: {provider}")
 
