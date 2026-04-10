@@ -14,6 +14,7 @@ from core.config import (
 from core.persistence import load_users, record_trade_result, get_governance_config, get_market_panic_score, _get_redis
 from core.wallet import load_keypair, get_sol_balance, get_token_balances
 from exchanges.jupiter import get_quote, execute_swap
+from exchanges import gmgn as _gmgn
 from scalper import check_scalp_signals, SCALP_TOKENS
 
 logging.basicConfig(
@@ -95,23 +96,60 @@ async def _notify_admin(bot, text: str) -> None:
             logger.debug(f"Admin notify failed for {admin_id}: {e}")
 
 async def execute_trade(keypair, action, input_mint, output_mint, amount_raw):
-    """Executes a buy/sell securely via Jupiter."""
+    """Executes a buy/sell via Jupiter (primary) → GMGN (fallback)."""
+    # ── Primary: Jupiter ──────────────────────────────────────────────────────
     quote = await get_quote(input_mint, output_mint, amount_raw, slippage_bps=150)
-    if not quote:
-        logger.error(f"[{action}] No quote received for {input_mint} -> {output_mint}.")
-        return None, 0.0, "no_quote"
-    
-    out_amount = int(quote.get("outAmount", 0))
-    if out_amount == 0:
-        return None, 0.0, "zero_out_amount"
-
-    sig, err = await execute_swap(keypair, quote)
-    if sig:
-        logger.info(f"[{action}] Swap Success! Signature: {sig}")
-        return sig, out_amount, ""
+    if quote:
+        out_amount = int(quote.get("outAmount", 0))
+        if out_amount > 0:
+            sig, err = await execute_swap(keypair, quote)
+            if sig:
+                logger.info(f"[{action}] Jupiter swap OK: {sig}")
+                return sig, out_amount, ""
+            logger.warning(f"[{action}] Jupiter failed: {err} — trying GMGN fallback")
+        else:
+            logger.warning(f"[{action}] Jupiter zero outAmount — trying GMGN fallback")
     else:
-        logger.error(f"[{action}] Swap Failed: {err}")
-        return None, 0.0, f"swap_failed:{str(err)[:120]}"
+        logger.warning(f"[{action}] Jupiter no quote — trying GMGN fallback")
+
+    # ── Fallback: GMGN ────────────────────────────────────────────────────────
+    if _gmgn.is_configured():
+        try:
+            from core.config import GMGN_WALLET_ADDRESS
+            from_addr = GMGN_WALLET_ADDRESS
+            if not from_addr:
+                logger.warning(f"[{action}] GMGN_WALLET_ADDRESS not set — skip GMGN")
+                return None, 0.0, "gmgn_wallet_not_set"
+            loop = asyncio.get_event_loop()
+            order = await loop.run_in_executor(
+                None,
+                lambda: _gmgn.swap(
+                    from_address=from_addr,
+                    input_token=input_mint,
+                    output_token=output_mint,
+                    input_amount=str(amount_raw),
+                    slippage=0.05,
+                    chain="sol",
+                    is_anti_mev=True,
+                ),
+            )
+            order_id = order.get("order_id", "")
+            status = order.get("status", "unknown")
+            tx_hash = order.get("hash", "")
+            if status in ("pending", "processed", "confirmed"):
+                logger.info(f"[{action}] GMGN swap OK: order={order_id} status={status}")
+                # Poll until confirmed (max 45s)
+                final = await loop.run_in_executor(
+                    None,
+                    lambda: _gmgn.wait_for_confirmation(order_id, "sol", timeout_sec=45),
+                )
+                return tx_hash or order_id, 0, ""
+            else:
+                logger.error(f"[{action}] GMGN swap rejected: {order}")
+        except Exception as e:
+            logger.error(f"[{action}] GMGN fallback error: {e}")
+
+    return None, 0.0, "both_jupiter_and_gmgn_failed"
 
 async def security_audit(mint: str) -> bool:
     """
