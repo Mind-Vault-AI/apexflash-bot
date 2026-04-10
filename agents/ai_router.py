@@ -5,10 +5,12 @@ Central routing layer: picks the best available FREE AI model per job type.
 All agents call `complete(job, prompt)` — never touch providers directly.
 
 Providers (all free-tier / keys already on Render):
-  - Gemini     : google.generativeai (free tier via Google AI Studio)
-  - DeepSeek   : api.deepseek.com  (OpenAI-compat, free tier 6M tok/day)
-  - Nebius     : api.studio.nebius.com/v1 (OpenAI-compat, free, open models)
   - Groq       : api.groq.com/openai/v1  (OpenAI-compat, free, ultra-fast)
+  - Cerebras   : api.cerebras.ai/v1       (OpenAI-compat, ultra-fast inference)
+  - Gemini     : google.generativeai (free tier via Google AI Studio)
+  - OpenRouter : openrouter.ai/api/v1    (free models: deepseek-r1, llama-3.3)
+  - Nebius     : api.studio.nebius.com/v1 (OpenAI-compat, free, open models)
+  - DeepSeek   : api.deepseek.com  (OpenAI-compat, free tier 6M tok/day)
 
 Job types → priority chains:
   ADVISOR    : trade coaching / psychological analysis  → fast + smart
@@ -36,6 +38,7 @@ _DEEPSEEK_KEY    = os.getenv("DEEPSEEK_API_KEY", "").strip()
 _NEBIUS_KEY      = os.getenv("NEBIUS_API_KEY", "").strip()
 _GROQ_KEY        = os.getenv("GROQ_API_KEY", "").strip()
 _OPENROUTER_KEY  = os.getenv("OPENROUTER_API_KEY", "").strip()
+_CEREBRAS_KEY    = os.getenv("CEREBRAS_API_KEY", "").strip()
 
 if _GEMINI_KEY:
     genai.configure(api_key=_GEMINI_KEY)
@@ -44,26 +47,27 @@ if _GEMINI_KEY:
 # Each entry: (model_id, provider_tag, max_tokens)
 # Priority order: Groq (fast+free) → Gemini (smart) → OpenRouter (free models) → Nebius → DeepSeek
 MODELS = {
-    "groq-llama":      ("llama-3.3-70b-versatile",                          "groq",       800),
-    "groq-fast":       ("llama-3.1-8b-instant",                             "groq",       800),
-    "gemini-flash":    ("models/gemini-2.0-flash",                          "gemini",     800),
-    "gemini-flash-15": ("models/gemini-1.5-flash-latest",                   "gemini",     800),
-    "openrouter-ds":   ("deepseek/deepseek-r1:free",                        "openrouter", 800),
-    "openrouter-llama":("meta-llama/llama-3.3-70b-instruct:free",           "openrouter", 800),
-    "nebius-llama":    ("meta-llama/Meta-Llama-3.1-70B-Instruct",           "nebius",     800),
-    "nebius-mistral":  ("mistralai/Mistral-Nemo-Instruct-2407",             "nebius",     800),
-    "deepseek":        ("deepseek-chat",                                     "deepseek",   800),
+    "groq-llama":       ("llama-3.3-70b-versatile",                          "groq",       800),
+    "groq-fast":        ("llama-3.1-8b-instant",                             "groq",       800),
+    "cerebras-llama":   ("llama-3.3-70b",                                    "cerebras",   800),
+    "gemini-flash":     ("models/gemini-2.0-flash",                          "gemini",     800),
+    "gemini-flash-15":  ("models/gemini-1.5-flash-latest",                   "gemini",     800),
+    "openrouter-ds":    ("deepseek/deepseek-r1:free",                        "openrouter", 800),
+    "openrouter-llama": ("meta-llama/llama-3.3-70b-instruct:free",           "openrouter", 800),
+    "nebius-llama":     ("meta-llama/Meta-Llama-3.1-70B-Instruct",           "nebius",     800),
+    "nebius-mistral":   ("mistralai/Mistral-Nemo-Instruct-2407",             "nebius",     800),
+    "deepseek":         ("deepseek-chat",                                     "deepseek",   800),
 }
 
 # Job → ordered list of model keys
 # Groq first: free, 14400 req/day, ultra-fast. Gemini when key is valid.
 JOB_CHAINS: Dict[str, List[str]] = {
-    "ADVISOR":    ["groq-llama",   "gemini-flash",    "openrouter-ds",    "nebius-llama",   "deepseek"],
-    "CEO":        ["groq-llama",   "openrouter-ds",   "gemini-flash",     "nebius-llama",   "deepseek"],
-    "NEWS":       ["groq-fast",    "groq-llama",      "gemini-flash",     "openrouter-llama","nebius-mistral"],
-    "MARKETING":  ["groq-llama",   "gemini-flash-15", "openrouter-llama", "nebius-llama",   "deepseek"],
-    "CONVERSION": ["groq-fast",    "gemini-flash-15", "openrouter-llama", "nebius-mistral", "deepseek"],
-    "GENERIC":    ["groq-llama",   "gemini-flash",    "openrouter-ds",    "nebius-llama",   "deepseek"],
+    "ADVISOR":    ["groq-llama",  "cerebras-llama",  "gemini-flash",    "openrouter-ds",     "nebius-llama",   "deepseek"],
+    "CEO":        ["groq-llama",  "cerebras-llama",  "openrouter-ds",   "gemini-flash",      "nebius-llama",   "deepseek"],
+    "NEWS":       ["groq-fast",   "cerebras-llama",  "groq-llama",      "gemini-flash",      "openrouter-llama","nebius-mistral"],
+    "MARKETING":  ["groq-llama",  "cerebras-llama",  "gemini-flash-15", "openrouter-llama",  "nebius-llama",   "deepseek"],
+    "CONVERSION": ["groq-fast",   "cerebras-llama",  "gemini-flash-15", "openrouter-llama",  "nebius-mistral", "deepseek"],
+    "GENERIC":    ["groq-llama",  "cerebras-llama",  "gemini-flash",    "openrouter-ds",     "nebius-llama",   "deepseek"],
 }
 
 # Per-model cooldown tracking (blocked until timestamp)
@@ -111,6 +115,7 @@ def _key_present(provider: str) -> bool:
         "nebius":     bool(_NEBIUS_KEY),
         "groq":       bool(_GROQ_KEY),
         "openrouter": bool(_OPENROUTER_KEY),
+        "cerebras":   bool(_CEREBRAS_KEY),
     }.get(provider, False)
 
 
@@ -172,6 +177,10 @@ async def _call_model(model_key: str, prompt: str) -> str:
     elif provider == "openrouter":
         return await _call_openai_compat(
             "https://openrouter.ai/api/v1", _OPENROUTER_KEY, model_id, prompt, max_tokens
+        )
+    elif provider == "cerebras":
+        return await _call_openai_compat(
+            "https://api.cerebras.ai/v1", _CEREBRAS_KEY, model_id, prompt, max_tokens
         )
     raise ValueError(f"Unknown provider: {provider}")
 
