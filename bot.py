@@ -8848,19 +8848,43 @@ def main() -> None:
         name="runtime_integrity",
     )
 
-    # Advisor runtime watchdog — checks Gemini health every 30 min and only alerts on state changes
+    # Advisor runtime watchdog — checks AI health every 30 min and only alerts on state changes
     advisor_probe_last_ok = RUNTIME_HEALTH.get("advisor_ok")
+    _gemini_key_invalid_alerted = False  # send only once per boot until key is fixed
 
     async def advisor_watchdog_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-        nonlocal advisor_probe_last_ok
+        nonlocal advisor_probe_last_ok, _gemini_key_invalid_alerted
         try:
             from agents.advisor_agent import advisor_live_probe
             probe = await advisor_live_probe()
             current_ok = bool(probe.get("ok"))
+            reason_str = str(probe.get("reason") or "")
+
+            # Immediate alert if Gemini key is permanently invalid (API_KEY_INVALID)
+            # This is distinct from transient failures — requires human action.
+            if "API_KEY_INVALID" in reason_str and not _gemini_key_invalid_alerted:
+                _gemini_key_invalid_alerted = True
+                key_alert = (
+                    "🔑 *ACTIE VEREIST — Gemini API key INVALIDE*\n"
+                    "━━━━━━━━━━━━━━━━━━━━━\n"
+                    "Google weigert de key. Bot draait nu op *DeepSeek fallback*.\n\n"
+                    "Fix:\n"
+                    "1. Ga naar aistudio.google.com/apikey\n"
+                    "2. Maak nieuwe key aan\n"
+                    "3. Update `MASTER_ENV_APEXFLASH.txt` + `sync_render_env.py:66`\n"
+                    "4. Run: `python sync_render_env.py`"
+                )
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await context.bot.send_message(chat_id=admin_id, text=key_alert, parse_mode="Markdown")
+                    except Exception:
+                        pass
+            elif "API_KEY_INVALID" not in reason_str:
+                _gemini_key_invalid_alerted = False  # reset if key becomes valid again
             RUNTIME_HEALTH["last_watchdog_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
             RUNTIME_HEALTH["advisor_ok"] = current_ok
-            RUNTIME_HEALTH["advisor_reason"] = str(probe.get("reason") or "")
+            RUNTIME_HEALTH["advisor_reason"] = reason_str
             RUNTIME_HEALTH["advisor_model"] = str(probe.get("model") or "")
             RUNTIME_HEALTH["advisor_checks_total"] = int(RUNTIME_HEALTH.get("advisor_checks_total", 0)) + 1
             if current_ok:
