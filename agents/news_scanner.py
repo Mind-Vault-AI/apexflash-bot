@@ -258,11 +258,11 @@ async def analyze_impact_with_ai(headlines: list[str]) -> tuple[int, str]:
     Use Gemini 2.0 Flash to analyze headlines for Institutional / Market Impact.
     Returns (panic_score 0-100, label).
     """
-    if not GEMINI_API_KEY or not headlines:
+    if not headlines:
         return 0, "neutral"
-        
+
     try:
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        from agents.ai_router import complete
         prompt = (
             "Analyze these crypto/geopolitical headlines. "
             "Identify Grade S (Statistically Significant) institutional moves. "
@@ -270,12 +270,15 @@ async def analyze_impact_with_ai(headlines: list[str]) -> tuple[int, str]:
             "Grade S examples: Blackrock ETF approval, Fed Interest Rate Cut, Institutional Custody launch.\n\n"
             + "\n".join(headlines[:15])
         )
-        response = await model.generate_content_async(prompt)
-        text = response.text.replace('```json', '').replace('```', '').strip()
+        text, model_used, err = await complete("NEWS", prompt)
+        if not text:
+            logger.error(f"AI Router NEWS failed: {err}")
+            return 0, "neutral"
+        text = text.replace('```json', '').replace('```', '').strip()
         data = json.loads(text)
         return data.get('score', 0), data.get('sentiment', 'neutral')
     except Exception as e:
-        logger.error(f"Gemini Alpha AI failed: {e}")
+        logger.error(f"AI Router NEWS failed: {e}")
         return 0, "neutral"
 
 

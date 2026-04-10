@@ -168,12 +168,9 @@ async def _try_deepseek(prompt: str) -> Tuple[Optional[str], Optional[str], Opti
 
 
 async def _try_ai(prompt: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """Try Gemini first, fall back to DeepSeek on failure."""
-    text, model, reason = await _try_gemini(prompt)
-    if text:
-        return text, model, reason
-    logger.warning("Gemini unavailable (%s), trying DeepSeek fallback.", reason)
-    return await _try_deepseek(prompt)
+    """Route via central AI Router (ADVISOR job chain)."""
+    from agents.ai_router import complete
+    return await complete("ADVISOR", prompt)
 
 
 async def advisor_live_probe() -> dict:

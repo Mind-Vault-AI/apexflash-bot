@@ -7296,6 +7296,50 @@ async def cmd_autotrade_test_off(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text("✅ *Autotrade Test Mode: OFF*", parse_mode="Markdown")
 
 
+async def cmd_ai_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: AI Router dashboard — shows all free model health & routing."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    await update.message.reply_text("🔄 Probing all AI models... (~10s)", parse_mode="Markdown")
+
+    try:
+        from agents.ai_router import get_health_snapshot, probe_all, JOB_CHAINS
+        probe_results = await probe_all()
+        health = get_health_snapshot()
+
+        lines = ["🤖 *AI Router Dashboard*\n━━━━━━━━━━━━━━━━━━━━━\n"]
+
+        for key, info in health.items():
+            probe_ok = probe_results.get(key)
+            if probe_ok is None:
+                status = "⚫ no key"
+            elif probe_ok:
+                status = "✅ online"
+            else:
+                status = "🔴 failed"
+
+            blocked = f" ⏳{info['blocked_secs']}s" if info["blocked_secs"] > 0 else ""
+            calls = info["calls"]
+            ok = info["ok"]
+            sla = f"{ok}/{calls}" if calls else "-"
+            lines.append(
+                f"`{key:<16}` {status}{blocked}\n"
+                f"  _{info['model']}_\n"
+                f"  SLA: `{sla}` | Provider: `{info['provider']}`\n"
+            )
+
+        lines.append("\n*Job → Active Chain*\n")
+        for job, chain in JOB_CHAINS.items():
+            lines.append(f"`{job:<12}` → {' → '.join(chain)}\n")
+
+        await update.message.reply_text("".join(lines), parse_mode="Markdown")
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ AI Status error: `{e}`", parse_mode="Markdown")
+
+
 async def cmd_qa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin-only lean QA summary: integrity + watchdog + autotrade readiness."""
     if not is_admin(update.effective_user.id):
@@ -8527,6 +8571,7 @@ def main() -> None:
     app.add_handler(CommandHandler("autotrade_diag", cmd_autotrade_diag))
     app.add_handler(CommandHandler("autotrade_test_on", cmd_autotrade_test_on))
     app.add_handler(CommandHandler("autotrade_test_off", cmd_autotrade_test_off))
+    app.add_handler(CommandHandler("ai_status", cmd_ai_status))
     app.add_handler(CommandHandler("qa", cmd_qa))
     app.add_handler(CommandHandler("smoke", cmd_smoke))
     app.add_handler(CommandHandler("sla", cmd_sla))
