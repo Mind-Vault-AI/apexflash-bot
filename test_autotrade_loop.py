@@ -14,7 +14,6 @@ This is the LIVE brain - if this works, bot works.
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 import sys
 
 logging.basicConfig(
@@ -28,14 +27,14 @@ async def test_autotrade_loop():
     
     try:
         # Import bot components
-        from core.config import ADMIN_IDS, AUTONOMOUS_COOLDOWN
+        from core.config import ADMIN_IDS
         from core.persistence import load_users, _get_redis
         from zero_loss_manager import auto_trader_loop, AUTOTRADE_STATE
-        
+
         logger.info("✅ Imports successful")
-        
+
         # Check prerequisites
-        redis = _get_redis()
+        _get_redis()
         users = load_users()
         
         if not users:
@@ -53,34 +52,34 @@ async def test_autotrade_loop():
             logger.error("❌ Admin wallet secret not encrypted in Redis")
             return False
         
-        logger.info(f"✅ Admin user configured: {admin_id}")
-        logger.info(f"   Wallet pubkey: {str(admin_user.get('wallet_pubkey', ''))[:16]}...")
-        
+        logger.info("✅ Admin user configured: %s", admin_id)
+        logger.info("   Wallet pubkey: %s...", str(admin_user.get('wallet_pubkey', ''))[:16])
+
         # Start the loop in background (will run until we cancel)
         logger.info("🚀 Starting auto_trader_loop in background...")
         task = asyncio.create_task(auto_trader_loop(bot=None))
-        
+
         # Let it run for 2 cycles (2 * 45 seconds)
-        logger.info(f"⏱️  Waiting {2 * 45}s for 2 cycles...")
-        
+        logger.info("⏱️  Waiting %ss for 2 cycles...", 2 * 45)
+
         for cycle in range(2):
             await asyncio.sleep(45)
-            logger.info(f"  Cycle {cycle + 1} state: {AUTOTRADE_STATE}")
+            logger.info("  Cycle %s state: %s", cycle + 1, AUTOTRADE_STATE)
             
             if "loop_error" in AUTOTRADE_STATE.get("last_reason", ""):
-                logger.error(f"❌ Loop error: {AUTOTRADE_STATE['last_reason']}")
+                logger.error("❌ Loop error: %s", AUTOTRADE_STATE['last_reason'])
                 task.cancel()
                 return False
-        
+
         # Cancel the task
         task.cancel()
         try:
             await task
         except asyncio.CancelledError:
             pass
-        
+
         logger.info("✅ Auto-trader loop ran 2 cycles without crash")
-        logger.info(f"Final state: {AUTOTRADE_STATE}")
+        logger.info("Final state: %s", AUTOTRADE_STATE)
         
         # Summary
         print(f"""
@@ -104,8 +103,8 @@ Positions active: {AUTOTRADE_STATE.get('candidates')}
     except asyncio.CancelledError:
         logger.info("✅ Test completed (task cancelled as expected)")
         return True
-    except Exception as e:
-        logger.error(f"❌ Test failed: {e}", exc_info=True)
+    except (ValueError, KeyError, RuntimeError) as e:
+        logger.error("❌ Test failed: %s", e, exc_info=True)
         return False
 
 if __name__ == "__main__":

@@ -9,7 +9,6 @@ Small amount (0.001 SOL ≈ €0.09) for safety.
 import asyncio
 import logging
 import sys
-from datetime import datetime
 
 # Setup logging
 logging.basicConfig(
@@ -22,49 +21,49 @@ async def test_trade_flow():
     """Test BUY → SELL flow with logging verification."""
     
     try:
-        from core.config import SOL_MINT, HELIUS_API_KEY, HELIUS_RPC_URL
-        from core.wallet import load_keypair, get_sol_balance, get_token_balances
+        from core.config import SOL_MINT
+        from core.wallet import load_keypair, get_sol_balance
         from core.persistence import _get_redis, load_users
-        from exchanges.jupiter import get_quote, execute_swap
+        from exchanges.jupiter import get_quote
         from agents.trade_journal import log_signal, get_pdca_report
-        
+
         logger.info("✅ Imports successful")
-        
+
         # 1. Load wallet
-        redis = _get_redis()
+        _get_redis()
         users = load_users()
-        
+
         if not users:
             logger.error("❌ No users in Redis. Run /start in Telegram bot first.")
             return False
-        
+
         admin_id = list(users.keys())[0]
         admin_user = users[admin_id] if isinstance(users[admin_id], dict) else users.get(str(admin_id))
-        
+
         if not admin_user or not admin_user.get("wallet_secret_enc"):
             logger.error("❌ Admin wallet not configured")
             return False
-        
-        keypair = load_keypair(admin_user["wallet_secret_enc"])
+
+        load_keypair(admin_user["wallet_secret_enc"])
         sol_balance = await get_sol_balance(str(admin_user.get("wallet_pubkey", "")))
         
-        logger.info(f"✅ Wallet loaded | SOL balance: {sol_balance:.4f}")
-        
+        logger.info("✅ Wallet loaded | SOL balance: %.4f", sol_balance)
+
         # 2. Test quote for small amount (0.001 SOL)
         test_amount_raw = int(0.001 * 1e9)  # 0.001 SOL in lamports
         test_mint = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"  # BONK (correct mint from SCALP_TOKENS)
-        
-        logger.info(f"📊 Testing quote: {test_amount_raw / 1e9:.6f} SOL → BONK")
+
+        logger.info("📊 Testing quote: %.6f SOL → BONK", test_amount_raw / 1e9)
         
         quote = await get_quote(SOL_MINT, test_mint, test_amount_raw, slippage_bps=150)
         
         if not quote:
             logger.error("❌ No quote from Jupiter")
             return False
-        
+
         out_amount = int(quote.get("outAmount", 0))
-        logger.info(f"✅ Quote received | Output: {out_amount / 1e5:.0f} BONK")
-        
+        logger.info("✅ Quote received | Output: %.0f BONK", out_amount / 1e5)
+
         # 3. Log signal (journal entry)
         sig = {
             "grade": "TEST",
@@ -74,29 +73,29 @@ async def test_trade_flow():
             "source": "test_execution",
             "volume": 1000000,
         }
-        
+
         entry_id = log_signal(sig)
-        logger.info(f"🔍 Journal entry created: {entry_id}")
-        
+        logger.info("🔍 Journal entry created: %s", entry_id)
+
         # Verify logged in Redis
-        if entry_id and redis:
-            stored = redis.get(f"journal:signal:{entry_id}")
+        if entry_id:
+            stored = _get_redis().get(f"journal:signal:{entry_id}")
             if stored:
-                logger.info(f"✅ Journal record verified in Redis")
+                logger.info("✅ Journal record verified in Redis")
             else:
-                logger.warning(f"⚠️  Journal record not immediately found (async lag)")
-        
+                logger.warning("⚠️  Journal record not immediately found (async lag)")
+
         # 4. Check PDCA report (verifies signal tracking works)
         report = get_pdca_report(days=1)
-        logger.info(f"PDCA Report:\n{report}")
+        logger.info("PDCA Report:\n%s", report)
         
         logger.warning("⚠️  SIMULATED: Actual trade not executed (safety)")
         logger.info("✅ TEST 3 PASSED: Trade execution path verified")
-        
+
         return True
-        
-    except Exception as e:
-        logger.error(f"❌ Test failed: {e}", exc_info=True)
+
+    except (ValueError, KeyError, RuntimeError) as e:
+        logger.error("❌ Test failed: %s", e, exc_info=True)
         return False
 
 if __name__ == "__main__":

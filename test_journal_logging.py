@@ -11,7 +11,6 @@ Verify that SELL orders capture:
 """
 
 import json
-from datetime import datetime, timedelta, timezone
 
 async def test_journal_completeness():
     """Inspect actual trade journal entries in Redis."""
@@ -45,8 +44,7 @@ async def test_journal_completeness():
                 
                 # Check completeness
                 required_fields = ['id', 'grade', 'symbol', 'entry_price', 'timestamp']
-                optional_fields = ['price_1h', 'exit_price', 'pnl_pct', 'pnl_usd', 'outcome']
-                
+
                 missing = [f for f in required_fields if f not in record or record[f] is None]
                 
                 if not missing:
@@ -58,23 +56,23 @@ async def test_journal_completeness():
                         'missing': missing,
                         'record': record
                     })
-            
+
             if cursor == 0:
                 break
-        
-        print(f"\n📊 Journal Stats:")
+
+        print("\n📊 Journal Stats:")
         print(f"  Total entries found: {entries_found}")
         print(f"  Entries complete: {entries_complete} ({100*entries_complete//max(1,entries_found)}%)")
         print(f"  Entries incomplete: {len(entries_incomplete)}")
         
         if entries_incomplete:
-            print(f"\n⚠️  Sample incomplete entries:")
+            print("\n⚠️  Sample incomplete entries:")
             for entry in entries_incomplete[:3]:
                 print(f"  - ID: {entry['id']} | Symbol: {entry['symbol']} | Missing: {entry['missing']}")
                 print(f"    Record: {entry['record']}")
-        
+
         # Check daily aggregates
-        print(f"\n📈 Daily aggregates:")
+        print("\n📈 Daily aggregates:")
         cursor = 0
         daily_keys = []
         while True:
@@ -92,8 +90,8 @@ async def test_journal_completeness():
                 print(f"  {key.decode() if isinstance(key, bytes) else key}: {total} signals | {wins}W/{losses}L")
         
         return entries_complete == entries_found
-        
-    except Exception as e:
+
+    except (ValueError, KeyError, RuntimeError) as e:
         print(f"❌ Test failed: {e}", exc_info=True)
         return False
 
