@@ -8,6 +8,7 @@
 ## LIVE STATE
 - Render service: srv-d6kcjbpaae7s73aadsu0
 - Version: v3.23.1
+- Global release: R2026.04.11.01
 - Keys on Render: 74
 
 ## WAT WERKT
