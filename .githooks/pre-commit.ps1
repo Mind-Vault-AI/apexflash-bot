@@ -38,7 +38,7 @@ $exempt = @(
     '^docs/'
 )
 
-function Test-IsExempt([string]$path) {
+function Test-ExemptPath([string]$path) {
     foreach ($p in $exempt) {
         if ($path -match $p) { return $true }
     }
@@ -48,7 +48,7 @@ function Test-IsExempt([string]$path) {
 $versionStaged = $normalized -contains "VERSION"
 $requiresVersion = $false
 foreach ($f in $normalized) {
-    if (-not (Test-IsExempt $f)) {
+    if (-not (Test-ExemptPath $f)) {
         $requiresVersion = $true
         break
     }
