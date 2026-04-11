@@ -9537,7 +9537,7 @@ def main() -> None:
             logger.info("📊 PDCA Trade Journal: outcome checker STARTED")
 
             async def _whale_signal_to_telegram(sig: dict):
-                """Forward whale signals to @ApexFlashAlerts channel + journal."""
+                """Forward whale signals to @ApexFlashAlerts channel + journal + Twitter."""
                 # Log to PDCA journal (async-safe: log_signal is sync)
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, lambda: journal_log(sig))
@@ -9563,6 +9563,18 @@ def main() -> None:
                                 pass
                 except Exception as e:
                     logger.error(f"Whale Telegram dispatch error: {e}")
+
+                # Auto-post Grade A/S signals to Twitter/X
+                if TWITTER_ENABLED and TWITTER_API_KEY and sig.get("grade") in ("A", "S"):
+                    try:
+                        from agents.twitter_poster import post_whale_signal_tweet
+                        await post_whale_signal_tweet(
+                            TWITTER_API_KEY, TWITTER_API_SECRET,
+                            TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET,
+                            sig,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Whale Twitter post error (non-critical): {e}")
 
             register_signal_callback(_whale_signal_to_telegram)
             asyncio.ensure_future(whale_scan_loop())

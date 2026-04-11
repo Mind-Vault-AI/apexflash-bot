@@ -577,6 +577,98 @@ def get_stats_text() -> str:
 
 
 # ══════════════════════════════════════════════
+# WHALE SIGNAL TWEETS (Grade A/S auto-post)
+# ══════════════════════════════════════════════
+
+BOT_LINK = "t.me/ApexFlashBot"
+
+def _format_whale_tweet(sig: dict) -> str:
+    """Format a whale signal dict into a ≤280-char tweet."""
+    grade = sig.get("grade", "A")
+    symbol = sig.get("symbol", "???")
+    chg_1h = sig.get("chg_1h", 0)
+    volume = sig.get("volume", 0)
+    smart = sig.get("smart_degens", 0)
+    price = sig.get("price", 0)
+
+    grade_emoji = "🚨" if grade == "S" else "🔥"
+    vol_str = f"${volume / 1000:.0f}K" if volume >= 1000 else f"${volume:.0f}"
+
+    lines = [
+        f"{grade_emoji} GRADE {grade} WHALE SIGNAL — ${symbol}",
+        f"📈 {chg_1h:+.1f}% 1h | Vol {vol_str}",
+        f"🧠 {smart} smart wallet{'s' if smart != 1 else ''} converging",
+        f"",
+        f"AI-graded by ApexFlash",
+        f"Get alerts → {BOT_LINK}",
+        f"",
+        f"#Solana #WhaleAlert #CryptoTrading",
+    ]
+    tweet = "\n".join(lines)
+    # Truncate symbol name if tweet exceeds 280 chars
+    if len(tweet) > 280:
+        tweet = tweet[:277] + "..."
+    return tweet
+
+
+async def post_whale_signal_tweet(
+    api_key: str,
+    api_secret: str,
+    access_token: str,
+    access_secret: str,
+    signal: dict,
+) -> bool:
+    """Post a whale signal (Grade A or S) to Twitter/X.
+
+    Only posts Grade A and S — Grade B is too noisy for public feed.
+    Tracks in tweet_history for analytics.
+    """
+    if not TWEEPY_AVAILABLE:
+        return False
+
+    grade = signal.get("grade", "B")
+    if grade not in ("A", "S"):
+        return False
+
+    if not all([api_key, api_secret, access_token, access_secret]):
+        logger.warning("Twitter keys not configured — skipping whale signal tweet")
+        return False
+
+    try:
+        text = _format_whale_tweet(signal)
+        client = _get_client(api_key, api_secret, access_token, access_secret)
+        if not client:
+            return False
+
+        response = client.create_tweet(text=text)
+        if response and response.data:
+            tweet_id = str(response.data.get("id", "unknown"))
+            cat = f"whale_{grade.lower()}"
+            logger.info(f"Whale {grade} tweet posted: https://x.com/MindVault_ai/status/{tweet_id}")
+            tweet_history.append({
+                "id": tweet_id,
+                "cat": cat,
+                "text": text,
+                "ts": datetime.now(timezone.utc),
+                "metrics": None,
+            })
+            while len(tweet_history) > 100:
+                tweet_history.pop(0)
+            return True
+        return False
+
+    except tweepy.TooManyRequests:
+        logger.warning("Twitter rate limit — skipping whale signal tweet")
+        return False
+    except tweepy.Forbidden as e:
+        logger.error(f"Twitter 403 on whale signal tweet: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Whale signal tweet error: {e}")
+        return False
+
+
+# ══════════════════════════════════════════════
 # POSTING
 # ══════════════════════════════════════════════
 
