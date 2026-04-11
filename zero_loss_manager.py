@@ -68,6 +68,31 @@ def _is_autotrade_enabled() -> bool:
         return True
 
 
+def _enforce_risk_limits(admin_id: int, trade_amount_sol: float, symbol: str) -> tuple[bool, str]:
+    """
+    Check if trade respects risk limits.
+    Returns: (allowed: bool, reason: str)
+    """
+    from core.config import MAX_TRADE_SOL, MAX_DAILY_TRADES
+    from core.persistence import get_daily_trade_count
+    
+    # 1. Max single trade check
+    if trade_amount_sol > MAX_TRADE_SOL:
+        return False, f"exceeds_max_single_trade ({trade_amount_sol} > {MAX_TRADE_SOL})"
+    
+    # 2. Daily trade limit check
+    daily_count = get_daily_trade_count(admin_id) if hasattr(__import__('core.persistence'), 'get_daily_trade_count') else 0
+    if daily_count >= MAX_DAILY_TRADES:
+        return False, f"daily_trade_limit_reached ({daily_count} >= {MAX_DAILY_TRADES})"
+    
+    # 3. Check drawdown (via panic score as proxy)
+    panic = get_market_panic_score()
+    if panic >= 85:
+        return False, f"market_panic_too_high ({panic})"
+    
+    return True, "pass"
+
+
 def _resolve_mint(symbol: str) -> str:
     """Resolve symbol -> mint across flat or chain-grouped SCALP_TOKENS structures."""
     try:
@@ -237,6 +262,16 @@ async def position_manager(keypair, symbol, mint, bot=None):
                 pos['sl_price'] = pos['entry_price'] * 1.001
                 save_active_positions(active_positions)
                 await _notify_admin(bot, f"🔒 *BREAKEVEN LOCK* — {symbol}\nRisk = ZERO ✅")
+
+            # 2.5 MAX HOLD TIME — Force exit if position > 4 hours
+            pos_age_sec = int(time.time()) - pos.get("created_at", int(time.time()))
+            max_hold_sec = 4 * 3600  # 4 hours
+            if pos_age_sec > max_hold_sec and pnl < tp_pct:
+                logger.warning(f"⏰ MAX HOLD TIME EXCEEDED: {symbol} ({pos_age_sec/3600:.1f}h)")
+                sig, _, _ = await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
+                record_trade_result(ADMIN_IDS[0], symbol, pnl, pnl * orig_sol / 100)
+                await _notify_admin(bot, f"⏰ *MAX HOLD EXIT* — {symbol}\nHeld: {pos_age_sec/3600:.1f}h | PNL: {pnl:+.2f}%\nTx: `{sig or 'failed'}`")
+                break
 
             # 3. Stop Loss
             curr_price = pos['entry_price'] * (1 + (pnl/100))
@@ -408,6 +443,14 @@ async def auto_trader_loop(bot=None):
                     prefix = "🐋 WHALE ENTRY" if is_whale else "⚡ ENTRY"
                     logger.info(f"{prefix} DETECTED: {sym}")
                     mint = _resolve_mint(sym)
+                    
+                    # ── RISK CHECK before BUY ────────────────────────────────
+                    allowed, risk_reason = _enforce_risk_limits(admin_id, trade_sol, sym)
+                    if not allowed:
+                        logger.warning(f"🛡️ RISK BLOCKED: {sym} — {risk_reason}")
+                        AUTOTRADE_STATE["last_reason"] = f"risk_blocked:{risk_reason}"
+                        continue
+                    
                     sig, out_tokens, entry_err = await execute_trade(keypair, "BUY", SOL_MINT, mint, int(trade_sol * 1e9))
                     
                     if sig and out_tokens > 0:
@@ -416,7 +459,8 @@ async def auto_trader_loop(bot=None):
                             "entry_sol": trade_sol,
                             "amount": out_tokens,
                             "sl_price": s['price'] * (1 - (gov.get('sl_pct', STOP_LOSS_PCT)/100)),
-                            "tp_price": s['price'] * (1 + (gov.get('tp_pct', TAKE_PROFIT_PCT)/100))
+                            "tp_price": s['price'] * (1 + (gov.get('tp_pct', TAKE_PROFIT_PCT)/100)),
+                            "created_at": int(time.time()),  # Track entry time for max hold enforcement
                         }
                         save_active_positions(active_positions)
                         await _notify_admin(bot, f"⚡ *ZERO-LOSS BUY* — {sym}\nAmt: *{trade_sol:.4f} SOL*\nTx: `{sig}`")
