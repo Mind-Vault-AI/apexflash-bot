@@ -29,9 +29,9 @@ async def generate_opportunity_report(user_id: int, user_lang: str = "en") -> st
         summary += f"- {s['type']} on ${s['token']} (+{s['pnl']}%)\n"
         total_pnl += s['pnl']
 
-    # 2. AI Persuasion (Gemini 2.0)
+    # 2. AI Persuasion via router
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        from agents.ai_router import complete
         prompt = (
             f"You are the ApexFlash AI Growth Advisor. Write a short, professional, and high-impact "
             f"personal report for a user who is currently on the FREE tier.\n"
@@ -43,8 +43,10 @@ async def generate_opportunity_report(user_id: int, user_lang: str = "en") -> st
             f"Highlight that institutional-tier tools pay for themselves. "
             f"Keep it under 300 characters. End with an invitation to use /upgrade."
         )
-        response = await asyncio.to_thread(model.generate_content, prompt)
-        ai_msg = response.text.strip()
+        ai_text, model_used, err = await complete("CONVERSION", prompt)
+        ai_msg = ai_text.strip() if ai_text else None
+        if not ai_msg:
+            raise ValueError(err or "empty")
         
         header = f"📉 *OPPORTUNITY REPORT (24H)*\n\n"
         footer = f"\n\n🚀 _ApexFlash v{VERSION} — Don't Trade Blind._"

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ApexFlash Growth Tracker — Fase 1</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0e17; color: #e2e8f0; padding: 20px; }
+  h1 { text-align: center; font-size: 1.8em; margin-bottom: 5px; background: linear-gradient(135deg, #f59e0b, #ef4444); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .subtitle { text-align: center; color: #64748b; margin-bottom: 30px; font-size: 0.9em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; margin-bottom: 30px; }
+  .kpi { background: #1e293b; border-radius: 12px; padding: 18px; text-align: center; border: 1px solid #334155; }
+  .kpi .value { font-size: 2em; font-weight: 700; color: #f59e0b; }
+  .kpi .label { font-size: 0.8em; color: #94a3b8; margin-top: 4px; }
+  .kpi.green .value { color: #22c55e; }
+  .kpi.red .value { color: #ef4444; }
+  .chart-box { background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #334155; }
+  .chart-box h2 { font-size: 1.1em; margin-bottom: 15px; color: #f8fafc; }
+  .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 768px) { .charts-row { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85em; }
+  th, td { padding: 8px 12px; text-align: right; border-bottom: 1px solid #334155; }
+  th { color: #94a3b8; font-weight: 600; }
+  td:first-child, th:first-child { text-align: left; }
+  .positive { color: #22c55e; }
+  .negative { color: #ef4444; }
+  .instructions { background: #1e293b; border-radius: 12px; padding: 20px; margin-top: 20px; border: 1px solid #334155; font-size: 0.85em; color: #94a3b8; }
+  .instructions code { background: #0f172a; padding: 2px 6px; border-radius: 4px; color: #f59e0b; font-size: 0.9em; }
+  .instructions h3 { color: #f8fafc; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<h1>ApexFlash Growth Tracker</h1>
+<p class="subtitle">Fase 1 — Doel: 200 channel subs + 50 bot users + eerste affiliate revenue</p>
+
+<div class="grid" id="kpis"></div>
+
+<div class="charts-row">
+  <div class="chart-box">
+    <h2>Revenue per dag (EUR)</h2>
+    <canvas id="revenueChart"></canvas>
+  </div>
+  <div class="chart-box">
+    <h2>Users + Subscribers</h2>
+    <canvas id="usersChart"></canvas>
+  </div>
+</div>
+
+<div class="chart-box">
+  <h2>Cumulatief Revenue — Bruto vs Netto</h2>
+  <canvas id="cumulChart"></canvas>
+</div>
+
+<div class="chart-box">
+  <h2>Dagelijkse data</h2>
+  <table id="dataTable">
+    <thead>
+      <tr>
+        <th>Datum</th>
+        <th>Bot Users</th>
+        <th>Channel Subs</th>
+        <th>Trades</th>
+        <th>Aff. Clicks</th>
+        <th>Bruto EUR</th>
+        <th>Kosten EUR</th>
+        <th>Netto EUR</th>
+        <th>Cumul. Netto</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div class="instructions">
+  <h3>Hoe bij te werken</h3>
+  <p>Open dit bestand in een teksteditor en pas de <code>DATA</code> array aan (onderaan). Voeg elke dag een nieuw object toe:</p>
+  <pre style="margin-top:10px;color:#f59e0b;background:#0f172a;padding:12px;border-radius:8px;overflow-x:auto;">
+{ date:"2026-03-09", botUsers:3, channelSubs:5, trades:0, affClicks:2, brutoEUR:0, kostenEUR:0 },</pre>
+  <p style="margin-top:10px;"><strong>Bruto EUR</strong> = trading fees + affiliate commissie + Gumroad subs</p>
+  <p><strong>Kosten EUR</strong> = betaalde shoutouts + eventuele andere kosten (Render en Koyeb zijn gratis)</p>
+  <p><strong>Netto EUR</strong> = bruto - kosten (automatisch berekend)</p>
+  <p style="margin-top:10px;">Sla op en herlaad de browser. Charts updaten automatisch.</p>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// DATA — Voeg hier elke dag een nieuwe rij toe
+// ══════════════════════════════════════════════════════════════
+const DATA = [
+  // Week 0 — Startpunt
+  { date:"2026-03-06", botUsers:1, channelSubs:2, trades:0, affClicks:0, brutoEUR:0, kostenEUR:0 },
+  { date:"2026-03-07", botUsers:1, channelSubs:2, trades:0, affClicks:0, brutoEUR:0, kostenEUR:0 },
+  { date:"2026-03-08", botUsers:1, channelSubs:2, trades:0, affClicks:0, brutoEUR:0, kostenEUR:0 },
+  // Week 1 — Foundation
+  // { date:"2026-03-09", botUsers:2, channelSubs:4, trades:0, affClicks:1, brutoEUR:0, kostenEUR:0 },
+  // { date:"2026-03-10", botUsers:3, channelSubs:7, trades:0, affClicks:3, brutoEUR:0, kostenEUR:0 },
+  // { date:"2026-03-11", botUsers:5, channelSubs:12, trades:1, affClicks:5, brutoEUR:1.50, kostenEUR:0 },
+];
+
+// ══════════════════════════════════════════════════════════════
+// AUTO-BEREKENINGEN — Niet aanpassen
+// ══════════════════════════════════════════════════════════════
+let cumulBruto = 0, cumulKosten = 0;
+DATA.forEach(d => {
+  d.nettoEUR = +(d.brutoEUR - d.kostenEUR).toFixed(2);
+  cumulBruto += d.brutoEUR;
+  cumulKosten += d.kostenEUR;
+  d.cumulBruto = +cumulBruto.toFixed(2);
+  d.cumulNetto = +(cumulBruto - cumulKosten).toFixed(2);
+});
+
+const latest = DATA[DATA.length - 1] || {};
+const totalBruto = DATA.reduce((s, d) => s + d.brutoEUR, 0);
+const totalNetto = DATA.reduce((s, d) => s + d.nettoEUR, 0);
+const totalTrades = DATA.reduce((s, d) => s + d.trades, 0);
+const totalClicks = DATA.reduce((s, d) => s + d.affClicks, 0);
+const daysActive = DATA.length;
+
+// KPI cards
+const kpiHTML = [
+  { label:"Bot Users", value:latest.botUsers||0, cls:"" },
+  { label:"Channel Subs", value:latest.channelSubs||0, cls:"" },
+  { label:"Totaal Trades", value:totalTrades, cls:"" },
+  { label:"Affiliate Clicks", value:totalClicks, cls:"" },
+  { label:"Bruto Revenue", value:"\u20ac"+totalBruto.toFixed(2), cls:totalBruto>0?"green":"" },
+  { label:"Netto Revenue", value:"\u20ac"+totalNetto.toFixed(2), cls:totalNetto>0?"green":totalNetto<0?"red":"" },
+].map(k => `<div class="kpi ${k.cls}"><div class="value">${k.value}</div><div class="label">${k.label}</div></div>`).join("");
+document.getElementById("kpis").innerHTML = kpiHTML;
+
+// Data table
+const tbody = document.querySelector("#dataTable tbody");
+DATA.forEach(d => {
+  const netCls = d.nettoEUR > 0 ? "positive" : d.nettoEUR < 0 ? "negative" : "";
+  tbody.innerHTML += `<tr>
+    <td>${d.date}</td><td>${d.botUsers}</td><td>${d.channelSubs}</td>
+    <td>${d.trades}</td><td>${d.affClicks}</td>
+    <td>\u20ac${d.brutoEUR.toFixed(2)}</td><td>\u20ac${d.kostenEUR.toFixed(2)}</td>
+    <td class="${netCls}">\u20ac${d.nettoEUR.toFixed(2)}</td>
+    <td class="${d.cumulNetto>=0?'positive':'negative'}">\u20ac${d.cumulNetto.toFixed(2)}</td>
+  </tr>`;
+});
+
+// Chart defaults
+Chart.defaults.color = "#94a3b8";
+Chart.defaults.borderColor = "#334155";
+const labels = DATA.map(d => d.date.slice(5));
+
+// Revenue per dag
+new Chart(document.getElementById("revenueChart"), {
+  type: "bar",
+  data: {
+    labels,
+    datasets: [
+      { label: "Bruto", data: DATA.map(d=>d.brutoEUR), backgroundColor: "rgba(245,158,11,0.7)", borderRadius: 4 },
+      { label: "Netto", data: DATA.map(d=>d.nettoEUR), backgroundColor: "rgba(34,197,94,0.7)", borderRadius: 4 },
+    ]
+  },
+  options: { responsive:true, plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>"\u20ac"+v } } } }
+});
+
+// Users + subs groei
+new Chart(document.getElementById("usersChart"), {
+  type: "line",
+  data: {
+    labels,
+    datasets: [
+      { label: "Bot Users", data: DATA.map(d=>d.botUsers), borderColor: "#f59e0b", backgroundColor: "rgba(245,158,11,0.1)", fill: true, tension: 0.3, pointRadius: 4 },
+      { label: "Channel Subs", data: DATA.map(d=>d.channelSubs), borderColor: "#3b82f6", backgroundColor: "rgba(59,130,246,0.1)", fill: true, tension: 0.3, pointRadius: 4 },
+    ]
+  },
+  options: { responsive:true, plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ beginAtZero:true } } }
+});
+
+// Cumulatief bruto vs netto
+new Chart(document.getElementById("cumulChart"), {
+  type: "line",
+  data: {
+    labels,
+    datasets: [
+      { label: "Cumulatief Bruto", data: DATA.map(d=>d.cumulBruto), borderColor: "#f59e0b", borderWidth: 2, tension: 0.3, pointRadius: 4 },
+      { label: "Cumulatief Netto", data: DATA.map(d=>d.cumulNetto), borderColor: "#22c55e", borderWidth: 2, tension: 0.3, pointRadius: 4, fill: { target:"origin", above:"rgba(34,197,94,0.08)", below:"rgba(239,68,68,0.08)" } },
+    ]
+  },
+  options: { responsive:true, plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ ticks:{ callback:v=>"\u20ac"+v } } } }
+});
+</script>
+</body>
+</html>

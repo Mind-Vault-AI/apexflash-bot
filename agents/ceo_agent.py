@@ -393,26 +393,13 @@ def collect_kpis() -> dict:
 
 def gemini_prioritise(kpis: dict) -> dict:
     """
-    Call Gemini 2.5 Flash with the KPI snapshot.
-    Returns structured priority list. 
-    Includes exponential backoff for 503 (Capacity Exhausted) errors.
+    Call the AI Router (CEO job) with the KPI snapshot.
+    Returns structured priority list. Falls back to rule-based if all AI fails.
     """
-    if not GEMINI_API_KEY:
-        return _rule_based_priorities(kpis)
+    import asyncio as _asyncio
+    from agents.ai_router import complete
 
-    import time as _time
-    max_retries = 3
-    retry_delay = 2
-
-    for attempt in range(max_retries):
-        try:
-            import google.generativeai as genai
-            from google.api_core import exceptions as google_exceptions
-
-            genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel("gemini-2.5-flash")
-
-            prompt = f"""You are the CEO Agent for ApexFlash, a crypto AI trading bot platform.
+    prompt = f"""You are the CEO Agent for ApexFlash, a crypto AI trading bot platform.
 Goal: €1M netto before 29-03-2028.
 Current date: {kpis.get('date')}
 
@@ -434,25 +421,22 @@ Analyse the KPIs. Return ONLY valid JSON, no markdown, with this exact structure
   "one_liner": "<status sentence>"
 }}"""
 
-            resp = model.generate_content(prompt)
-            text = resp.text.strip()
+    try:
+        loop = _asyncio.get_event_loop()
+        text, model_used, err = loop.run_until_complete(complete("CEO", prompt)) \
+            if not loop.is_running() \
+            else _asyncio.run_coroutine_threadsafe(complete("CEO", prompt), loop).result(timeout=45)
+        if not text:
+            raise ValueError(err or "empty")
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
+        logger.info(f"CEO Agent via {model_used}")
+        return json.loads(text)
+    except Exception as e:
+        logger.error(f"CEO AI Router failed: {e}")
 
-            if text.startswith("```"):
-                lines = text.split("\n")
-                text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
-
-            return json.loads(text)
-
-        except (google_exceptions.ResourceExhausted, google_exceptions.ServiceUnavailable) as e:
-            logger.warning(f"Gemini Capacity Exhausted (Attempt {attempt+1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                _time.sleep(retry_delay * (2 ** attempt))
-            continue
-        except Exception as e:
-            logger.error(f"Gemini prioritisation error: {e}")
-            break
-
-    logger.warning("Gemini failed after retries, using rule-based fallback")
+    logger.warning("All AI failed, using rule-based fallback")
     return _rule_based_priorities(kpis)
 
 

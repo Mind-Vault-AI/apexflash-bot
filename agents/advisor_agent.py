@@ -4,12 +4,14 @@ import json
 import logging
 import os
 import time
+import urllib.request
 from typing import List, Optional, Tuple
 
 import google.generativeai as genai
 
 logger = logging.getLogger("AIAdvisor")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 MODEL_CHAIN = [
     m.strip()
     for m in os.getenv(
@@ -71,6 +73,7 @@ def advisor_runtime_snapshot() -> dict:
     resolved_chain = _resolve_model_chain()
     return {
         "gemini_key_present": bool(GEMINI_API_KEY),
+        "deepseek_key_present": bool(DEEPSEEK_API_KEY),
         "configured_chain": MODEL_CHAIN,
         "resolved_chain": resolved_chain,
     }
@@ -133,6 +136,43 @@ async def _try_gemini(prompt: str) -> Tuple[Optional[str], Optional[str], Option
     return None, None, reason
 
 
+async def _try_deepseek(prompt: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Fallback: DeepSeek Chat via OpenAI-compatible API."""
+    if not DEEPSEEK_API_KEY:
+        return None, None, "DEEPSEEK_API_KEY missing"
+    try:
+        payload = json.dumps({
+            "model": "deepseek-chat",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 800,
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.deepseek.com/chat/completions",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read())
+        text = data["choices"][0]["message"]["content"].strip()
+        if text:
+            return text, "deepseek-chat", None
+        return None, None, "DeepSeek: empty response"
+    except Exception as e:
+        msg = f"deepseek-chat: {type(e).__name__}: {e}"
+        logger.warning("AI Advisor DeepSeek fallback failed: %s", msg)
+        return None, None, msg
+
+
+async def _try_ai(prompt: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Route via central AI Router (ADVISOR job chain)."""
+    from agents.ai_router import complete
+    return await complete("ADVISOR", prompt)
+
+
 async def advisor_live_probe() -> dict:
     """Run a minimal live probe to verify Gemini availability at runtime."""
     if not GEMINI_API_KEY:
@@ -143,7 +183,7 @@ async def advisor_live_probe() -> dict:
         }
 
     probe_prompt = "Reply with exactly: APEXFLASH_OK"
-    text, model_name, reason = await _try_gemini(probe_prompt)
+    text, model_name, reason = await _try_ai(probe_prompt)
     if text:
         return {
             "ok": True,
@@ -177,7 +217,7 @@ async def analyze_trader_performance(user_id: int, history: List[dict]) -> str:
         )
 
     prompt = _build_prompt(history_summary)
-    text, model_name, reason = await _try_gemini(prompt)
+    text, model_name, reason = await _try_ai(prompt)
 
     if text:
         return f"Model: {model_name}\n\n{text}"

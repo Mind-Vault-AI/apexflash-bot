@@ -94,17 +94,17 @@ async def generate_viral_hook(trade: dict) -> str:
         )
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        from agents.ai_router import complete
         prompt = (
             f"Write a short, professional but hype-filled Telegram post for a crypto trading bot called ApexFlash.\n"
             f"The bot just closed a trade with {trade['pnl_pct']}% profit on token ${trade['token']}.\n"
             f"Focus on: speed, safety, and 'smart money' tracking.\n"
             f"Use emojis. Keep it under 200 characters. End with a strong CTA."
         )
-        response = await asyncio.to_thread(model.generate_content, prompt)
-        return response.text.strip()
+        text, model_used, err = await complete("MARKETING", prompt)
+        return text.strip() if text else f"🚀 {trade['pnl_pct']}% GAINS on ${trade['token']}! ApexFlash Godmode is LIVE."
     except Exception as e:
-        logger.error(f"Gemini viral hook failed: {e}")
+        logger.error(f"AI Router MARKETING failed: {e}")
         return f"🚀 {trade['pnl_pct']}% GAINS on ${trade['token']}! ApexFlash Godmode is LIVE."
 
 async def viral_poster_job(context):

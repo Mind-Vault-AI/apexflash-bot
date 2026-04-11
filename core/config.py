@@ -34,6 +34,14 @@ MIZAR_API_KEY = os.getenv("MIZAR_API_KEY", "")
 MIZAR_BASE_URL = "https://api.mizar.com/api/v1"
 MIZAR_REFERRAL_URL = os.getenv("MIZAR_REFERRAL_URL", "https://mizar.com/?ref=apexflash")
 
+# === GMGN.AI Trading API ===
+GMGN_API_KEY        = os.getenv("GMGN_API_KEY", "")
+GMGN_PRIVATE_KEY    = os.getenv("GMGN_PRIVATE_KEY", "")   # Ed25519 PKCS#8 base64
+GMGN_PUBLIC_KEY     = os.getenv("GMGN_PUBLIC_KEY", "")
+# Solana wallet address bound to the GMGN API key (set in GMGN dashboard)
+GMGN_WALLET_ADDRESS = os.getenv("GMGN_WALLET_ADDRESS", os.getenv("FEE_COLLECT_WALLET", ""))
+GMGN_BASE_URL       = "https://gmgn.ai"
+
 # === Jupiter DEX (Solana Swaps) ===
 JUPITER_API_KEY = os.getenv("JUPITER_API_KEY", "")
 JUPITER_QUOTE_URL = "https://api.jup.ag/swap/v1/quote"

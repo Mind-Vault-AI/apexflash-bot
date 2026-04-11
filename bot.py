@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.22.0"
+VERSION = "3.23.0"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -1193,6 +1193,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "whale_off":     _cb_whale_off,
         "whale_latest":  _cb_whale_latest,
         "whale_top":     _cb_whale_top,
+        "whale_intel":   _cb_whale_intel,
         # Trading
         "trade":         _cb_trade,
         "trade_wallet":  _cb_trade_wallet,
@@ -1666,6 +1667,7 @@ async def _cb_whale(query, user, context):
             InlineKeyboardButton("\U0001f4ca Top Wallets", callback_data="whale_top"),
             InlineKeyboardButton("\U0001f4b0 Latest", callback_data="whale_latest"),
         ],
+        [InlineKeyboardButton("🐋 GMGN Intelligence", callback_data="whale_intel")],
         [_back_main()[0]],
     ]
     await query.edit_message_text(
@@ -1799,6 +1801,41 @@ async def _cb_whale_top(query, user, context):
     await query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
     )
+
+
+async def _cb_whale_intel(query, user, context):
+    """Show live GMGN whale intelligence — recent Grade S/A signals."""
+    from agents.whale_watcher import get_whale_stats, format_whale_signal
+    stats = get_whale_stats()
+    if "error" in stats:
+        await query.edit_message_text("❌ Redis unavailable", parse_mode="Markdown")
+        return
+
+    lines = [
+        "🐋 *WHALE INTELLIGENCE — GMGN Smart Money*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n",
+        f"🔌 GMGN: {'✅' if stats['gmgn_configured'] else '❌'}  |  "
+        f"🤖 Auto-trade: {'✅ ' + str(stats['auto_trade_sol']) + ' SOL' if stats['auto_trade'] else '❌'}\n"
+        f"⏱ Scan every {stats['scan_interval_min']} min\n\n",
+        "*Recent Signals:*\n",
+    ]
+    recent = stats.get("recent_signals", [])
+    if not recent:
+        lines.append("_No signals yet — first scan runs within 5 min_\n")
+    else:
+        for sig in recent[:5]:
+            grade_e = {"S": "🚨", "A": "🔥", "B": "⚡"}.get(sig.get("grade", ""), "📊")
+            lines.append(
+                f"{grade_e} [{sig.get('grade','')}] *{sig.get('symbol','?')}* "
+                f"| 1h: {sig.get('chg_1h', 0):+.1f}% | 🧠{sig.get('smart_degens', 0)}\n"
+            )
+    text = "".join(lines)
+    kb = [
+        [InlineKeyboardButton("🔄 Refresh", callback_data="whale_intel")],
+        [InlineKeyboardButton("🐋 Whale Menu", callback_data="whale")],
+        [_back_main()[0]],
+    ]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
 
 # ══════════════════════════════════════════════
@@ -7296,6 +7333,88 @@ async def cmd_autotrade_test_off(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text("✅ *Autotrade Test Mode: OFF*", parse_mode="Markdown")
 
 
+async def cmd_ai_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin: AI Router dashboard — shows all free model health & routing."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    await update.message.reply_text("🔄 Probing all AI models... (~10s)", parse_mode="Markdown")
+
+    try:
+        from agents.ai_router import get_health_snapshot, probe_all, JOB_CHAINS
+        probe_results = await probe_all()
+        health = get_health_snapshot()
+
+        lines = ["🤖 *AI Router Dashboard*\n━━━━━━━━━━━━━━━━━━━━━\n"]
+
+        for key, info in health.items():
+            probe_ok = probe_results.get(key)
+            if probe_ok is None:
+                status = "⚫ no key"
+            elif probe_ok:
+                status = "✅ online"
+            else:
+                status = "🔴 failed"
+
+            blocked = f" ⏳{info['blocked_secs']}s" if info["blocked_secs"] > 0 else ""
+            calls = info["calls"]
+            ok = info["ok"]
+            sla = f"{ok}/{calls}" if calls else "-"
+            lines.append(
+                f"`{key:<16}` {status}{blocked}\n"
+                f"  _{info['model']}_\n"
+                f"  SLA: `{sla}` | Provider: `{info['provider']}`\n"
+            )
+
+        lines.append("\n*Job → Active Chain*\n")
+        for job, chain in JOB_CHAINS.items():
+            lines.append(f"`{job:<12}` → {' → '.join(chain)}\n")
+
+        await update.message.reply_text("".join(lines), parse_mode="Markdown")
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ AI Status error: `{e}`", parse_mode="Markdown")
+
+
+async def cmd_whale_intel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/whale_intel — Show GMGN whale intelligence signals (admin)."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+    from agents.whale_watcher import get_whale_stats, format_whale_signal
+    stats = get_whale_stats()
+    if "error" in stats:
+        await update.message.reply_text("❌ Redis unavailable")
+        return
+    lines = [
+        f"🐋 *Whale Intelligence v2.0*\n"
+        f"GMGN: {'✅' if stats['gmgn_configured'] else '❌'} | "
+        f"Auto: {'✅' if stats['auto_trade'] else '❌'} {stats.get('auto_trade_sol',0)} SOL\n"
+        f"Scan: every {stats['scan_interval_min']}min\n\n"
+        f"*Recent Signals:*\n"
+    ]
+    for sig in (stats.get("recent_signals") or [])[:8]:
+        em = {"S": "🚨", "A": "🔥", "B": "⚡"}.get(sig.get("grade", ""), "📊")
+        lines.append(
+            f"{em} [{sig.get('grade','')}] *{sig.get('symbol','?')}* "
+            f"1h:{sig.get('chg_1h',0):+.1f}% 🧠{sig.get('smart_degens',0)}\n"
+        )
+    if not stats.get("recent_signals"):
+        lines.append("_No signals yet — scanner active, first scan within 5 min_\n")
+    await update.message.reply_text("".join(lines), parse_mode="Markdown")
+
+
+async def cmd_pdca(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/pdca — PDCA signal journal: win rates per grade + improvement recommendations."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+    from agents.trade_journal import format_pdca_report_telegram
+    text = format_pdca_report_telegram(days=7)
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
 async def cmd_qa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin-only lean QA summary: integrity + watchdog + autotrade readiness."""
     if not is_admin(update.effective_user.id):
@@ -8527,6 +8646,9 @@ def main() -> None:
     app.add_handler(CommandHandler("autotrade_diag", cmd_autotrade_diag))
     app.add_handler(CommandHandler("autotrade_test_on", cmd_autotrade_test_on))
     app.add_handler(CommandHandler("autotrade_test_off", cmd_autotrade_test_off))
+    app.add_handler(CommandHandler("ai_status", cmd_ai_status))
+    app.add_handler(CommandHandler("whale_intel", cmd_whale_intel))
+    app.add_handler(CommandHandler("pdca", cmd_pdca))
     app.add_handler(CommandHandler("qa", cmd_qa))
     app.add_handler(CommandHandler("smoke", cmd_smoke))
     app.add_handler(CommandHandler("sla", cmd_sla))
@@ -8919,19 +9041,43 @@ def main() -> None:
         name="runtime_integrity",
     )
 
-    # Advisor runtime watchdog — checks Gemini health every 30 min and only alerts on state changes
+    # Advisor runtime watchdog — checks AI health every 30 min and only alerts on state changes
     advisor_probe_last_ok = RUNTIME_HEALTH.get("advisor_ok")
+    _gemini_key_invalid_alerted = False  # send only once per boot until key is fixed
 
     async def advisor_watchdog_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-        nonlocal advisor_probe_last_ok
+        nonlocal advisor_probe_last_ok, _gemini_key_invalid_alerted
         try:
             from agents.advisor_agent import advisor_live_probe
             probe = await advisor_live_probe()
             current_ok = bool(probe.get("ok"))
+            reason_str = str(probe.get("reason") or "")
+
+            # Immediate alert if Gemini key is permanently invalid (API_KEY_INVALID)
+            # This is distinct from transient failures — requires human action.
+            if "API_KEY_INVALID" in reason_str and not _gemini_key_invalid_alerted:
+                _gemini_key_invalid_alerted = True
+                key_alert = (
+                    "🔑 *ACTIE VEREIST — Gemini API key INVALIDE*\n"
+                    "━━━━━━━━━━━━━━━━━━━━━\n"
+                    "Google weigert de key. Bot draait nu op *DeepSeek fallback*.\n\n"
+                    "Fix:\n"
+                    "1. Ga naar aistudio.google.com/apikey\n"
+                    "2. Maak nieuwe key aan\n"
+                    "3. Update `MASTER_ENV_APEXFLASH.txt` + `sync_render_env.py:66`\n"
+                    "4. Run: `python sync_render_env.py`"
+                )
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await context.bot.send_message(chat_id=admin_id, text=key_alert, parse_mode="Markdown")
+                    except Exception:
+                        pass
+            elif "API_KEY_INVALID" not in reason_str:
+                _gemini_key_invalid_alerted = False  # reset if key becomes valid again
             RUNTIME_HEALTH["last_watchdog_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
             RUNTIME_HEALTH["advisor_ok"] = current_ok
-            RUNTIME_HEALTH["advisor_reason"] = str(probe.get("reason") or "")
+            RUNTIME_HEALTH["advisor_reason"] = reason_str
             RUNTIME_HEALTH["advisor_model"] = str(probe.get("model") or "")
             RUNTIME_HEALTH["advisor_checks_total"] = int(RUNTIME_HEALTH.get("advisor_checks_total", 0)) + 1
             if current_ok:
@@ -9382,6 +9528,45 @@ def main() -> None:
             from agents.marketing_agency import agency_loop
             asyncio.ensure_future(agency_loop())
             logger.info("📣 Marketing Agency: background worker STARTED")
+
+            # 🐋 Whale Intelligence v2.0 — GMGN Smart Money Scanner
+            from agents.whale_watcher import whale_scan_loop, register_signal_callback, format_whale_signal
+
+            from agents.trade_journal import log_signal as journal_log, outcome_check_loop
+            asyncio.ensure_future(outcome_check_loop())
+            logger.info("📊 PDCA Trade Journal: outcome checker STARTED")
+
+            async def _whale_signal_to_telegram(sig: dict):
+                """Forward whale signals to @ApexFlashAlerts channel + journal."""
+                # Log to PDCA journal (async-safe: log_signal is sync)
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, lambda: journal_log(sig))
+
+                try:
+                    text = format_whale_signal(sig)
+                    if ALERT_CHANNEL_ID:
+                        await application.bot.send_message(
+                            chat_id=ALERT_CHANNEL_ID,
+                            text=text,
+                            parse_mode="Markdown",
+                        )
+                    # Also notify admins for Grade S
+                    if sig["grade"] == "S":
+                        for admin_id in ADMIN_IDS:
+                            try:
+                                await application.bot.send_message(
+                                    chat_id=admin_id,
+                                    text=f"🚨 GRADE S AUTO-SIGNAL\n{text}",
+                                    parse_mode="Markdown",
+                                )
+                            except Exception:
+                                pass
+                except Exception as e:
+                    logger.error(f"Whale Telegram dispatch error: {e}")
+
+            register_signal_callback(_whale_signal_to_telegram)
+            asyncio.ensure_future(whale_scan_loop())
+            logger.info("🐋 Whale Intelligence v2.0: GMGN scanner STARTED")
 
         except Exception as e:
             logger.error(f"Godmode Agent activation failed: {e}")
