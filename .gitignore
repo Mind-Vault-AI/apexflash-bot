@@ -1,7 +1,18 @@
+# Runtime secrets (never commit)
 .env
+.env.*
+!.env.example
+ApexFlashAPI.env
+*.pem
+*.key
+id_ed25519
+id_ed25519.pub
+id_ed25519.tar.gz
+Private_key.txt
+Public_key.txt
+
+# Python artifacts
 __pycache__/
 *.pyc
 .venv/
 venv/
-
-ApexFlashAPI.env

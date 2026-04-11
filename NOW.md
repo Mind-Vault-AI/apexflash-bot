@@ -1,10 +1,13 @@
+<!-- markdownlint-disable MD013 MD022 MD025 MD032 MD058 MD060 -->
+<!-- cspell:disable -->
+
 # ApexFlash Bot — CURRENT STATUS
 # Last updated: 2026-04-11 (Sessie 26)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
 ## LIVE STATE
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.x
+- Version: v3.23.1
 - Keys on Render: 74
 
 ## WAT WERKT
