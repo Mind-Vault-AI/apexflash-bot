@@ -134,6 +134,63 @@ async def notify_discord_whale(alert: dict, prices: dict) -> bool:
     return await _send_discord_webhook(DISCORD_WEBHOOK_URL, payload)
 
 
+def _discord_gmgn_signal_embed(sig: dict) -> dict:
+    """Build a Discord embed for a GMGN whale intelligence signal (Grade A/S)."""
+    grade = sig.get("grade", "A")
+    symbol = sig.get("symbol", "???")
+    chg_1h = sig.get("chg_1h", 0)
+    chg_5m = sig.get("chg_5m", 0)
+    volume = sig.get("volume", 0)
+    smart = sig.get("smart_degens", 0)
+    renowned = sig.get("renowned", 0)
+    mint = sig.get("mint", "")
+    price = sig.get("price", 0)
+    market_cap = sig.get("market_cap", 0)
+
+    color = 0xFF0000 if grade == "S" else 0xFF6600  # Red for S, Orange for A
+    grade_emoji = "🚨" if grade == "S" else "🔥"
+
+    fields = [
+        {"name": "Price", "value": f"${price:.8f}" if price < 0.01 else f"${price:.4f}", "inline": True},
+        {"name": "1h Change", "value": f"{chg_1h:+.1f}%", "inline": True},
+        {"name": "5m Change", "value": f"{chg_5m:+.1f}%", "inline": True},
+        {"name": "Volume", "value": f"${volume:,.0f}", "inline": True},
+        {"name": "Market Cap", "value": f"${market_cap:,.0f}" if market_cap else "N/A", "inline": True},
+        {"name": "Smart Degens", "value": f"{smart} wallets", "inline": True},
+    ]
+    if renowned:
+        fields.append({"name": "Renowned", "value": str(renowned), "inline": True})
+    if mint:
+        fields.append({
+            "name": "Token",
+            "value": f"[DexScreener](https://dexscreener.com/solana/{mint}) | [GMGN](https://gmgn.ai/sol/token/{mint})",
+            "inline": False,
+        })
+
+    embed = {
+        "title": f"{grade_emoji} GRADE {grade} WHALE SIGNAL — ${symbol}",
+        "color": color,
+        "fields": fields,
+        "footer": {"text": f"ApexFlash Whale Intelligence v2.0 | GMGN Smart Money"},
+    }
+
+    content = (
+        f"{grade_emoji} **Grade {grade} Signal detected!**\n"
+        f"🤖 Get alerts: https://t.me/{BOT_USERNAME} → /start"
+    )
+    return {"content": content, "embeds": [embed]}
+
+
+async def notify_discord_gmgn_signal(sig: dict) -> bool:
+    """Send a GMGN whale intelligence signal (Grade A/S) to Discord."""
+    if not DISCORD_WEBHOOK_URL:
+        return False
+    if sig.get("grade") not in ("A", "S"):
+        return False
+    payload = _discord_gmgn_signal_embed(sig)
+    return await _send_discord_webhook(DISCORD_WEBHOOK_URL, payload)
+
+
 async def notify_discord_trade(user_name: str, action: str, amount: str,
                                token: str, tx_sig: str, fee_sol: float) -> bool:
     """Send trade notification to Discord (social proof)."""

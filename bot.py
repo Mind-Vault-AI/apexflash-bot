@@ -9576,6 +9576,14 @@ def main() -> None:
                     except Exception as e:
                         logger.warning(f"Whale Twitter post error (non-critical): {e}")
 
+                # Send Grade A/S signals to Discord
+                if sig.get("grade") in ("A", "S"):
+                    try:
+                        from agents.notifications import notify_discord_gmgn_signal
+                        await notify_discord_gmgn_signal(sig)
+                    except Exception as e:
+                        logger.warning(f"Whale Discord post error (non-critical): {e}")
+
             register_signal_callback(_whale_signal_to_telegram)
             asyncio.ensure_future(whale_scan_loop())
             logger.info("🐋 Whale Intelligence v2.0: GMGN scanner STARTED")
