@@ -1,4 +1,26 @@
-# ApexFlash Godmode Handoff: Milestone 3.15.0
+# ApexFlash Godmode Handoff: Milestone 3.22.1
+
+## Status Summary (2026-04-10) — SESSIE 24
+
+### URGENTE FIX UITGEVOERD
+**Probleem**: Gemini API key `AIzaSy...HHI` invalide sinds 2026-04-09 18:34 UTC → Advisor SLA 0% voor 10+ uur.
+
+**Wat gedaan:**
+- `agents/advisor_agent.py`: DeepSeek fallback toegevoegd (`_try_deepseek` + `_try_ai` orchestrator). Advisor gebruikt nu Gemini first, DeepSeek als Gemini faalt.
+- `bot.py`: Watchdog uitgebreid met instant `API_KEY_INVALID` alert (met exacte fix-stappen) → nooit meer stille outage >30min.
+- `sync_render_env.py` + `MASTER_ENV_APEXFLASH.txt`: DEEPSEEK_API_KEY toegevoegd als SSOT.
+- Render: 63 env vars gesynchroniseerd, inclusief DEEPSEEK_API_KEY.
+- Commits: `c9adaf6`, `e58def9` → Render auto-deploy getriggerd.
+
+**OPENSTAANDE ACTIE (menselijk vereist):**
+1. Nieuwe Gemini key ophalen: aistudio.google.com/apikey
+2. Update `MASTER_ENV_APEXFLASH.txt` regel met `GEMINI_API_KEY=`
+3. Update `sync_render_env.py` regel 66
+4. Run `python sync_render_env.py`
+
+**Na deploy verwacht:** Advisor Probe `ONLINE` met `deepseek-chat` model totdat Gemini key vervangen is.
+
+---
 
 ## Status Summary (2026-04-04)
 Transitioned the bot into **Godmode v3.15.0 (Infinity)**. The bot is now 100% stable on Render with automated conflict resolution and is fully aligned with the frontend marketing site.
