@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import time
-import asyncio
 from datetime import datetime, timezone
 
 import aiohttp
@@ -25,7 +24,6 @@ logger = logging.getLogger("ZeroLossManager")
 
 # Active positions tracker
 active_positions = {}
-last_trade_ts = {}
 # Centralized task tracker to prevent "Task destroyed" warnings
 _manager_tasks = {}
 AUTOTRADE_STATE = {
@@ -74,16 +72,19 @@ def _enforce_risk_limits(admin_id: int, trade_amount_sol: float, symbol: str) ->
     Returns: (allowed: bool, reason: str)
     """
     from core.config import MAX_TRADE_SOL, MAX_DAILY_TRADES
-    from core.persistence import get_daily_trade_count
     
     # 1. Max single trade check
     if trade_amount_sol > MAX_TRADE_SOL:
         return False, f"exceeds_max_single_trade ({trade_amount_sol} > {MAX_TRADE_SOL})"
     
-    # 2. Daily trade limit check
-    daily_count = get_daily_trade_count(admin_id) if hasattr(__import__('core.persistence'), 'get_daily_trade_count') else 0
-    if daily_count >= MAX_DAILY_TRADES:
-        return False, f"daily_trade_limit_reached ({daily_count} >= {MAX_DAILY_TRADES})"
+    # 2. Daily trade limit check (graceful fallback if function missing)
+    try:
+        from core.persistence import get_daily_trade_count
+        daily_count = get_daily_trade_count(admin_id)
+        if daily_count >= MAX_DAILY_TRADES:
+            return False, f"daily_trade_limit_reached ({daily_count} >= {MAX_DAILY_TRADES})"
+    except (ImportError, AttributeError, Exception):
+        pass  # Fallback: allow trade if function unavailable
     
     # 3. Check drawdown (via panic score as proxy)
     panic = get_market_panic_score()
@@ -250,9 +251,16 @@ async def position_manager(keypair, symbol, mint, bot=None):
                 logger.warning(f"🛡️ SHOCK BREAKER: Tightening {symbol} SL due to Panic ({panic})")
             
             quote = await get_quote(mint, SOL_MINT, pos["amount"])
-            if not quote: continue
+            if not quote:
+                logger.debug(f"Quote unavailable for {symbol}, retrying next cycle")
+                continue
             
-            curr_sol = int(quote.get("outAmount", 0)) / 1e9
+            out_amount = quote.get("outAmount")
+            if not out_amount or out_amount <= 0:
+                logger.debug(f"Invalid quote outAmount for {symbol}: {out_amount}")
+                continue
+            
+            curr_sol = int(out_amount) / 1e9
             orig_sol = float(pos.get("entry_sol", AUTONOMOUS_TRADE_AMOUNT_SOL) or AUTONOMOUS_TRADE_AMOUNT_SOL)
             pnl = ((curr_sol - orig_sol) / orig_sol) * 100
             
@@ -263,8 +271,12 @@ async def position_manager(keypair, symbol, mint, bot=None):
                 save_active_positions(active_positions)
                 await _notify_admin(bot, f"🔒 *BREAKEVEN LOCK* — {symbol}\nRisk = ZERO ✅")
 
-            # 2.5 MAX HOLD TIME — Force exit if position > 4 hours
-            pos_age_sec = int(time.time()) - pos.get("created_at", int(time.time()))
+            # 2.5 MAX HOLD TIME — Force exit if position > 4 hours (protect old positions without created_at)
+            created_at = pos.get("created_at")
+            if created_at is None:
+                # Old position without timestamp — use current time as fallback
+                created_at = int(time.time())
+            pos_age_sec = int(time.time()) - created_at
             max_hold_sec = 4 * 3600  # 4 hours
             if pos_age_sec > max_hold_sec and pnl < tp_pct:
                 logger.warning(f"⏰ MAX HOLD TIME EXCEEDED: {symbol} ({pos_age_sec/3600:.1f}h)")
