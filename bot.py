@@ -8753,6 +8753,77 @@ def main() -> None:
         name="inspector_gadget",
     )
 
+    # ── Whale Watcher: Grade S signals from legendary wallets (every 90s) ──────
+    async def _whale_grade_s_signal(signal: dict) -> None:
+        """Callback: broadcast Grade S whale signal to admin + alert subscribers."""
+        try:
+            from agents.whale_watcher import format_whale_signal
+            text = format_whale_signal(signal)
+            mint = signal["mint"]
+
+            kb = [
+                [InlineKeyboardButton(
+                    "🐋 Buy Now — Grade S",
+                    url=f"https://t.me/{BOT_USERNAME}?start=buy_{mint}",
+                )],
+                [InlineKeyboardButton("📊 Chart", url=f"https://dexscreener.com/solana/{mint}")],
+                [InlineKeyboardButton("🔍 GMGN", url=f"https://gmgn.ai/sol/token/{mint}")],
+            ]
+
+            # Admin first (always)
+            for admin_id in ADMIN_IDS:
+                try:
+                    await app.bot.send_message(
+                        chat_id=admin_id,
+                        text=text,
+                        reply_markup=InlineKeyboardMarkup(kb),
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    pass
+
+            # Alert subscribers
+            for uid, udata in list(users.items()):
+                if not udata.get("alerts_on"):
+                    continue
+                try:
+                    await app.bot.send_message(
+                        chat_id=uid,
+                        text=text,
+                        reply_markup=InlineKeyboardMarkup(kb),
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.error(f"Whale Grade S signal dispatch error: {e}")
+
+    _whale_callback_registered = False
+
+    async def whale_watcher_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Whale Watcher: scan legendary wallets, fire Grade S signals."""
+        nonlocal _whale_callback_registered
+        try:
+            from agents.whale_watcher import whale_watcher_job as _ww_job, register_whale_callback
+            if not _whale_callback_registered:
+                register_whale_callback(_whale_grade_s_signal)
+                _whale_callback_registered = True
+            results = await _ww_job(context)
+            if results:
+                logger.info(f"WhaleWatcher: {len(results)} Grade S signal(s) fired")
+        except Exception as e:
+            logger.error(f"WhaleWatcher job failed: {e}")
+
+    app.job_queue.run_repeating(
+        whale_watcher_job,
+        interval=90,   # every 90s — heavier than inspector (10 SOL+ trades only)
+        first=120,     # first run 2 min after startup (after inspector settles)
+        name="whale_watcher",
+    )
+
     # Arbitrage Scanner (Cycle 9)
     app.job_queue.run_repeating(arbitrage_job, interval=60, first=10)
 
