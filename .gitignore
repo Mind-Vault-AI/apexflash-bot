@@ -16,3 +16,9 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Local IDE and temporary files
+.vscode/
+*.bak
+fix_encoding.py
+pyrightconfig.json
