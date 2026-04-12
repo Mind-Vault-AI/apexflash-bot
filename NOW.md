@@ -54,12 +54,13 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - PDCA: elk signaal gelogd → na 1h prijs check → WIN/LOSS/FLAT → dagstatistiek
 - /pdca → win rate per grade + aanbevelingen om thresholds te tunen
 
-## VOLGENDE SESSIE — START HIER (sessie 31)
-1. **GMGN IP FIX** — Erik: typ `/myip` in @ApexFlashBot → krijg Render IP → voeg toe op gmgn.ai → GMGN scanner live
-2. CHECK `/whale_intel` in Telegram na GMGN fix — scanner actief? Signalen?
-3. PDCA journal zal automatisch vullen zodra GMGN fix actief is
-4. Reddit outreach activeren (drafts in promo/ map) — wacht op Erik akkoord
-5. Posities P&L bekijken — fetch current prices van open posities via DexScreener
+## VOLGENDE SESSIE — START HIER (sessie 32)
+1. **SELL DIAGNOSE** — Erik: probeer sell via de bot → check Render logs voor `SELL:` regels → exact error zichtbaar (logging toegevoegd sessie 31)
+2. **GMGN IP FIX** — Erik: typ `/myip` in @ApexFlashBot → krijg Render IP → voeg toe op gmgn.ai → GMGN scanner live
+3. CHECK `/whale_intel` in Telegram na GMGN fix — scanner actief? Signalen?
+4. PDCA journal zal automatisch vullen zodra GMGN fix actief is
+5. Reddit outreach activeren (drafts in promo/ map) — wacht op Erik akkoord
+6. Posities P&L bekijken — 7 posities, SL protection nu gerepareerd (sessie 31)
 
 ## OPENSTAAND — ACTIE VEREIST
 | Item | Status | Verantwoordelijke |
@@ -67,8 +68,8 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 | DISCORD_WEBHOOK_URL | ✅ GESYNCHRONISEERD | Done |
 | GMGN IP whitelist Render | ⚠️ Render 403 | **Erik**: `/myip` in Telegram → gmgn.ai whitelist |
 | PDCA journal | ⚠️ 1 TEST entry | Automatisch fix na GMGN IP fix |
-| Posities P&L | ❓ amount_sol=0 | AI: DexScreener P&L fetch volgende sessie |
-| WHALE_AUTO_TRADE env var | false (Redis=1) | Redis-flag is leidend — bot handelt ✅ |
+| SELL diagnose | ⚠️ logging toegevoegd | Erik: probeer sell → check logs voor SELL: prefix |
+| SL manager restart | ✅ GEFIXT sessie 31 | mint opgeslagen in positie + _resolve_mint |
 | Reddit outreach | ⏸️ drafts klaar | Erik: akkoord geven voor activatie |
 
 ## BEKENDE ROOT CAUSES (gevonden sessie 28)
@@ -76,6 +77,14 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - Opgelost: keys toegevoegd aan .env + sync_render_env.py bijgewerkt
 - GMGN 403 lokaal = IP whitelist (normaal) — Render moet wél in whitelist staan
 - autotrade:enabled=1 in Redis → bot handelt al (8 posities open)
+
+## GEDAAN (sessie 31 — 2026-04-14)
+- ✅ **whale_watcher_job CRASH GEFIXT** (commit 3704b86): Broken job queue entry verwijderd uit bot.py (importeerde `whale_watcher_job` — functie bestaat niet). Geen 90s error storm meer in logs.
+- ✅ **_cb_referral GEFIXT** (commit 3704b86): Was FakeUpdate + reply_text (stuurde nieuwe message i.p.v. edit). Nu gebruikt query.edit_message_text direct → referral button werkt correct.
+- ✅ **BASE/SOL network GEFIXT** (commit 3704b86): Stale "v3.16.0" bericht vervangen door duidelijke "Solana actief / Base coming soon" melding.
+- ✅ **SELL logging toegevoegd** (commit 3704b86): Keypair load, token balance fetch, execute_swap result — volgende Render log toont exact waar het fout gaat.
+- ✅ **SL manager restart bug GEFIXT** (commit 8f700f2): 7 posities verloren bij elke restart hun SL bescherming. Resume gebruikt nu `_resolve_mint(sym)` ipv `SCALP_TOKENS.get(sym)`. Mint ook opgeslagen in positie dict.
+- Root cause sell: WAARSCHIJNLIJK wallet mismatch of Render DNS issue — logging in volgende sessie uitsluitsel.
 
 ## GEDAAN (sessie 30 — 2026-04-13, vervolg)
 - ✅ FULL LANDING PAGE AUDIT — alle knoppen, links, CTAs, API endpoints getest (commit a8be7de):
