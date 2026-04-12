@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.2"
+VERSION = "3.23.3"
 import aiohttp
 import logging
 from dotenv import load_dotenv
