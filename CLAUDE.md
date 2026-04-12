@@ -1,6 +1,39 @@
 # ApexFlash Bot — CLAUDE.md (Single Source of Truth)
-> **VERPLICHT LEZEN VOOR ELKE ACTIE.** Dit bestand is leidend boven alle andere docs.
-> Laatste update: 2026-04-11
+> Laatste update: 2026-04-13 (sessie 29)
+
+---
+
+## ⛔ STOP — LEES DIT EERST. GEEN UITZONDERINGEN.
+
+**STAP 1 — Lees nu direct dit bestand volledig:**
+```
+C:/Users/erik_/projects/apexflash-bot/NOW.md
+```
+Dit bevat: wat open staat, wat gedaan is, waar te starten. **Zonder dit lezen: NIETS uitvoeren.**
+
+**STAP 2 — Maak een plan op basis van NOW.md → notuleer als todo list**
+
+**STAP 3 — Uitvoeren, stuk voor stuk, direct markeren als done**
+
+**STAP 4 — Na IEDERE wijziging: NOW.md bijwerken + git commit**
+
+**STAP 5 — Sessie afsluiten: "VOLGENDE SESSIE — START HIER" bijwerken in NOW.md**
+
+### MEMO (Erik's wet — nooit overtreden):
+- UPDATE = VOORUITGANG, NOOIT ACHTERUITGANG
+- ALLES SYNCHROON NA IEDERE WIJZIGING (Redis · Git · Render · NOW.md)
+- PDCA 99.9% SLA — testen VOOR opleveren, niet erna
+- MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
+
+### SECRETS SSOT (altijd hier ophalen, nooit hardcoden):
+| Locatie | Inhoud |
+|---------|--------|
+| `C:/Users/erik_/Box/MEGA BOT/MASTER_ENV_APEXFLASH.txt` | Alle bot secrets (leidend) |
+| `C:/Users/erik_/.config/gmgm/.env` | GMGN API + private key |
+| `C:/Users/erik_/Box/08_OPERATIONS/8.1_ApexFlash_Bot/.env` | ISO9001 backup copy |
+| Sync naar Render: | `python C:/Users/erik_/projects/apexflash-bot/sync_render_env.py` |
+
+---
 
 ---
 
@@ -26,13 +59,16 @@
 ## HUIDIGE STATUS (update dit na elke sessie)
 | Item | Waarde |
 |---|---|
-| **Bot versie** | v3.23.0 (Render live) / v3.22.0 (local config.py) |
-| **Site versie** | v3.15.x (Render live) |
+| **Bot versie** | v3.23.x (Render live) — commit 2ed7717 (2026-04-13) |
+| **Site versie** | commit 9f9d13a — Bitunix social proof live |
 | **Python** | 3.14.3 — **HAND-GEPATCHED** (zie sectie Python 3.14) |
-| **Bot Render deploy** | live — commit 2026-04-10 23:03 UTC |
-| **Site Render deploy** | live — commit 2026-04-10 23:04 UTC |
-| **Render env vars bot** | 74 visible (geauditeerd 2026-04-11) |
-| **Render env vars site** | 12 visible + secret group (geauditeerd 2026-04-11) |
+| **Render env vars bot** | 74 keys (gesynchroniseerd 2026-04-12) |
+| **Render env vars site** | 12 visible + secret group |
+| **autotrade:enabled** | 1 (Redis) — bot handelt autonoom |
+| **Open posities** | 7: POPCAT/PNUT/FARTCOIN/MEW/JUP/WIF/GOAT |
+| **GMGN scanner** | ⚠️ 403 op Render — IP whitelist fix: `/myip` in Telegram |
+| **DexScreener fallback** | ✅ actief als backup scan |
+| **DISCORD_WEBHOOK_URL** | ❌ leeg — Erik actie vereist |
 | **TEST_TRADE_SOL** | 0 → PRODUCTIE (geen cap) |
 | **AUTONOMOUS_TRADE_AMOUNT_SOL** | 0.05 SOL (~EUR 5/trade) |
 | **Redis** | Upstash Frankfurt — apparent-wildcat-76903.upstash.io |
