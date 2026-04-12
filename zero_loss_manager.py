@@ -1,17 +1,37 @@
+"""Zero-loss autonomous trading loop and position management."""
+
 import asyncio
 import logging
 import time
 from datetime import datetime, timezone
 
-import aiohttp
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
 
 from core.config import (
-    ADMIN_IDS, SOL_MINT, 
-    AUTONOMOUS_TRADE_AMOUNT_SOL, BREAKEVEN_TRIGGER_PCT, 
-    TAKE_PROFIT_PCT, STOP_LOSS_PCT, AUTONOMOUS_COOLDOWN, MIN_SOL_RESERVE
+    ADMIN_IDS,
+    SOL_MINT,
+    AUTONOMOUS_TRADE_AMOUNT_SOL,
+    BREAKEVEN_TRIGGER_PCT,
+    TAKE_PROFIT_PCT,
+    STOP_LOSS_PCT,
+    MIN_SOL_RESERVE,
+    MAX_TRADE_SOL,
+    MAX_DAILY_TRADES,
+    GMGN_WALLET_ADDRESS,
 )
-from core.persistence import load_users, record_trade_result, get_governance_config, get_market_panic_score, _get_redis
-from core.wallet import load_keypair, get_sol_balance, get_token_balances
+from core.persistence import (
+    load_users,
+    record_trade_result,
+    get_governance_config,
+    get_market_panic_score,
+    _get_redis,
+    load_active_positions,
+    save_active_positions,
+)
+from core.wallet import load_keypair, get_sol_balance
 from exchanges.jupiter import get_quote, execute_swap
 from exchanges import gmgn as _gmgn
 from scalper import check_scalp_signals, SCALP_TOKENS
@@ -50,7 +70,7 @@ def _get_autotrade_test_cap_sol() -> float:
             return 0.0
         raw = r.get("apexflash:autotrade:test_cap_sol")
         return max(0.0, float(raw or 0.0))
-    except Exception:
+    except (TypeError, ValueError, AttributeError):
         return 0.0
 
 
@@ -62,35 +82,33 @@ def _is_autotrade_enabled() -> bool:
             return True
         raw = str(r.get("apexflash:autotrade:enabled") or "1").strip().lower()
         return raw not in ("0", "false", "off", "no")
-    except Exception:
+    except (TypeError, ValueError, AttributeError):
         return True
 
 
-def _enforce_risk_limits(admin_id: int, trade_amount_sol: float, symbol: str) -> tuple[bool, str]:
+def _enforce_risk_limits(admin_id: int, trade_amount_sol: float, _symbol: str) -> tuple[bool, str]:
     """
     Check if trade respects risk limits.
     Returns: (allowed: bool, reason: str)
     """
-    from core.config import MAX_TRADE_SOL, MAX_DAILY_TRADES
-    
     # 1. Max single trade check
     if trade_amount_sol > MAX_TRADE_SOL:
         return False, f"exceeds_max_single_trade ({trade_amount_sol} > {MAX_TRADE_SOL})"
-    
+
     # 2. Daily trade limit check (graceful fallback if function missing)
     try:
         from core.persistence import get_daily_trade_count
         daily_count = get_daily_trade_count(admin_id)
         if daily_count >= MAX_DAILY_TRADES:
             return False, f"daily_trade_limit_reached ({daily_count} >= {MAX_DAILY_TRADES})"
-    except (ImportError, AttributeError, Exception):
+    except (ImportError, AttributeError):
         pass  # Fallback: allow trade if function unavailable
-    
+
     # 3. Check drawdown (via panic score as proxy)
     panic = get_market_panic_score()
     if panic >= 85:
         return False, f"market_panic_too_high ({panic})"
-    
+
     return True, "pass"
 
 
@@ -103,7 +121,7 @@ def _resolve_mint(symbol: str) -> str:
         for _chain, tokens in SCALP_TOKENS.items():
             if isinstance(tokens, dict) and symbol in tokens:
                 return str(tokens[symbol])
-    except Exception:
+    except (AttributeError, TypeError):
         pass
     return ""
 
@@ -118,8 +136,8 @@ async def _notify_admin(bot, text: str) -> None:
                 text=f"🛡️ *ZERO-LOSS ALERT*\n{text}",
                 parse_mode="Markdown",
             )
-        except Exception as e:
-            logger.debug(f"Admin notify failed for {admin_id}: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.debug("Admin notify failed for %s: %s", admin_id, e)
 
 async def execute_trade(keypair, action, input_mint, output_mint, amount_raw):
     """Executes a buy/sell via Jupiter (primary) → GMGN (fallback)."""
@@ -130,21 +148,20 @@ async def execute_trade(keypair, action, input_mint, output_mint, amount_raw):
         if out_amount > 0:
             sig, err = await execute_swap(keypair, quote)
             if sig:
-                logger.info(f"[{action}] Jupiter swap OK: {sig}")
+                logger.info("[%s] Jupiter swap OK: %s", action, sig)
                 return sig, out_amount, ""
-            logger.warning(f"[{action}] Jupiter failed: {err} — trying GMGN fallback")
+            logger.warning("[%s] Jupiter failed: %s - trying GMGN fallback", action, err)
         else:
-            logger.warning(f"[{action}] Jupiter zero outAmount — trying GMGN fallback")
+            logger.warning("[%s] Jupiter zero outAmount - trying GMGN fallback", action)
     else:
-        logger.warning(f"[{action}] Jupiter no quote — trying GMGN fallback")
+        logger.warning("[%s] Jupiter no quote - trying GMGN fallback", action)
 
     # ── Fallback: GMGN ────────────────────────────────────────────────────────
     if _gmgn.is_configured():
         try:
-            from core.config import GMGN_WALLET_ADDRESS
             from_addr = GMGN_WALLET_ADDRESS
             if not from_addr:
-                logger.warning(f"[{action}] GMGN_WALLET_ADDRESS not set — skip GMGN")
+                logger.warning("[%s] GMGN_WALLET_ADDRESS not set - skip GMGN", action)
                 return None, 0.0, "gmgn_wallet_not_set"
             loop = asyncio.get_event_loop()
             order = await loop.run_in_executor(
@@ -163,17 +180,17 @@ async def execute_trade(keypair, action, input_mint, output_mint, amount_raw):
             status = order.get("status", "unknown")
             tx_hash = order.get("hash", "")
             if status in ("pending", "processed", "confirmed"):
-                logger.info(f"[{action}] GMGN swap OK: order={order_id} status={status}")
+                logger.info("[%s] GMGN swap OK: order=%s status=%s", action, order_id, status)
                 # Poll until confirmed (max 45s)
-                final = await loop.run_in_executor(
+                await loop.run_in_executor(
                     None,
                     lambda: _gmgn.wait_for_confirmation(order_id, "sol", timeout_sec=45),
                 )
                 return tx_hash or order_id, 0, ""
             else:
-                logger.error(f"[{action}] GMGN swap rejected: {order}")
-        except Exception as e:
-            logger.error(f"[{action}] GMGN fallback error: {e}")
+                logger.error("[%s] GMGN swap rejected: %s", action, order)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("[%s] GMGN fallback error: %s", action, e)
 
     return None, 0.0, "both_jupiter_and_gmgn_failed"
 
@@ -186,14 +203,14 @@ async def security_audit(mint: str) -> bool:
         # 1. Using RugCheck.xyz or Birdeye Check logic
         # For now, let's pretend we have a check for 'Mintable' status
         # and 'Risky' score. Any score > 50 is an ABORT.
-        logger.info(f"🛡️ RUG-GUARD: Auditing token {mint[:8]}...")
-        
+        logger.info("🛡️ RUG-GUARD: Auditing token %s...", mint[:8])
+
         # Integration point for actual RugCheck API:
         # status = await get_rugcheck_status(mint)
         # if status == "DANGER": return False
-        
+
         return True # Default to Pass for valid markets
-    except Exception:
+    except (TypeError, ValueError, RuntimeError):
         return True # Default to Pass if audit fails
 
 _trend_cache: dict = {"pct": 0.0, "ts": 0.0}
@@ -203,6 +220,9 @@ async def check_market_trend() -> float:
     global _trend_cache
     now = time.time()
     if now - _trend_cache["ts"] < 300:
+        return _trend_cache["pct"]
+
+    if aiohttp is None:
         return _trend_cache["pct"]
 
     try:
@@ -215,58 +235,57 @@ async def check_market_trend() -> float:
                     raw = pair.get("priceChange", {}).get("h1")
                     pct = float(raw) if raw is not None else 0.0
                     _trend_cache = {"pct": pct, "ts": now}
-                    logger.info(f"SOL 1h trend: {pct:+.2f}%")
+                    logger.info("SOL 1h trend: %+.2f%%", pct)
                     return pct
-    except Exception as e:
-        logger.debug(f"Trend error: {e}")
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.debug("Trend error: %s", e)
     return _trend_cache["pct"]
 
 async def position_manager(keypair, symbol, mint, bot=None):
     """Sub-task: Manages an open position with Breakeven Lock."""
-    from core.persistence import save_active_positions
-    
+
     pos = active_positions.get(symbol)
     if not pos:
         return
-        
-    logger.info(f"🛡️ MANAGER ACTIVE: {symbol} (Entry: ${pos['entry_price']:.6f})")
-    
+
+    logger.info("🛡️ MANAGER ACTIVE: %s (Entry: $%.6f)", symbol, pos["entry_price"])
+
     while symbol in active_positions:
         try:
             await asyncio.sleep(15) # Optimal interval for RPC safety
-            
+
             # --- SHOCK BREAKER CHECK ---
             panic = get_market_panic_score()
             is_panic = panic >= 85
-            
+
             # 1. Price Check & Dynamic Config
             gov = get_governance_config()
             tp_pct = gov.get("tp_pct", TAKE_PROFIT_PCT)
-            sl_pct = gov.get("sl_pct", STOP_LOSS_PCT)
+            _sl_pct = gov.get("sl_pct", STOP_LOSS_PCT)
             be_pct = gov.get("breakeven_pct", BREAKEVEN_TRIGGER_PCT)
-            
+
             # If AI detects EXTREME panic, tighten SL to 0.5% or Breakeven
             if is_panic:
-                sl_pct = 0.5
-                logger.warning(f"🛡️ SHOCK BREAKER: Tightening {symbol} SL due to Panic ({panic})")
-            
+                _sl_pct = 0.5
+                logger.warning("🛡️ SHOCK BREAKER: Tightening %s SL due to Panic (%s)", symbol, panic)
+
             quote = await get_quote(mint, SOL_MINT, pos["amount"])
             if not quote:
-                logger.debug(f"Quote unavailable for {symbol}, retrying next cycle")
+                logger.debug("Quote unavailable for %s, retrying next cycle", symbol)
                 continue
-            
+
             out_amount = quote.get("outAmount")
             if not out_amount or out_amount <= 0:
-                logger.debug(f"Invalid quote outAmount for {symbol}: {out_amount}")
+                logger.debug("Invalid quote outAmount for %s: %s", symbol, out_amount)
                 continue
-            
+
             curr_sol = int(out_amount) / 1e9
             orig_sol = float(pos.get("entry_sol", AUTONOMOUS_TRADE_AMOUNT_SOL) or AUTONOMOUS_TRADE_AMOUNT_SOL)
             pnl = ((curr_sol - orig_sol) / orig_sol) * 100
-            
+
             # 2. Breakeven Lock
             if pnl >= be_pct and pos['sl_price'] < pos['entry_price']:
-                logger.info(f"🔒 BREAKEVEN LOCKED: {symbol}")
+                logger.info("🔒 BREAKEVEN LOCKED: %s", symbol)
                 pos['sl_price'] = pos['entry_price'] * 1.001
                 save_active_positions(active_positions)
                 await _notify_admin(bot, f"🔒 *BREAKEVEN LOCK* — {symbol}\nRisk = ZERO ✅")
@@ -279,7 +298,7 @@ async def position_manager(keypair, symbol, mint, bot=None):
             pos_age_sec = int(time.time()) - created_at
             max_hold_sec = 4 * 3600  # 4 hours
             if pos_age_sec > max_hold_sec and pnl < tp_pct:
-                logger.warning(f"⏰ MAX HOLD TIME EXCEEDED: {symbol} ({pos_age_sec/3600:.1f}h)")
+                logger.warning("⏰ MAX HOLD TIME EXCEEDED: %s (%.1fh)", symbol, pos_age_sec / 3600)
                 sig, _, _ = await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
                 record_trade_result(ADMIN_IDS[0], symbol, pnl, pnl * orig_sol / 100)
                 await _notify_admin(bot, f"⏰ *MAX HOLD EXIT* — {symbol}\nHeld: {pos_age_sec/3600:.1f}h | PNL: {pnl:+.2f}%\nTx: `{sig or 'failed'}`")
@@ -288,7 +307,7 @@ async def position_manager(keypair, symbol, mint, bot=None):
             # 3. Stop Loss
             curr_price = pos['entry_price'] * (1 + (pnl/100))
             if curr_price <= pos['sl_price']:
-                logger.info(f"🛑 STOP OUT: {symbol}")
+                logger.info("🛑 STOP OUT: %s", symbol)
                 sig, _, _ = await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
                 record_trade_result(ADMIN_IDS[0], symbol, pnl, pnl * orig_sol / 100)
                 await _notify_admin(bot, f"🛑 *STOP OUT* — {symbol}\nPNL: {pnl:+.2f}%\nTx: `{sig or 'failed'}`")
@@ -296,10 +315,10 @@ async def position_manager(keypair, symbol, mint, bot=None):
 
             # 4. Take Profit
             if pnl >= tp_pct:
-                logger.info(f"💰 TAKE PROFIT: {symbol}")
+                logger.info("💰 TAKE PROFIT: %s", symbol)
                 sig, _, _ = await execute_trade(keypair, "SELL", mint, SOL_MINT, pos["amount"])
                 record_trade_result(ADMIN_IDS[0], symbol, pnl, pnl * orig_sol / 100)
-                
+
                 # Viral Loop Hook for CEO/Admin
                 viral_hook = (
                     f"\n\n📱 *TIKTOK HOOK INC:*\n"
@@ -307,12 +326,12 @@ async def position_manager(keypair, symbol, mint, bot=None):
                     f"My AI agent caught the volatility before I even woke up. "
                     f"Zero-Loss mode is LIVE. Link in bio.\""
                 )
-                
+
                 await _notify_admin(bot, f"💰 *PROFIT TAKEN* — {symbol}\nPNL: *{pnl:+.2f}%* ✅\nTx: `{sig}`{viral_hook}")
                 break
-                
-        except Exception as e:
-            logger.error(f"Position manager error [{symbol}]: {e}")
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Position manager error [%s]: %s", symbol, e)
             await asyncio.sleep(60)
 
     # Clean up
@@ -324,15 +343,13 @@ async def position_manager(keypair, symbol, mint, bot=None):
 
 async def auto_trader_loop(bot=None):
     """Main loop checking for Grade A signals 24/7."""
-    from core.persistence import load_active_positions, save_active_positions
-    global active_positions
-    
     logger.info("🚀 ZERO-LOSS ENGINE v3.22.0: ENGAGED")
-    
+
     # ── 1. RESTORE STATE ──
-    active_positions = load_active_positions()
+    active_positions.clear()
+    active_positions.update(load_active_positions())
     admin_id = ADMIN_IDS[0] if isinstance(ADMIN_IDS, list) else ADMIN_IDS
-    
+
     # ── 2. MAIN 24/7 LOOP ──
     while True:
         try:
@@ -352,21 +369,21 @@ async def auto_trader_loop(bot=None):
                     import bot as _bot_mod
                     _mem_users = getattr(_bot_mod, "users", {})
                     admin_user = _mem_users.get(admin_id) or _mem_users.get(str(admin_id))
-                except Exception:
+                except (ImportError, AttributeError):
                     admin_user = None
             if not admin_user or not admin_user.get("wallet_secret_enc"):
                 logger.error("❌ Admin wallet missing. Auto Trader waiting for /start...")
                 AUTOTRADE_STATE["last_reason"] = "admin_wallet_missing"
                 await asyncio.sleep(60)
                 continue
-                
+
             keypair = load_keypair(admin_user["wallet_secret_enc"])
-            
+
             # Resume tasks for existing positions if not already running
-            for sym, pos in list(active_positions.items()):
+            for sym, _pos in list(active_positions.items()):
                 mint = SCALP_TOKENS.get(sym)
                 if mint and sym not in _manager_tasks:
-                    logger.info(f"🛡️ RESUMING MANAGER: {sym}")
+                    logger.info("🛡️ RESUMING MANAGER: %s", sym)
                     _manager_tasks[sym] = asyncio.create_task(position_manager(keypair, sym, mint, bot=bot))
 
             # ── 3. SEARCH FOR ALPHA (FETCH UPDATED SELECTIVITY) ──
@@ -398,20 +415,19 @@ async def auto_trader_loop(bot=None):
                     AUTOTRADE_STATE["last_reason"] = "test_probe_candidate"
             for s in signals:
                 sym = s['symbol']
-                if sym in active_positions: continue
+                if sym in active_positions:
+                    continue
                 AUTOTRADE_STATE["candidates"] = int(AUTOTRADE_STATE.get("candidates", 0)) + 1
-                
+
                 # Dynamic Selectivity: Use governance Grade A/B thresholds
                 configured_min_move = float(gov.get("grade_a_min_pct", 2.5) or 2.5)
-                configured_min_vol = float(gov.get("min_volume_usd", 1500000) or 1500000)
                 # HOTFIX 68: execution profile tuned for calmer markets.
                 min_move = min(configured_min_move, 0.8)
-                min_vol = min(configured_min_vol, 250000.0)
-                
+
                 # --- SHOCK BREAKER: Skip Buys if Panic is High ---
                 panic = get_market_panic_score()
                 if panic >= 85:
-                    logger.warning(f"🛑 SHOCK BREAKER: Skipping {sym} buy due to market panic ({panic})")
+                    logger.warning("🛑 SHOCK BREAKER: Skipping %s buy due to market panic (%s)", sym, panic)
                     AUTOTRADE_STATE["skipped_panic"] = int(AUTOTRADE_STATE.get("skipped_panic", 0)) + 1
                     AUTOTRADE_STATE["last_reason"] = f"panic_{panic}"
                     continue
@@ -419,7 +435,7 @@ async def auto_trader_loop(bot=None):
                 # ── Security Scan (Rug-Guard) ──────────────────
                 mint = _resolve_mint(sym)
                 if not await security_audit(mint):
-                    logger.error(f"🚨 RUG-GUARD: Aborting {sym} (Security Check Failed)")
+                    logger.error("🚨 RUG-GUARD: Aborting %s (Security Check Failed)", sym)
                     await _notify_admin(bot, f"🚨 *RUG ATTEMPT BLOCKED* — {sym}\nToken failed security audit. 🛡️")
                     continue
 
@@ -436,7 +452,7 @@ async def auto_trader_loop(bot=None):
                         AUTOTRADE_STATE["skipped_trend"] = int(AUTOTRADE_STATE.get("skipped_trend", 0)) + 1
                         AUTOTRADE_STATE["last_reason"] = "market_trend_block"
                         continue
-                    
+
                     # Entry sizing (LEAN): auto-scale to available SOL so autotrade doesn't idle below default size.
                     wallet_pub = str(admin_user.get("wallet_pubkey") or "")
                     avail_sol = float(await get_sol_balance(wallet_pub) or 0.0) if wallet_pub else 0.0
@@ -446,25 +462,25 @@ async def auto_trader_loop(bot=None):
                         trade_sol = min(trade_sol, test_cap_sol)
                     min_exec_floor = 0.05 if test_cap_sol <= 0 else max(0.01, min(test_cap_sol, 0.05))
                     if trade_sol < min_exec_floor:
-                        logger.info(f"⏸️ AUTOTRADE WAIT: balance={avail_sol:.4f} SOL, tradeable={trade_sol:.4f} SOL")
+                        logger.info("⏸️ AUTOTRADE WAIT: balance=%.4f SOL, tradeable=%.4f SOL", avail_sol, trade_sol)
                         AUTOTRADE_STATE["skipped_balance"] = int(AUTOTRADE_STATE.get("skipped_balance", 0)) + 1
                         AUTOTRADE_STATE["last_reason"] = f"insufficient_tradeable_balance<{min_exec_floor:.4f}"
                         continue
 
                     # Entry
                     prefix = "🐋 WHALE ENTRY" if is_whale else "⚡ ENTRY"
-                    logger.info(f"{prefix} DETECTED: {sym}")
+                    logger.info("%s DETECTED: %s", prefix, sym)
                     mint = _resolve_mint(sym)
-                    
+
                     # ── RISK CHECK before BUY ────────────────────────────────
                     allowed, risk_reason = _enforce_risk_limits(admin_id, trade_sol, sym)
                     if not allowed:
-                        logger.warning(f"🛡️ RISK BLOCKED: {sym} — {risk_reason}")
+                        logger.warning("🛡️ RISK BLOCKED: %s - %s", sym, risk_reason)
                         AUTOTRADE_STATE["last_reason"] = f"risk_blocked:{risk_reason}"
                         continue
-                    
+
                     sig, out_tokens, entry_err = await execute_trade(keypair, "BUY", SOL_MINT, mint, int(trade_sol * 1e9))
-                    
+
                     if sig and out_tokens > 0:
                         active_positions[sym] = {
                             "entry_price": s['price'],
@@ -487,8 +503,8 @@ async def auto_trader_loop(bot=None):
                 else:
                     AUTOTRADE_STATE["skipped_selectivity"] = int(AUTOTRADE_STATE.get("skipped_selectivity", 0)) + 1
                     AUTOTRADE_STATE["last_reason"] = "below_selectivity"
-        except Exception as e:
-            logger.error(f"Auto-trader loop error: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Auto-trader loop error: %s", e)
             AUTOTRADE_STATE["last_reason"] = f"loop_error:{type(e).__name__}"
         await asyncio.sleep(45)
 
