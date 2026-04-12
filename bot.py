@@ -7415,6 +7415,152 @@ async def cmd_pdca(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
+async def handle_whale_copy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Callback: wcp_{short_mint} — Copy-trade a whale signal.
+    Executes a small SOL buy via Jupiter for the signaled token.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    if not is_admin(query.from_user.id):
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text("⛔ Admin only.")
+        return
+
+    short = query.data.replace("wcp_", "", 1)
+
+    from agents.whale_watcher import load_signal_from_callback, COPY_TRADE_SOL
+    sig = load_signal_from_callback(short)
+    if not sig:
+        await query.message.reply_text("⚠️ Signal expired — rescan for fresh signal.")
+        return
+
+    mint   = sig.get("mint", "")
+    symbol = sig.get("symbol", "?")
+    grade  = sig.get("grade", "?")
+
+    await query.message.reply_text(
+        f"🤖 Executing copy buy: *{symbol}* [{grade}]\n"
+        f"Amount: `{COPY_TRADE_SOL} SOL`\n"
+        f"Token: `{mint[:20]}...`\n"
+        f"_Routing via Jupiter..._",
+        parse_mode="Markdown",
+    )
+
+    try:
+        from core.config import GMGN_WALLET_ADDRESS, HELIUS_API_KEY, FALLBACK_RPC_URL, RPC_URLS
+        from exchanges.jupiter import swap as jupiter_swap
+        import asyncio
+
+        SOL_MINT = "So11111111111111111111111111111111111111112"
+        lamports = int(COPY_TRADE_SOL * 1_000_000_000)
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: jupiter_swap(
+                input_mint=SOL_MINT,
+                output_mint=mint,
+                amount=lamports,
+                wallet_address=GMGN_WALLET_ADDRESS,
+            )
+        )
+
+        tx = result.get("txid") or result.get("signature") or result.get("tx", "pending")
+
+        # Log to PDCA journal
+        from agents.trade_journal import log_signal as journal_log
+        journal_log({**sig, "source": f"COPY_TRADE_{grade}"})
+
+        # Store in Redis
+        r = _get_redis()
+        if r:
+            import json as _json, time as _time
+            r.setex(
+                f"whale:copy:{mint[:16]}",
+                8 * 3600,
+                _json.dumps({"tx": tx, "sol": COPY_TRADE_SOL, "symbol": symbol, "grade": grade,
+                              "ts": int(_time.time()), "user": query.from_user.id}),
+            )
+
+        await query.message.reply_text(
+            f"✅ *Copy buy executed!*\n"
+            f"Token: *{symbol}* [{grade}]\n"
+            f"Amount: `{COPY_TRADE_SOL} SOL`\n"
+            f"TX: `{tx}`\n"
+            f"[Solscan ↗](https://solscan.io/tx/{tx})",
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        logger.error(f"Whale copy buy error: {e}")
+        await query.message.reply_text(
+            f"❌ Copy buy failed: `{str(e)[:120]}`\n"
+            f"Check Render logs for details.",
+            parse_mode="Markdown",
+        )
+
+
+async def handle_whale_track(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Callback: wtr_{wallet_short} — Add whale wallet to Inspector live tracking.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    if not is_admin(query.from_user.id):
+        await query.edit_message_reply_markup(reply_markup=None)
+        return
+
+    short_addr = query.data.replace("wtr_", "", 1)
+
+    # Lookup full wallet address from the stored signal
+    r = _get_redis()
+    full_addr = short_addr  # fallback
+    if r:
+        import json as _json
+        # Search recent signals for a matching wallet
+        keys = r.keys("whale:sig:*")
+        for k in keys[:20]:
+            raw = r.get(k)
+            if not raw:
+                continue
+            try:
+                d = _json.loads(raw)
+                for w in (d.get("whale_wallets") or []):
+                    addr = w.get("wallet_address") or w.get("address", "")
+                    if addr.startswith(short_addr):
+                        full_addr = addr
+                        break
+            except Exception:
+                continue
+            if full_addr != short_addr:
+                break
+
+    try:
+        from agents.inspector_agent import add_alpha_wallet
+        is_new = add_alpha_wallet(full_addr, label=f"WhaleSignal_{short_addr[:8]}")
+
+        # Also persist in Redis so Inspector picks it up after restart
+        if r:
+            import time as _time
+            r.sadd("inspector:dynamic_wallets", full_addr)
+            r.setex(f"inspector:wallet:{full_addr[:16]}", 7 * 24 * 3600,
+                    f"WhaleSignal_{short_addr[:8]}")
+
+        status = "Added to live tracking" if is_new else "Already being tracked"
+        await query.message.reply_text(
+            f"👁 *Whale Wallet Tracking*\n"
+            f"`{full_addr[:20]}...`\n"
+            f"Status: {status}\n"
+            f"Inspector will alert on next buy/sell.",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        await query.message.reply_text(f"❌ Track error: {e}")
+
+
 async def cmd_myip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/myip — Show current outbound IP of Render. Use to whitelist on GMGN dashboard."""
     if not is_admin(update.effective_user.id):
@@ -8712,7 +8858,9 @@ def main() -> None:
     app.add_handler(CommandHandler("audit", cmd_audit))
     app.add_handler(CommandHandler("scan", cmd_audit))  # alias   # Inspector: list tracked wallets
 
-    # Inline callbacks
+    # Inline callbacks — whale copy-trade (specific pattern first)
+    app.add_handler(CallbackQueryHandler(handle_whale_copy, pattern=r"^wcp_"))
+    app.add_handler(CallbackQueryHandler(handle_whale_track, pattern=r"^wtr_"))
     app.add_handler(CallbackQueryHandler(callback_handler))
 
     # Document handler — admin can forward backup JSON to auto-restore
@@ -9568,27 +9716,86 @@ def main() -> None:
             logger.info("📣 Marketing Agency: background worker STARTED")
 
             # 🐋 Whale Intelligence v2.0 — GMGN Smart Money Scanner
-            from agents.whale_watcher import whale_scan_loop, register_signal_callback, format_whale_signal
+            from agents.whale_watcher import (
+                whale_scan_loop, register_signal_callback, format_whale_signal,
+                get_top_whale_wallets, store_signal_for_callback, COPY_TRADE_SOL,
+            )
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
             from agents.trade_journal import log_signal as journal_log, outcome_check_loop
             asyncio.ensure_future(outcome_check_loop())
             logger.info("📊 PDCA Trade Journal: outcome checker STARTED")
 
             async def _whale_signal_to_telegram(sig: dict):
-                """Forward whale signals to @ApexFlashAlerts channel + journal + Twitter."""
-                # Log to PDCA journal (async-safe: log_signal is sync)
+                """Forward whale signals: journal + Telegram (with copy-trade buttons) + Twitter + Discord."""
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, lambda: journal_log(sig))
 
+                # Fetch top whale wallets (non-blocking, best-effort)
+                wallets = []
+                if sig.get("grade") in ("A", "S") and sig.get("source", "").startswith("GMGN"):
+                    try:
+                        wallets = await loop.run_in_executor(
+                            None, lambda: get_top_whale_wallets(sig["mint"], limit=3)
+                        )
+                    except Exception:
+                        pass
+
+                # Store signal in Redis for callback lookup
+                short = await loop.run_in_executor(
+                    None, lambda: store_signal_for_callback(sig, wallets)
+                )
+
+                # Build inline keyboard with copy-trade + solscan buttons
+                mint = sig.get("mint", "")
+                keyboard = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton(
+                            f"🤖 Copy Buy {COPY_TRADE_SOL} SOL",
+                            callback_data=f"wcp_{short}"
+                        ),
+                        InlineKeyboardButton(
+                            "📊 Chart ↗",
+                            url=f"https://dexscreener.com/solana/{mint}"
+                        ),
+                    ],
+                ])
+                if wallets:
+                    w0_addr = wallets[0].get("wallet_address") or wallets[0].get("address", "")
+                    if w0_addr:
+                        keyboard = InlineKeyboardMarkup([
+                            [
+                                InlineKeyboardButton(
+                                    f"🤖 Copy Buy {COPY_TRADE_SOL} SOL",
+                                    callback_data=f"wcp_{short}"
+                                ),
+                                InlineKeyboardButton(
+                                    "📊 Chart ↗",
+                                    url=f"https://dexscreener.com/solana/{mint}"
+                                ),
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    f"👁 Track Lead Whale",
+                                    callback_data=f"wtr_{w0_addr[:14]}"
+                                ),
+                                InlineKeyboardButton(
+                                    "🔍 Solscan ↗",
+                                    url=f"https://solscan.io/account/{w0_addr}"
+                                ),
+                            ],
+                        ])
+
                 try:
-                    text = format_whale_signal(sig)
+                    text = format_whale_signal(sig, wallets)
                     if ALERT_CHANNEL_ID:
                         await application.bot.send_message(
                             chat_id=ALERT_CHANNEL_ID,
                             text=text,
                             parse_mode="Markdown",
+                            reply_markup=keyboard,
+                            disable_web_page_preview=True,
                         )
-                    # Also notify admins for Grade S
                     if sig["grade"] == "S":
                         for admin_id in ADMIN_IDS:
                             try:
@@ -9596,13 +9803,14 @@ def main() -> None:
                                     chat_id=admin_id,
                                     text=f"🚨 GRADE S AUTO-SIGNAL\n{text}",
                                     parse_mode="Markdown",
+                                    reply_markup=keyboard,
+                                    disable_web_page_preview=True,
                                 )
                             except Exception:
                                 pass
                 except Exception as e:
                     logger.error(f"Whale Telegram dispatch error: {e}")
 
-                # Auto-post Grade A/S signals to Twitter/X
                 if TWITTER_ENABLED and TWITTER_API_KEY and sig.get("grade") in ("A", "S"):
                     try:
                         from agents.twitter_poster import post_whale_signal_tweet
@@ -9614,7 +9822,6 @@ def main() -> None:
                     except Exception as e:
                         logger.warning(f"Whale Twitter post error (non-critical): {e}")
 
-                # Send Grade A/S signals to Discord
                 if sig.get("grade") in ("A", "S"):
                     try:
                         from agents.notifications import notify_discord_gmgn_signal

@@ -60,6 +60,21 @@ if _EXTRA_WALLETS_RAW:
         if len(_entry) >= 32:
             ALPHA_WALLETS[_entry] = f"Custom_{_entry[:8]}"
 
+# Add dynamically tracked whale wallets from Redis (persisted across restarts)
+try:
+    from core.persistence import _get_redis as _insp_redis
+    _r = _insp_redis()
+    if _r:
+        _dynamic = _r.smembers("inspector:dynamic_wallets") or set()
+        for _dw in _dynamic:
+            _dw = _dw.decode() if isinstance(_dw, bytes) else _dw
+            if len(_dw) >= 32 and _dw not in ALPHA_WALLETS:
+                _label_raw = _r.get(f"inspector:wallet:{_dw[:16]}")
+                _label = (_label_raw.decode() if isinstance(_label_raw, bytes) else _label_raw) or f"DynWhale_{_dw[:8]}"
+                ALPHA_WALLETS[_dw] = _label
+except Exception:
+    pass
+
 # ═══════════════════════════════════════════
 # RUNTIME STATE
 # ═══════════════════════════════════════════

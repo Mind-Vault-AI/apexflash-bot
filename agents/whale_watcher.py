@@ -27,6 +27,7 @@ from exchanges.gmgn_market import (
     rank as gmgn_rank,
     trenches as gmgn_trenches,
     is_configured as gmgn_ready,
+    top_traders,
 )
 
 logger = logging.getLogger("WhaleWatcher")
@@ -49,6 +50,7 @@ AUTO_TRADE_SOL     = float(os.getenv("WHALE_AUTO_TRADE_SOL", "0.05"))
 
 SCAN_INTERVAL_SECONDS = int(os.getenv("WHALE_SCAN_INTERVAL", "300"))  # 5 min
 SIGNAL_TTL_SECONDS    = 4 * 3600  # 4 hour dedup
+COPY_TRADE_SOL        = float(os.getenv("WHALE_COPY_SOL", "0.03"))   # per copy trade
 
 # ─── Signal callbacks (registered by bot.py) ───────────────────────────────────
 
@@ -112,19 +114,72 @@ def _build_signal(token: dict, grade: str, source: str) -> dict:
     }
 
 
-def format_whale_signal(sig: dict) -> str:
-    """Format a whale signal for Telegram."""
+def format_whale_signal(sig: dict, wallets: list = None) -> str:
+    """Format a whale signal for Telegram. Includes whale wallet addresses if available."""
     grade_emoji = {"S": "🚨", "A": "🔥", "B": "⚡"}.get(sig["grade"], "📊")
     auto_tag = " | 🤖 AUTO-BUYING" if sig["grade"] == "S" and AUTO_TRADE_ENABLED else ""
-    return (
-        f"{grade_emoji} *GRADE {sig['grade']} WHALE SIGNAL*{auto_tag}\n"
-        f"📌 *{sig['symbol']}* | {sig['source']}\n"
-        f"💵 ${sig['price']:.8f}\n"
-        f"📈 1h: {sig['chg_1h']:+.1f}% | 5m: {sig['chg_5m']:+.1f}%\n"
-        f"💰 Vol: ${sig['volume']:,.0f} | MC: ${sig['market_cap']:,.0f}\n"
-        f"🧠 Smart Degens: {sig['smart_degens']} | Renowned: {sig['renowned']}\n"
-        f"`{sig['mint'][:20]}...`"
-    )
+    lines = [
+        f"{grade_emoji} *GRADE {sig['grade']} WHALE SIGNAL*{auto_tag}\n",
+        f"📌 *{sig['symbol']}* | {sig['source']}\n",
+        f"💵 ${sig['price']:.8f}\n",
+        f"📈 1h: {sig['chg_1h']:+.1f}% | 5m: {sig['chg_5m']:+.1f}%\n",
+        f"💰 Vol: ${sig['volume']:,.0f} | MC: ${sig['market_cap']:,.0f}\n",
+        f"🧠 Smart Degens: {sig['smart_degens']} | Renowned: {sig['renowned']}\n",
+        f"`{sig['mint'][:20]}...`\n",
+    ]
+    if wallets:
+        lines.append("\n🐋 *Lead Whale Wallets:*\n")
+        for w in wallets[:3]:
+            addr = w.get("wallet_address", "") or w.get("address", "")
+            profit = w.get("realized_profit", 0) or 0
+            pnl_tag = f" +${profit:,.0f}" if profit > 0 else ""
+            lines.append(f"  `{addr[:16]}...`{pnl_tag} [↗ Solscan](https://solscan.io/account/{addr})\n")
+    return "".join(lines)
+
+
+# ─── Whale wallet enrichment ─────────────────────────────────────────────────────
+
+def get_top_whale_wallets(mint: str, limit: int = 3) -> list:
+    """
+    Fetch top smart_degen wallets currently holding this token.
+    Returns list of {wallet_address, realized_profit, unrealized_profit, tags}
+    Falls back to empty list on GMGN 403 / error.
+    """
+    try:
+        traders = top_traders(mint, chain="sol", limit=limit, tag="smart_degen")
+        return traders[:limit]
+    except Exception as e:
+        logger.debug(f"top_traders {mint[:12]}: {e}")
+        return []
+
+
+def store_signal_for_callback(sig: dict, wallets: list) -> str:
+    """
+    Store signal + whale wallets in Redis for callback lookup.
+    Key: whale:sig:{mint[:14]}  TTL: 4h
+    Returns the short key used in callback_data.
+    """
+    r = _get_redis()
+    if not r:
+        return sig.get("mint", "")[:14]
+    short = sig.get("mint", "")[:14]
+    payload = {**sig, "whale_wallets": wallets}
+    r.setex(f"whale:sig:{short}", SIGNAL_TTL_SECONDS, json.dumps(payload))
+    return short
+
+
+def load_signal_from_callback(short_mint: str) -> dict:
+    """Retrieve stored signal from Redis by short mint key."""
+    r = _get_redis()
+    if not r:
+        return {}
+    raw = r.get(f"whale:sig:{short_mint}")
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {}
 
 
 # ─── Deduplication ─────────────────────────────────────────────────────────────
