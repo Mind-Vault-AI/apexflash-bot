@@ -7415,6 +7415,43 @@ async def cmd_pdca(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
+async def cmd_myip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/myip — Show current outbound IP of Render. Use to whitelist on GMGN dashboard."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    import urllib.request as _ur, json as _json
+    try:
+        req = _ur.Request("https://api.ipify.org?format=json",
+                          headers={"User-Agent": "ApexFlash/1.0"})
+        with _ur.urlopen(req, timeout=8) as resp:
+            ip = _json.loads(resp.read()).get("ip", "unknown")
+    except Exception as e:
+        ip = f"error: {e}"
+
+    # Also check cached IP from last GMGN 403
+    r = _get_redis()
+    cached_ip = r.get("apexflash:render:outbound_ip") if r else None
+
+    text = (
+        f"🌐 *Render Outbound IP*\n"
+        f"Current: `{ip}`\n"
+    )
+    if cached_ip and cached_ip != ip:
+        text += f"Last 403 IP: `{cached_ip}`\n"
+
+    text += (
+        f"\n📋 *Action needed:*\n"
+        f"1. Go to [gmgn.ai](https://gmgn.ai) → API settings → Trusted IPs\n"
+        f"2. Add: `{ip}`\n"
+        f"3. GMGN whale scanner activates within 5 min\n"
+    )
+    if r:
+        r.setex("apexflash:render:outbound_ip", 3600, ip)
+    await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+
+
 async def cmd_qa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin-only lean QA summary: integrity + watchdog + autotrade readiness."""
     if not is_admin(update.effective_user.id):
@@ -8649,6 +8686,7 @@ def main() -> None:
     app.add_handler(CommandHandler("ai_status", cmd_ai_status))
     app.add_handler(CommandHandler("whale_intel", cmd_whale_intel))
     app.add_handler(CommandHandler("pdca", cmd_pdca))
+    app.add_handler(CommandHandler("myip", cmd_myip))
     app.add_handler(CommandHandler("qa", cmd_qa))
     app.add_handler(CommandHandler("smoke", cmd_smoke))
     app.add_handler(CommandHandler("sla", cmd_sla))

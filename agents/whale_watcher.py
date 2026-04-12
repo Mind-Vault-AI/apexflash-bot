@@ -179,58 +179,145 @@ async def _auto_execute_trade(sig: dict):
         logger.error(f"WHALE AUTO-TRADE ERROR: {e}")
 
 
+# ─── DexScreener fallback scan ───────────────────────────────────────────────────
+
+async def _dexscreener_scan(r) -> list:
+    """
+    Fallback scanner using DexScreener boosted tokens.
+    No API key or IP whitelist required — always available.
+    Grades tokens by momentum (no smart_degen_count available):
+      A: ≥15% 1h change + ≥$100K volume
+      B: ≥5% 1h change  + ≥$20K volume
+    """
+    import aiohttp
+    fired = []
+    try:
+        boost_url = "https://api.dexscreener.com/token-boosts/latest/v1"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(boost_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                boosts = await resp.json()
+
+        sol_boosts = [t for t in (boosts if isinstance(boosts, list) else [])
+                      if t.get("chainId") == "solana"][:15]
+
+        async with aiohttp.ClientSession() as session:
+            for boost in sol_boosts:
+                addr = boost.get("tokenAddress", "")
+                if not addr:
+                    continue
+                try:
+                    async with session.get(
+                        f"https://api.dexscreener.com/latest/dex/tokens/{addr}",
+                        timeout=aiohttp.ClientTimeout(total=10),
+                    ) as resp:
+                        pair_data = await resp.json()
+                    pairs = pair_data.get("pairs") or []
+                    if not pairs:
+                        continue
+                    pair = pairs[0]
+
+                    chg_1h = float((pair.get("priceChange") or {}).get("h1", 0) or 0)
+                    chg_5m = float((pair.get("priceChange") or {}).get("m5", 0) or 0)
+                    vol    = float((pair.get("volume") or {}).get("h24", 0) or 0)
+                    price  = float(pair.get("priceUsd", 0) or 0)
+                    sym    = (pair.get("baseToken") or {}).get("symbol", "?")
+                    mc     = float(pair.get("fdv", 0) or 0)
+
+                    if chg_1h >= GRADE_S_PRICE_CHANGE and vol >= GRADE_S_VOLUME_USD:
+                        grade = "A"  # capped at A — no smart-money confirmation
+                    elif chg_1h >= GRADE_A_PRICE_CHANGE and vol >= GRADE_A_VOLUME_USD:
+                        grade = "B"
+                    else:
+                        continue
+
+                    if r and _already_signalled(r, addr, grade):
+                        continue
+
+                    token = {
+                        "address": addr,
+                        "symbol": sym,
+                        "price": price,
+                        "price_change_percent1h": chg_1h,
+                        "price_change_percent5m": chg_5m,
+                        "volume": vol,
+                        "market_cap": mc,
+                        "smart_degen_count": 0,
+                        "renowned_count": 0,
+                    }
+                    fired.append(_build_signal(token, grade, "DEXSCREENER_BOOST"))
+                except Exception:
+                    continue
+
+    except Exception as e:
+        logger.warning(f"DexScreener fallback error: {e}")
+    return fired
+
+
 # ─── Main scan loop ─────────────────────────────────────────────────────────────
 
 async def whale_scan_loop():
     """
     Runs forever. Every SCAN_INTERVAL_SECONDS:
-      - GMGN rank (smart_degen order) → grade S/A/B
-      - GMGN trenches (pump/completed) → grade A/B
+      - GMGN rank (smart_degen order) → grade S/A/B   [primary]
+      - GMGN trenches (pump/completed) → grade A/B    [primary]
+      - DexScreener boosted tokens → grade A/B        [fallback if GMGN fails]
     Emits signals via callbacks; deduplicates via Redis.
+    Never exits — degrades gracefully to DexScreener when GMGN unavailable.
     """
-    if not gmgn_ready():
-        logger.warning("WHALE: GMGN_API_KEY not set — scanner disabled")
-        return
-
-    logger.info(
-        f"🐋 WHALE INTELLIGENCE v2.0 ONLINE | "
-        f"S≥{GRADE_S_SMART_DEGENS} degens / {GRADE_S_PRICE_CHANGE}%+ / ${GRADE_S_VOLUME_USD:,.0f}+ | "
-        f"Auto-trade: {'ON ' + str(AUTO_TRADE_SOL) + ' SOL' if AUTO_TRADE_ENABLED else 'OFF'}"
-    )
+    gmgn_available = gmgn_ready()
+    if not gmgn_available:
+        logger.warning("WHALE: GMGN_API_KEY not set — running on DexScreener fallback only")
+    else:
+        logger.info(
+            f"🐋 WHALE INTELLIGENCE v2.0 ONLINE | "
+            f"S≥{GRADE_S_SMART_DEGENS} degens / {GRADE_S_PRICE_CHANGE}%+ / ${GRADE_S_VOLUME_USD:,.0f}+ | "
+            f"Auto-trade: {'ON ' + str(AUTO_TRADE_SOL) + ' SOL' if AUTO_TRADE_ENABLED else 'OFF'}"
+        )
 
     while True:
         try:
             r = _get_redis()
             fired = []
+            gmgn_ok = False
 
-            # ── Rank scan ─────────────────────────────────────────────────────
-            try:
-                tokens = gmgn_rank(chain="sol", interval="1h", limit=50, order_by="smart_degen_count")
-                for token in tokens:
-                    grade = _grade_rank_token(token)
-                    mint  = token.get("address", "")
-                    if not grade or not mint:
-                        continue
-                    if r and _already_signalled(r, mint, grade):
-                        continue
-                    fired.append(_build_signal(token, grade, "GMGN_RANK"))
-            except Exception as e:
-                logger.warning(f"rank scan error: {e}")
-
-            # ── Trenches scan ─────────────────────────────────────────────────
-            try:
-                trench = gmgn_trenches(chain="sol", limit=20)
-                for cat in ("pump", "completed"):
-                    for token in trench.get(cat, []):
-                        grade = _grade_trenches_token(token, cat)
+            # ── GMGN Rank scan ────────────────────────────────────────────────
+            if gmgn_available:
+                try:
+                    tokens = gmgn_rank(chain="sol", interval="1h", limit=50, order_by="smart_degen_count")
+                    for token in tokens:
+                        grade = _grade_rank_token(token)
                         mint  = token.get("address", "")
                         if not grade or not mint:
                             continue
                         if r and _already_signalled(r, mint, grade):
                             continue
-                        fired.append(_build_signal(token, grade, f"GMGN_{cat.upper()}"))
-            except Exception as e:
-                logger.warning(f"trenches scan error: {e}")
+                        fired.append(_build_signal(token, grade, "GMGN_RANK"))
+                    gmgn_ok = True
+                except Exception as e:
+                    logger.warning(f"GMGN rank scan failed: {e}")
+
+            # ── GMGN Trenches scan ────────────────────────────────────────────
+            if gmgn_available and gmgn_ok:
+                try:
+                    trench = gmgn_trenches(chain="sol", limit=20)
+                    for cat in ("pump", "completed"):
+                        for token in trench.get(cat, []):
+                            grade = _grade_trenches_token(token, cat)
+                            mint  = token.get("address", "")
+                            if not grade or not mint:
+                                continue
+                            if r and _already_signalled(r, mint, grade):
+                                continue
+                            fired.append(_build_signal(token, grade, f"GMGN_{cat.upper()}"))
+                except Exception as e:
+                    logger.warning(f"GMGN trenches scan failed: {e}")
+
+            # ── DexScreener fallback (when GMGN unavailable or failed) ────────
+            if not gmgn_available or not gmgn_ok:
+                dex_signals = await _dexscreener_scan(r)
+                fired.extend(dex_signals)
+                if dex_signals:
+                    logger.info(f"WHALE (DexScreener fallback): {len(dex_signals)} signals")
 
             # ── Emit ──────────────────────────────────────────────────────────
             for sig in fired:
@@ -249,7 +336,13 @@ async def whale_scan_loop():
                     asyncio.create_task(_auto_execute_trade(sig))
 
             if fired:
-                logger.info(f"WHALE: {len(fired)} signals this scan")
+                logger.info(f"WHALE: {len(fired)} signals this scan (source: {'GMGN' if gmgn_ok else 'DEXSCREENER'})")
+
+            # ── Heartbeat ─────────────────────────────────────────────────────
+            if r:
+                r.setex("apexflash:whale:heartbeat", 600,
+                        json.dumps({"ts": int(time.time()), "gmgn_ok": gmgn_ok,
+                                    "signals_this_scan": len(fired)}))
 
         except Exception as e:
             logger.error(f"whale_scan_loop error: {e}")

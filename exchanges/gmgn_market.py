@@ -29,6 +29,17 @@ def _auth_params() -> dict:
     }
 
 
+def _get_outbound_ip() -> str:
+    """Fetch current outbound IP — used for GMGN whitelist diagnostics."""
+    try:
+        req = urllib.request.Request("https://api.ipify.org?format=json",
+                                     headers={"User-Agent": "ApexFlash/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.loads(r.read()).get("ip", "unknown")
+    except Exception:
+        return "unknown"
+
+
 def _get(path: str, params: dict = None) -> dict:
     if not _API_KEY:
         raise RuntimeError("GMGN_API_KEY not set")
@@ -36,8 +47,26 @@ def _get(path: str, params: dict = None) -> dict:
     qs = urllib.parse.urlencode(all_params)
     url = f"{_BASE_URL}{path}?{qs}"
     req = urllib.request.Request(url, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=15) as r:
-        data = json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            ip = _get_outbound_ip()
+            logger.error(
+                f"GMGN 403 FORBIDDEN — outbound IP [{ip}] not whitelisted. "
+                f"Add it at gmgn.ai → API settings → Trusted IPs."
+            )
+            # Store in Redis for /myip Telegram command
+            try:
+                from core.persistence import _get_redis
+                r_conn = _get_redis()
+                if r_conn:
+                    r_conn.setex("apexflash:render:outbound_ip", 3600, ip)
+            except Exception:
+                pass
+            raise RuntimeError(f"GMGN 403 — IP {ip} not whitelisted")
+        raise RuntimeError(f"GMGN HTTP {e.code}: {e.reason}")
     if data.get("code") != 0:
         raise RuntimeError(f"GMGN error {data.get('code')}: {data.get('message', data)}")
     return data["data"]
@@ -55,8 +84,15 @@ def _post(path: str, body: dict, params: dict = None) -> dict:
         headers={"Content-Type": "application/json"},
         method="POST"
     )
-    with urllib.request.urlopen(req, timeout=15) as r:
-        data = json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            ip = _get_outbound_ip()
+            logger.error(f"GMGN 403 — IP {ip} not whitelisted")
+            raise RuntimeError(f"GMGN 403 — IP {ip} not whitelisted")
+        raise RuntimeError(f"GMGN HTTP {e.code}: {e.reason}")
     if data.get("code") != 0:
         raise RuntimeError(f"GMGN error {data.get('code')}: {data.get('message', data)}")
     return data["data"]
