@@ -1,5 +1,5 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-13 (Sessie 29)
+# Last updated: 2026-04-13 (Sessie 30)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
 ## LIVE STATE (sessie 29 — VERIFIED via Redis 2026-04-13)
@@ -54,18 +54,17 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - PDCA: elk signaal gelogd → na 1h prijs check → WIN/LOSS/FLAT → dagstatistiek
 - /pdca → win rate per grade + aanbevelingen om thresholds te tunen
 
-## VOLGENDE SESSIE — START HIER (sessie 30)
+## VOLGENDE SESSIE — START HIER (sessie 31)
 1. **GMGN IP FIX** — Erik: typ `/myip` in @ApexFlashBot → krijg Render IP → voeg toe op gmgn.ai → GMGN scanner live
-2. ~~**DISCORD_WEBHOOK_URL**~~ ✅ OPGELOST — gesynchroniseerd vanuit MASTER_ENV naar Render
-3. CHECK `/whale_intel` in Telegram na GMGN fix — scanner actief? Signalen?
-4. PDCA journal zal automatisch vullen zodra GMGN fix actief is (DexScreener fallback genereert ook signalen)
-5. Reddit outreach activeren (drafts in promo/ map)
-6. Posities P&L bekijken — fetch current prices van open posities via DexScreener
+2. CHECK `/whale_intel` in Telegram na GMGN fix — scanner actief? Signalen?
+3. PDCA journal zal automatisch vullen zodra GMGN fix actief is
+4. Reddit outreach activeren (drafts in promo/ map) — wacht op Erik akkoord
+5. Posities P&L bekijken — fetch current prices van open posities via DexScreener
 
 ## OPENSTAAND — ACTIE VEREIST
 | Item | Status | Verantwoordelijke |
 |------|--------|-------------------|
-| DISCORD_WEBHOOK_URL | ✅ GESYNCHRONISEERD | AI: sync vanuit MASTER_ENV gedaan |
+| DISCORD_WEBHOOK_URL | ✅ GESYNCHRONISEERD | Done |
 | GMGN IP whitelist Render | ⚠️ Render 403 | **Erik**: `/myip` in Telegram → gmgn.ai whitelist |
 | PDCA journal | ⚠️ 1 TEST entry | Automatisch fix na GMGN IP fix |
 | Posities P&L | ❓ amount_sol=0 | AI: DexScreener P&L fetch volgende sessie |
@@ -77,6 +76,17 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - Opgelost: keys toegevoegd aan .env + sync_render_env.py bijgewerkt
 - GMGN 403 lokaal = IP whitelist (normaal) — Render moet wél in whitelist staan
 - autotrade:enabled=1 in Redis → bot handelt al (8 posities open)
+
+## GEDAAN (sessie 30 — 2026-04-13, vervolg)
+- ✅ FULL LANDING PAGE AUDIT — alle knoppen, links, CTAs, API endpoints getest (commit a8be7de):
+  - affiliate/[slug]/route.ts: GET handler + 302 redirect + Redis click tracking (was POST-only → 405 bij elke affiliate klik)
+  - CryptoTicker.tsx: Gate links gate.io→gate.com met ?ref_type=103 (referral tracking was lek)
+  - Footer.tsx: X/Twitter + About page links toegevoegd (beide ontbraken)
+  - FAQ.tsx: prijzen gecorrigeerd Pro $19→$9.99 / Elite $49→$29.99 (verkeerde prijzen = klanten wegjagen)
+  - FAQ.tsx: referral % 25%→25-35% tiered, whale tracking beschrijving gecorrigeerd
+- ✅ Bot audit: alle handlers aanwezig, syntax clean (bot.py / whale_watcher.py / inspector_agent.py)
+- ✅ Geen console errors op landing page
+- Commits: a8be7de (apexflash-app audit)
 
 ## GEDAAN (sessie 29 — 2026-04-13, vervolg)
 - ✅ Redis volledig gecheckt: 7 posities, autotrade=1, Grade A=2, journal=1 TEST
