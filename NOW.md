@@ -78,7 +78,7 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - GMGN 403 lokaal = IP whitelist (normaal) — Render moet wél in whitelist staan
 - autotrade:enabled=1 in Redis → bot handelt al (8 posities open)
 
-## GEDAAN (sessie 29 — 2026-04-13)
+## GEDAAN (sessie 29 — 2026-04-13, vervolg)
 - ✅ Redis volledig gecheckt: 7 posities, autotrade=1, Grade A=2, journal=1 TEST
 - ✅ whale_watcher.py: DexScreener fallback scan toegevoegd — scanner stopt nooit meer
 - ✅ whale_watcher.py: heartbeat naar Redis na elke scan (`apexflash:whale:heartbeat`)
@@ -86,7 +86,16 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - ✅ bot.py: `/myip` command toegevoegd — Erik typt dit → krijgt Render IP → whitelist klaar
 - ✅ Hero.tsx: Bitunix +156%/+305% social proof toegevoegd (proof banner + stats bar)
 - ✅ Landing page live geverifieerd: Bitunix proof zichtbaar, CryptoTicker live, alles ✅
-- Commits: 825fd7e (bot), 9f9d13a (app)
+- ✅ DISCORD_WEBHOOK_URL gesynchroniseerd vanuit MASTER_ENV naar Render (74 keys)
+- ✅ Whale Copy-Trade feature gebouwd (commit df0f538):
+  - Signal fires → toont top whale wallets van GMGN
+  - [🤖 Copy Buy 0.03 SOL] button → Jupiter swap direct uitvoeren
+  - [👁 Track Lead Whale] button → Inspector voegt wallet toe aan live monitoring
+  - [📊 DexScreener] + [🔍 Solscan] deeplinks
+  - PDCA journal logt elke copy trade
+  - Inspector laadt dynamisch getrackte whale wallets na herstart
+- ✅ CLAUDE.md stop-blok bovenaan beide repos (18f4ff6, 3f2dba6)
+- Commits: 825fd7e (DexScreener fallback), 9f9d13a (app), 18f4ff6 (CLAUDE.md), 24b3c55 (Discord), df0f538 (copy-trade)
 
 ## GEDAAN (sessie 28 — 2026-04-12)
 - ✅ apexflash-app build CLEAN: BOM verwijderd uit package.json (Turbopack crash fix) → commit 3ed3ec7
