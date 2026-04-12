@@ -1,11 +1,17 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-11 (Sessie 26)
+# Last updated: 2026-04-12 (Sessie 28)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
-## LIVE STATE
+## LIVE STATE (sessie 28 — VERIFIED via Redis)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.x
-- Keys on Render: 74
+- Version: v3.23.x → commit 5f77f30
+- Keys on Render: 74 (gesynchroniseerd via sync_render_env.py)
+- **autotrade:enabled = 1** → AUTO-TRADE STAAT AAN op Render
+- **8 open posities**: BONK, POPCAT, PNUT, FARTCOIN, MEW, JUP, WIF, GOAT
+- Grade A signals totaal: 2 (kpi:grade:A:total in Redis)
+- GMGN market API: 403 lokaal (IP whitelist = 86.88.183.115 thuis) → OK op Render
+- DISCORD_WEBHOOK_URL: LEEG → Discord alerts werken NIET tot gevuld
+- PDCA journal: leeg (0 entries) → trade journal schrijft niet of bot herstart frequent
 
 ## WAT WERKT
 - ✅ Bot @ApexFlashBot live
@@ -46,17 +52,29 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - PDCA: elk signaal gelogd → na 1h prijs check → WIN/LOSS/FLAT → dagstatistiek
 - /pdca → win rate per grade + aanbevelingen om thresholds te tunen
 
-## VOLGENDE SESSIE — START HIER
-1. /whale_intel → check eerste GMGN signals (scanner running via asyncio.ensure_future)
-2. /pdca → na 1h eerste outcomes beschikbaar
-3. WHALE_AUTO_TRADE=true zetten als PDCA win rate > 50%
-4. Reddit outreach (drafts in promo/ map)
-5. /api/ceo op live apexflash.pro testen (route bestaat, was transient 404)
+## VOLGENDE SESSIE — START HIER (sessie 29)
+1. CHECK Redis: `apexflash:active_positions` — zijn posities nog open? Wat zijn P&L?
+2. CHECK `/whale_intel` in Telegram — scanner actief? Signalen recent?
+3. DISCORD_WEBHOOK_URL invullen — Erik: Discord channel → Integrations → Webhooks → Copy URL → Render env var
+4. PDCA journal leeg: debug waarom trade_journal.py niet schrijft naar Redis
+5. Bitunix resultaten (+156%/+305% SIREN) gebruiken als sociale bewijs in Hero copy
+6. Reddit outreach activeren (drafts in promo/ map)
+7. Landing page apexflash.pro live controleren na alle commits van sessie 28
 
-## OPENSTAAND
-- WHALE_AUTO_TRADE staat op false (veilig) — aanzetten na PDCA validatie
-- GMGN key discrepantie: .config/gmgm/.env heeft ANDERE private key dan Render — Erik moet bevestigen welk key pair actief is voor GMGN trading
-- Dead code in bot.py (regel ~8928): whale_watcher_job via job_queue (importeert functies die niet bestaan — silent fail). Real scanner = asyncio.ensure_future(whale_scan_loop()) in post_init. Cleanup optioneel.
+## OPENSTAAND — ACTIE VEREIST
+| Item | Status | Verantwoordelijke |
+|------|--------|-------------------|
+| DISCORD_WEBHOOK_URL | ❌ leeg | **Erik** (30 sec) |
+| GMGN IP whitelist Render | ⚠️ lokale 403 | **Erik**: voeg Render IP toe op gmgn.ai |
+| PDCA journal schrijft niet | ❌ 0 entries | AI: debug trade_journal.py |
+| Active positions P&L | ❓ onbekend | AI: Redis uitlezen na restart |
+| WHALE_AUTO_TRADE env var | false (maar Redis=1) | Controleer welke flag leidend is |
+
+## BEKENDE ROOT CAUSES (gevonden sessie 28)
+- Whale scanner stil → GMGN_API_KEY stond NIET in main .env (key naam: GMGM_API vs GMGN_API_KEY)
+- Opgelost: keys toegevoegd aan .env + sync_render_env.py bijgewerkt
+- GMGN 403 lokaal = IP whitelist (normaal) — Render moet wél in whitelist staan
+- autotrade:enabled=1 in Redis → bot handelt al (8 posities open)
 
 ## GEDAAN (sessie 28 — 2026-04-12)
 - ✅ apexflash-app build CLEAN: BOM verwijderd uit package.json (Turbopack crash fix) → commit 3ed3ec7
