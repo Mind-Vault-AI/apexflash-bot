@@ -12,7 +12,7 @@
 - Grade A signals totaal: 2 (kpi:grade:A:total)
 - whale:signals:recent = 0 → scanner actief maar GMGN 403 op Render (IP whitelist)
 - DexScreener fallback: ✅ nu actief als backup scan
-- DISCORD_WEBHOOK_URL: LEEG → Discord alerts werken NIET tot gevuld (Erik actie)
+- DISCORD_WEBHOOK_URL: ✅ GESYNCHRONISEERD naar Render (sessie 29, via MASTER_ENV)
 - PDCA journal: 1 TEST entry (leeg want scanner geen signalen via GMGN op Render)
 
 ## WAT WERKT
@@ -56,7 +56,7 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 
 ## VOLGENDE SESSIE — START HIER (sessie 30)
 1. **GMGN IP FIX** — Erik: typ `/myip` in @ApexFlashBot → krijg Render IP → voeg toe op gmgn.ai → GMGN scanner live
-2. **DISCORD_WEBHOOK_URL** — Erik: Discord → channel → Integrations → Webhooks → Copy URL → Render env var vullen
+2. ~~**DISCORD_WEBHOOK_URL**~~ ✅ OPGELOST — gesynchroniseerd vanuit MASTER_ENV naar Render
 3. CHECK `/whale_intel` in Telegram na GMGN fix — scanner actief? Signalen?
 4. PDCA journal zal automatisch vullen zodra GMGN fix actief is (DexScreener fallback genereert ook signalen)
 5. Reddit outreach activeren (drafts in promo/ map)
@@ -65,7 +65,7 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 ## OPENSTAAND — ACTIE VEREIST
 | Item | Status | Verantwoordelijke |
 |------|--------|-------------------|
-| DISCORD_WEBHOOK_URL | ❌ leeg | **Erik** (30 sec via Render dashboard) |
+| DISCORD_WEBHOOK_URL | ✅ GESYNCHRONISEERD | AI: sync vanuit MASTER_ENV gedaan |
 | GMGN IP whitelist Render | ⚠️ Render 403 | **Erik**: `/myip` in Telegram → gmgn.ai whitelist |
 | PDCA journal | ⚠️ 1 TEST entry | Automatisch fix na GMGN IP fix |
 | Posities P&L | ❓ amount_sol=0 | AI: DexScreener P&L fetch volgende sessie |
