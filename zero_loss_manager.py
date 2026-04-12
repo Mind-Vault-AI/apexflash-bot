@@ -381,10 +381,14 @@ async def auto_trader_loop(bot=None):
 
             # Resume tasks for existing positions if not already running
             for sym, _pos in list(active_positions.items()):
-                mint = SCALP_TOKENS.get(sym)
+                # Prefer mint stored in position dict (set at entry time).
+                # Fall back to SCALP_TOKENS lookup via _resolve_mint.
+                mint = _pos.get("mint") or _resolve_mint(sym)
                 if mint and sym not in _manager_tasks:
-                    logger.info("🛡️ RESUMING MANAGER: %s", sym)
+                    logger.info("🛡️ RESUMING MANAGER: %s mint=%s...", sym, mint[:8])
                     _manager_tasks[sym] = asyncio.create_task(position_manager(keypair, sym, mint, bot=bot))
+                elif not mint:
+                    logger.error("🛡️ RESUME FAILED: %s — mint not found. Position unmonitored!", sym)
 
             # ── 3. SEARCH FOR ALPHA (FETCH UPDATED SELECTIVITY) ──
             if not _is_autotrade_enabled():
@@ -483,12 +487,13 @@ async def auto_trader_loop(bot=None):
 
                     if sig and out_tokens > 0:
                         active_positions[sym] = {
+                            "mint": mint,          # stored so resume works after restart
                             "entry_price": s['price'],
                             "entry_sol": trade_sol,
                             "amount": out_tokens,
                             "sl_price": s['price'] * (1 - (gov.get('sl_pct', STOP_LOSS_PCT)/100)),
                             "tp_price": s['price'] * (1 + (gov.get('tp_pct', TAKE_PROFIT_PCT)/100)),
-                            "created_at": int(time.time()),  # Track entry time for max hold enforcement
+                            "created_at": int(time.time()),
                         }
                         save_active_positions(active_positions)
                         await _notify_admin(bot, f"⚡ *ZERO-LOSS BUY* — {sym}\nAmt: *{trade_sol:.4f} SOL*\nTx: `{sig}`")
