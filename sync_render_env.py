@@ -71,6 +71,13 @@ def sync():
         "REDDIT_CLIENT_SECRET": os.getenv("REDDIT_CLIENT_SECRET", ""),
         "REDDIT_USERNAME": os.getenv("REDDIT_USERNAME", ""),
         "REDDIT_PASSWORD": os.getenv("REDDIT_PASSWORD", ""),
+        # GMGN.AI — critical for whale scanner (bot silently disabled without these)
+        # Source: C:/Users/erik_/.config/gmgm/.env (GMGM_API + GMGM_PRIVATE_KEY → renamed)
+        "GMGN_API_KEY": os.getenv("GMGN_API_KEY", ""),
+        "GMGN_PRIVATE_KEY": os.getenv("GMGN_PRIVATE_KEY", ""),
+        "GMGN_WALLET_ADDRESS": os.getenv("GMGN_WALLET_ADDRESS", "CsgcvMXFfLTZm8u8a6Eds1GnUXTcpPHV7Cho5ueUApvi"),
+        # Discord webhook for Grade A/S signals
+        "DISCORD_WEBHOOK_URL": os.getenv("DISCORD_WEBHOOK_URL", ""),
         # GODMODE trading params
         "TEST_TRADE_SOL": "0",
         "AUTONOMOUS_TRADE_AMOUNT_SOL": "0.05",
