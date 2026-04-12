@@ -1157,11 +1157,12 @@ async def _cb_switch_network(query, user, context):
     if user_chain == "SOL":
         # Callback already acknowledged in callback_handler; avoid double-answer errors.
         await query.edit_message_text(
-            "🌐 *BASE/SOL Network*\n"
+            "🌐 *Network: Solana*\n"
             "━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "🚀 Base & Arbitrum signals are launching in v3.16.0.\n"
-            "✅ Auto-trading currently runs on Solana (primary engine).\n\n"
-            "Use Trade to continue on SOL.",
+            "✅ *Current network: Solana* (primary engine)\n\n"
+            "⏳ *Base & Arbitrum* — coming soon.\n"
+            "You will be notified when multi-chain trading launches.\n\n"
+            "_All your trades and whale signals are on Solana._",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
         )
@@ -3890,13 +3891,19 @@ async def _cb_execute_sell(query, user, context, data):
     )
 
     # Fresh balance fetch — always accurate even after bot restarts
-    tokens = await get_token_balances(user["wallet_pubkey"])
+    pubkey = user["wallet_pubkey"]
+    logger.info(f"SELL: fetching balance for {pubkey[:8]}... mint={sell_mint[:8]}...")
+    tokens = await get_token_balances(pubkey)
+    logger.info(f"SELL: got {len(tokens)} token(s) from wallet {pubkey[:8]}...")
     token_info = next((t for t in tokens if t["mint"] == sell_mint), None)
     if not token_info:
+        logger.warning(f"SELL: mint {sell_mint[:8]}... not found. Tokens in wallet: {[t['mint'][:8] for t in tokens]}")
         await query.edit_message_text(
-            "\u26a0\ufe0f Token not found in wallet.",
+            "\u26a0\ufe0f *Token not found in wallet.*\n\n"
+            "_Balance may have changed or RPC is slow._\n"
+            "_Tap Retry to refresh._",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("\U0001f4b8 Sell Token", callback_data="trade_sell")],
+                [InlineKeyboardButton("\U0001f504 Retry", callback_data="trade_sell")],
                 [_back_main()[0]],
             ]),
             parse_mode="Markdown",
@@ -3905,6 +3912,7 @@ async def _cb_execute_sell(query, user, context, data):
 
     raw_total = int(token_info["raw_amount"])
     sell_raw = int(raw_total * pct)
+    logger.info(f"SELL: raw_total={raw_total} sell_raw={sell_raw} pct={pct}")
 
     if sell_raw <= 0:
         await query.edit_message_text(
@@ -3945,16 +3953,20 @@ async def _cb_execute_sell(query, user, context, data):
 
     try:
         keypair = load_keypair(user["wallet_secret_enc"])
+        logger.info(f"SELL: keypair loaded OK for {str(keypair.pubkey())[:8]}...")
     except Exception as e:
-        logger.error(f"Keypair load error: {e}")
+        logger.error(f"SELL: Keypair load FAILED: {e}")
         await query.edit_message_text(
-            "\u274c Wallet error.",
+            "\u274c *Wallet decryption error.*\n\n"
+            "_Contact admin if this persists._",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
             parse_mode="Markdown",
         )
         return
 
+    logger.info(f"SELL: calling execute_swap mint={sell_mint[:8]}... raw={sell_raw}")
     tx_sig, swap_err = await execute_swap(keypair, quote)
+    logger.info(f"SELL: execute_swap result tx_sig={tx_sig} err={swap_err[:80] if swap_err else None}")
 
     if tx_sig:
         user["total_trades"] = user.get("total_trades", 0) + 1
@@ -8122,11 +8134,51 @@ async def _set_lang(query, user, lang_code):
 
 async def _cb_referral(query, user, context):
     """Callback for referral button in main menu."""
-    # Wrapper to reuse cmd_referrals logic
-    class FakeUpdate:
-        effective_user = query.from_user
-        message = query.message
-    await cmd_referrals(FakeUpdate(), context)
+    from core.persistence import get_user_referral_stats, get_referral_leaderboard
+
+    uid = query.from_user.id
+    stats = get_user_referral_stats(uid)
+    leaderboard = get_referral_leaderboard(limit=5)
+
+    bot_username = (await context.bot.get_me()).username
+    ref_link = f"https://t.me/{bot_username}?start=ref_{uid}"
+
+    text = (
+        "\U0001f91d *ApexFlash Referral Program*\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        f"\U0001f465 *Your Stats:*\n"
+        f"\u2022 Total Referrals: *{user.get('referral_count', 0)}*\n"
+        f"\u2022 Total Earned: *{stats['earnings']:.4f} SOL*\n"
+        f"\u2022 Global Rank: *#{stats['rank'] if stats['rank'] > 0 else 'N/A'}*\n\n"
+        f"\U0001f517 *Your Referral Link:*\n`{ref_link}`\n\n"
+        f"_Share this link to earn 25-35% of every trade fee!_\n\n"
+    )
+
+    if leaderboard:
+        text += "\U0001f3c6 *GLOBAL REFERRAL LEADERS:*\n"
+        emojis = ["\U0001f947", "\U0001f948", "\U0001f949", "\U0001f464", "\U0001f464"]
+        for i, entry in enumerate(leaderboard):
+            emoji = emojis[i] if i < len(emojis) else "\U0001f464"
+            anon_name = f"User_{str(entry['user_id'])[-4:]}"
+            text += f"{emoji} *{anon_name}*: `{entry['total_sol']:.2f} SOL` earned\n"
+        text += "\n"
+
+    kb = [
+        [InlineKeyboardButton(
+            "\U0001f4e3 Share Link",
+            switch_inline_query=f"Join me on ApexFlash! Fastest whale tracker on Solana: {ref_link}",
+        )],
+        [InlineKeyboardButton("\U0001f4ca Referral Stats", callback_data="referral_stats")],
+        [_back_main()[0]],
+    ]
+
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+    )
 
 
 async def _cb_whale_intent(query, user, context):
@@ -9122,28 +9174,8 @@ def main() -> None:
         except Exception as e:
             logger.error(f"Whale Grade S signal dispatch error: {e}")
 
-    _whale_callback_registered = False
-
-    async def whale_watcher_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Whale Watcher: scan legendary wallets, fire Grade S signals."""
-        nonlocal _whale_callback_registered
-        try:
-            from agents.whale_watcher import whale_watcher_job as _ww_job, register_whale_callback
-            if not _whale_callback_registered:
-                register_whale_callback(_whale_grade_s_signal)
-                _whale_callback_registered = True
-            results = await _ww_job(context)
-            if results:
-                logger.info(f"WhaleWatcher: {len(results)} Grade S signal(s) fired")
-        except Exception as e:
-            logger.error(f"WhaleWatcher job failed: {e}")
-
-    app.job_queue.run_repeating(
-        whale_watcher_job,
-        interval=90,   # every 90s — heavier than inspector (10 SOL+ trades only)
-        first=120,     # first run 2 min after startup (after inspector settles)
-        name="whale_watcher",
-    )
+    # Whale scanner runs as asyncio task in post_init (see line ~9846).
+    # The job_queue version was removed — it imported a non-existent function.
 
     # Arbitrage Scanner (Cycle 9)
     app.job_queue.run_repeating(arbitrage_job, interval=60, first=10)
