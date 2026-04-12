@@ -1,17 +1,19 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-12 (Sessie 28)
+# Last updated: 2026-04-13 (Sessie 29)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
-## LIVE STATE (sessie 28 — VERIFIED via Redis)
+## LIVE STATE (sessie 29 — VERIFIED via Redis 2026-04-13)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.x → commit 5f77f30
+- Version: v3.23.x → commit 825fd7e (latest)
 - Keys on Render: 74 (gesynchroniseerd via sync_render_env.py)
 - **autotrade:enabled = 1** → AUTO-TRADE STAAT AAN op Render
-- **8 open posities**: BONK, POPCAT, PNUT, FARTCOIN, MEW, JUP, WIF, GOAT
-- Grade A signals totaal: 2 (kpi:grade:A:total in Redis)
-- GMGN market API: 403 lokaal (IP whitelist = 86.88.183.115 thuis) → OK op Render
-- DISCORD_WEBHOOK_URL: LEEG → Discord alerts werken NIET tot gevuld
-- PDCA journal: leeg (0 entries) → trade journal schrijft niet of bot herstart frequent
+- **7 open posities**: POPCAT, PNUT, FARTCOIN, MEW, JUP, WIF, GOAT (BONK verwijderd sessie 28)
+- Alle posities: amount_sol = 0.0 (bedrag niet getrackt in Redis — posities zijn reëel on-chain)
+- Grade A signals totaal: 2 (kpi:grade:A:total)
+- whale:signals:recent = 0 → scanner actief maar GMGN 403 op Render (IP whitelist)
+- DexScreener fallback: ✅ nu actief als backup scan
+- DISCORD_WEBHOOK_URL: LEEG → Discord alerts werken NIET tot gevuld (Erik actie)
+- PDCA journal: 1 TEST entry (leeg want scanner geen signalen via GMGN op Render)
 
 ## WAT WERKT
 - ✅ Bot @ApexFlashBot live
@@ -52,29 +54,39 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - PDCA: elk signaal gelogd → na 1h prijs check → WIN/LOSS/FLAT → dagstatistiek
 - /pdca → win rate per grade + aanbevelingen om thresholds te tunen
 
-## VOLGENDE SESSIE — START HIER (sessie 29)
-1. CHECK Redis: `apexflash:active_positions` — zijn posities nog open? Wat zijn P&L?
-2. CHECK `/whale_intel` in Telegram — scanner actief? Signalen recent?
-3. DISCORD_WEBHOOK_URL invullen — Erik: Discord channel → Integrations → Webhooks → Copy URL → Render env var
-4. PDCA journal leeg: debug waarom trade_journal.py niet schrijft naar Redis
-5. Bitunix resultaten (+156%/+305% SIREN) gebruiken als sociale bewijs in Hero copy
-6. Reddit outreach activeren (drafts in promo/ map)
-7. Landing page apexflash.pro live controleren na alle commits van sessie 28
+## VOLGENDE SESSIE — START HIER (sessie 30)
+1. **GMGN IP FIX** — Erik: typ `/myip` in @ApexFlashBot → krijg Render IP → voeg toe op gmgn.ai → GMGN scanner live
+2. **DISCORD_WEBHOOK_URL** — Erik: Discord → channel → Integrations → Webhooks → Copy URL → Render env var vullen
+3. CHECK `/whale_intel` in Telegram na GMGN fix — scanner actief? Signalen?
+4. PDCA journal zal automatisch vullen zodra GMGN fix actief is (DexScreener fallback genereert ook signalen)
+5. Reddit outreach activeren (drafts in promo/ map)
+6. Posities P&L bekijken — fetch current prices van open posities via DexScreener
 
 ## OPENSTAAND — ACTIE VEREIST
 | Item | Status | Verantwoordelijke |
 |------|--------|-------------------|
-| DISCORD_WEBHOOK_URL | ❌ leeg | **Erik** (30 sec) |
-| GMGN IP whitelist Render | ⚠️ lokale 403 | **Erik**: voeg Render IP toe op gmgn.ai |
-| PDCA journal schrijft niet | ❌ 0 entries | AI: debug trade_journal.py |
-| Active positions P&L | ❓ onbekend | AI: Redis uitlezen na restart |
-| WHALE_AUTO_TRADE env var | false (maar Redis=1) | Controleer welke flag leidend is |
+| DISCORD_WEBHOOK_URL | ❌ leeg | **Erik** (30 sec via Render dashboard) |
+| GMGN IP whitelist Render | ⚠️ Render 403 | **Erik**: `/myip` in Telegram → gmgn.ai whitelist |
+| PDCA journal | ⚠️ 1 TEST entry | Automatisch fix na GMGN IP fix |
+| Posities P&L | ❓ amount_sol=0 | AI: DexScreener P&L fetch volgende sessie |
+| WHALE_AUTO_TRADE env var | false (Redis=1) | Redis-flag is leidend — bot handelt ✅ |
+| Reddit outreach | ⏸️ drafts klaar | Erik: akkoord geven voor activatie |
 
 ## BEKENDE ROOT CAUSES (gevonden sessie 28)
 - Whale scanner stil → GMGN_API_KEY stond NIET in main .env (key naam: GMGM_API vs GMGN_API_KEY)
 - Opgelost: keys toegevoegd aan .env + sync_render_env.py bijgewerkt
 - GMGN 403 lokaal = IP whitelist (normaal) — Render moet wél in whitelist staan
 - autotrade:enabled=1 in Redis → bot handelt al (8 posities open)
+
+## GEDAAN (sessie 29 — 2026-04-13)
+- ✅ Redis volledig gecheckt: 7 posities, autotrade=1, Grade A=2, journal=1 TEST
+- ✅ whale_watcher.py: DexScreener fallback scan toegevoegd — scanner stopt nooit meer
+- ✅ whale_watcher.py: heartbeat naar Redis na elke scan (`apexflash:whale:heartbeat`)
+- ✅ gmgn_market.py: 403 handler — logt Render IP automatisch in Redis + log
+- ✅ bot.py: `/myip` command toegevoegd — Erik typt dit → krijgt Render IP → whitelist klaar
+- ✅ Hero.tsx: Bitunix +156%/+305% social proof toegevoegd (proof banner + stats bar)
+- ✅ Landing page live geverifieerd: Bitunix proof zichtbaar, CryptoTicker live, alles ✅
+- Commits: 825fd7e (bot), 9f9d13a (app)
 
 ## GEDAAN (sessie 28 — 2026-04-12)
 - ✅ apexflash-app build CLEAN: BOM verwijderd uit package.json (Turbopack crash fix) → commit 3ed3ec7
