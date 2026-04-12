@@ -7449,56 +7449,69 @@ async def handle_whale_copy(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
 
     try:
-        from core.config import GMGN_WALLET_ADDRESS, HELIUS_API_KEY, FALLBACK_RPC_URL, RPC_URLS
-        from exchanges.jupiter import swap as jupiter_swap
-        import asyncio
+        import json as _json, time as _time
+        from exchanges.jupiter import get_quote, execute_swap
 
         SOL_MINT = "So11111111111111111111111111111111111111112"
         lamports = int(COPY_TRADE_SOL * 1_000_000_000)
 
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: jupiter_swap(
-                input_mint=SOL_MINT,
-                output_mint=mint,
-                amount=lamports,
-                wallet_address=GMGN_WALLET_ADDRESS,
-            )
-        )
+        # Get admin keypair (admin wallet drives copy trades)
+        admin_id = ADMIN_IDS[0] if isinstance(ADMIN_IDS, list) and ADMIN_IDS else None
+        if not admin_id:
+            await query.message.reply_text("No admin wallet configured.")
+            return
 
-        tx = result.get("txid") or result.get("signature") or result.get("tx", "pending")
+        admin_user = users.get(admin_id) or users.get(str(admin_id))
+        if not admin_user or not admin_user.get("wallet_secret_enc"):
+            await query.message.reply_text(
+                "Admin wallet not set up. Use /start to create a wallet first."
+            )
+            return
+
+        keypair = load_keypair(admin_user["wallet_secret_enc"])
+
+        # Get quote
+        quote = await get_quote(
+            input_mint=SOL_MINT,
+            output_mint=mint,
+            amount_raw=lamports,
+            slippage_bps=500,
+        )
+        if not quote:
+            await query.message.reply_text(f"Quote failed — {symbol} may be illiquid.")
+            return
+
+        # Execute
+        tx_sig, swap_err = await execute_swap(keypair, quote)
+        if not tx_sig:
+            await query.message.reply_text(f"Swap failed: {swap_err or 'unknown error'}")
+            return
 
         # Log to PDCA journal
         from agents.trade_journal import log_signal as journal_log
         journal_log({**sig, "source": f"COPY_TRADE_{grade}"})
 
-        # Store in Redis
+        # Store in Redis for position tracking
         r = _get_redis()
         if r:
-            import json as _json, time as _time
             r.setex(
                 f"whale:copy:{mint[:16]}",
                 8 * 3600,
-                _json.dumps({"tx": tx, "sol": COPY_TRADE_SOL, "symbol": symbol, "grade": grade,
-                              "ts": int(_time.time()), "user": query.from_user.id}),
+                _json.dumps({"tx": tx_sig, "sol": COPY_TRADE_SOL, "symbol": symbol,
+                              "grade": grade, "ts": int(_time.time())}),
             )
 
         await query.message.reply_text(
-            f"✅ *Copy buy executed!*\n"
-            f"Token: *{symbol}* [{grade}]\n"
-            f"Amount: `{COPY_TRADE_SOL} SOL`\n"
-            f"TX: `{tx}`\n"
-            f"[Solscan ↗](https://solscan.io/tx/{tx})",
-            parse_mode="Markdown",
-            disable_web_page_preview=True,
+            f"DONE Copy buy executed!\n"
+            f"Token: {symbol} [{grade}]\n"
+            f"Amount: {COPY_TRADE_SOL} SOL\n"
+            f"TX: {tx_sig}\n"
+            f"https://solscan.io/tx/{tx_sig}",
         )
     except Exception as e:
         logger.error(f"Whale copy buy error: {e}")
         await query.message.reply_text(
-            f"❌ Copy buy failed: `{str(e)[:120]}`\n"
-            f"Check Render logs for details.",
-            parse_mode="Markdown",
+            f"Copy buy failed: {str(e)[:150]}\nCheck Render logs."
         )
 
 
