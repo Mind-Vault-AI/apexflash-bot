@@ -49,7 +49,7 @@ AUTO_TRADE_SOL     = float(os.getenv("WHALE_AUTO_TRADE_SOL", "0.05"))
 # ─── Timing ───────────────────────────────────────────────────────────────────
 
 SCAN_INTERVAL_SECONDS = int(os.getenv("WHALE_SCAN_INTERVAL", "300"))  # 5 min
-SIGNAL_TTL_SECONDS    = 4 * 3600  # 4 hour dedup
+SIGNAL_TTL_SECONDS    = 24 * 3600  # 24 hour TTL — Copy Buy buttons valid all day
 COPY_TRADE_SOL        = float(os.getenv("WHALE_COPY_SOL", "0.03"))   # per copy trade
 
 # ─── Signal callbacks (registered by bot.py) ───────────────────────────────────

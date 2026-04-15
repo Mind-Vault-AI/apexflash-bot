@@ -3857,6 +3857,16 @@ async def _cb_execute_buy(query, user, context, data):
             [_back_main()[0]],
         ]
         logger.error(f"BUY FAILED: user={query.from_user.id} amount={sol_amount} token={target_mint[:12]} reason={reason}")
+        # Notify admin with full error detail for diagnosis
+        try:
+            for aid in ADMIN_IDS:
+                await context.bot.send_message(
+                    chat_id=aid,
+                    text=f"🔴 BUY FAILED\nUser: {query.from_user.id}\nToken: `{target_mint[:20]}`\nAmount: {sol_amount} SOL\nError: `{reason[:300]}`",
+                    parse_mode="Markdown",
+                )
+        except Exception:
+            pass
 
     await query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(kb),
@@ -4102,6 +4112,16 @@ async def _cb_execute_sell(query, user, context, data):
             [_back_main()[0]],
         ]
         logger.error(f"SELL FAILED: user={query.from_user.id} reason={reason}")
+        # Notify admin with full error detail
+        try:
+            for aid in ADMIN_IDS:
+                await context.bot.send_message(
+                    chat_id=aid,
+                    text=f"🔴 SELL FAILED\nUser: {query.from_user.id}\nToken: `{sell_mint[:20]}`\nPct: {pct_label}\nError: `{reason[:300]}`",
+                    parse_mode="Markdown",
+                )
+        except Exception:
+            pass
 
     await query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(kb),
@@ -7430,14 +7450,21 @@ async def cmd_pdca(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def handle_whale_copy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Callback: wcp_{short_mint} — Copy-trade a whale signal.
-    Executes a small SOL buy via Jupiter for the signaled token.
+    Executes a small SOL buy via Jupiter using the CLICKING USER's bot wallet.
+    Open to any user who has created a bot wallet.
     """
     query = update.callback_query
     await query.answer()
 
-    if not is_admin(query.from_user.id):
-        await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text("⛔ Admin only.")
+    uid = query.from_user.id
+    user = _get_or_create_user(uid, query.from_user.username)
+
+    # Require bot wallet
+    if not user.get("wallet_pubkey") or not user.get("wallet_secret_enc"):
+        await query.message.reply_text(
+            "⚠️ You need a bot wallet to copy trade.\n"
+            "Open @ApexFlashBot → /start → Trade → My Wallet → Create Wallet."
+        )
         return
 
     short = query.data.replace("wcp_", "", 1)
@@ -7445,7 +7472,10 @@ async def handle_whale_copy(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     from agents.whale_watcher import load_signal_from_callback, COPY_TRADE_SOL
     sig = load_signal_from_callback(short)
     if not sig:
-        await query.message.reply_text("⚠️ Signal expired — rescan for fresh signal.")
+        await query.message.reply_text(
+            "⏰ Signal expired (>24h old).\n"
+            "Open @ApexFlashBot for fresh signals."
+        )
         return
 
     mint   = sig.get("mint", "")
@@ -7453,7 +7483,7 @@ async def handle_whale_copy(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     grade  = sig.get("grade", "?")
 
     await query.message.reply_text(
-        f"🤖 Executing copy buy: *{symbol}* [{grade}]\n"
+        f"🤖 Copy buy: *{symbol}* [{grade}]\n"
         f"Amount: `{COPY_TRADE_SOL} SOL`\n"
         f"Token: `{mint[:20]}...`\n"
         f"_Routing via Jupiter..._",
@@ -7467,20 +7497,18 @@ async def handle_whale_copy(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         SOL_MINT = "So11111111111111111111111111111111111111112"
         lamports = int(COPY_TRADE_SOL * 1_000_000_000)
 
-        # Get admin keypair (admin wallet drives copy trades)
-        admin_id = ADMIN_IDS[0] if isinstance(ADMIN_IDS, list) and ADMIN_IDS else None
-        if not admin_id:
-            await query.message.reply_text("No admin wallet configured.")
-            return
-
-        admin_user = users.get(admin_id) or users.get(str(admin_id))
-        if not admin_user or not admin_user.get("wallet_secret_enc"):
+        # Check user balance
+        bal = await get_sol_balance(user["wallet_pubkey"])
+        if bal is None or bal < COPY_TRADE_SOL + 0.01:
             await query.message.reply_text(
-                "Admin wallet not set up. Use /start to create a wallet first."
+                f"⚠️ Insufficient balance.\n"
+                f"Need: {COPY_TRADE_SOL + 0.01:.3f} SOL | Have: {bal or 0:.4f} SOL\n"
+                f"Deposit SOL to: `{user['wallet_pubkey']}`",
+                parse_mode="Markdown",
             )
             return
 
-        keypair = load_keypair(admin_user["wallet_secret_enc"])
+        keypair = load_keypair(user["wallet_secret_enc"])
 
         # Get quote
         quote = await get_quote(
