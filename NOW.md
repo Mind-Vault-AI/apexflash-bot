@@ -1,13 +1,14 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-13 (Sessie 30)
+# Last updated: 2026-04-15 (Sessie 32)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
-## LIVE STATE (sessie 29 — VERIFIED via Redis 2026-04-13)
+## LIVE STATE (sessie 32 — 2026-04-15)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.x → commit 825fd7e (latest)
+- Version: commit 9ad619a (buy/sell critical fix)
 - Keys on Render: 74 (gesynchroniseerd via sync_render_env.py)
 - **autotrade:enabled = 1** → AUTO-TRADE STAAT AAN op Render
-- **7 open posities**: POPCAT, PNUT, FARTCOIN, MEW, JUP, WIF, GOAT (BONK verwijderd sessie 28)
+- **0 open posities** — 7 phantom posities GEWIST (tokens bestonden NIET on-chain)
+- Erik wallet: 9cUfU6SkaH9mbveAeLoYE6LV2VFN72Vygop3xKYes8T3 = 0.562917 SOL
 - Alle posities: amount_sol = 0.0 (bedrag niet getrackt in Redis — posities zijn reëel on-chain)
 - Grade A signals totaal: 2 (kpi:grade:A:total)
 - whale:signals:recent = 0 → scanner actief maar GMGN 403 op Render (IP whitelist)
@@ -54,13 +55,15 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - PDCA: elk signaal gelogd → na 1h prijs check → WIN/LOSS/FLAT → dagstatistiek
 - /pdca → win rate per grade + aanbevelingen om thresholds te tunen
 
-## VOLGENDE SESSIE — START HIER (sessie 32)
-1. **SELL DIAGNOSE** — Erik: probeer sell via de bot → check Render logs voor `SELL:` regels → exact error zichtbaar (logging toegevoegd sessie 31)
-2. **GMGN IP FIX** — Erik: typ `/myip` in @ApexFlashBot → krijg Render IP → voeg toe op gmgn.ai → GMGN scanner live
-3. CHECK `/whale_intel` in Telegram na GMGN fix — scanner actief? Signalen?
-4. PDCA journal zal automatisch vullen zodra GMGN fix actief is
-5. Reddit outreach activeren (drafts in promo/ map) — wacht op Erik akkoord
-6. Posities P&L bekijken — 7 posities, SL protection nu gerepareerd (sessie 31)
+## VOLGENDE SESSIE — START HIER (sessie 33)
+1. **TEST BUY** — Erik: open @ApexFlashBot → Trade → Buy → kies token → kies 0.1 SOL → confirm → meldt wat bot zegt
+   - Als "❌ Swap Failed: ..." → exact error nu in je Telegram DM (admin diagnostics toegevoegd)
+   - Als "⚠️ Insufficient Balance" → wallet heeft niet genoeg SOL
+   - Als het WEL werkt → GEFIXT 
+2. **TEST SELL** — Trade → Sell → als "No tokens found" → wallet heeft geen tokens → eerst kopen via Trade → Buy
+3. **TEST COPY BUY** — Wacht op nieuw whale signal in @ApexFlashAlerts → tap "🤖 Copy Buy 0.03 SOL" → werkt nu voor ALLE users met bot wallet
+4. **GMGN IP FIX** — Erik: typ `/myip` in @ApexFlashBot → krijg Render IP → voeg toe op gmgn.ai → GMGN scanner live
+5. Reddit outreach activeren (drafts in promo/ map)
 
 ## OPENSTAAND — ACTIE VEREIST
 | Item | Status | Verantwoordelijke |
