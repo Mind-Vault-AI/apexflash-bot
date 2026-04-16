@@ -10013,7 +10013,7 @@ def main() -> None:
 
     try:
         app.run_polling(
-            drop_pending_updates=True,
+            drop_pending_updates=False,
             allowed_updates=["message", "callback_query"],
         )
     except Exception as e:
@@ -10043,21 +10043,17 @@ if __name__ == "__main__":
         except Exception:
             pass
 
-    # Clear any stale Telegram polling connections (crash loop fix)
+    # Clear any stale webhook (but do NOT call /close — it kills the session)
     try:
         _tok = _os.getenv("BOT_TOKEN", "")
         if _tok:
             httpx.post(
                 f"https://api.telegram.org/bot{_tok}/deleteWebhook",
-                json={"drop_pending_updates": True},
+                json={"drop_pending_updates": False},
                 timeout=10,
             )
-            httpx.post(
-                f"https://api.telegram.org/bot{_tok}/close",
-                timeout=10,
-            )
-            logging.info("Cleared webhook + closed sessions before startup")
-            _time.sleep(10)  # Let Telegram release old polling connections
+            logging.info("Cleared webhook before startup")
+            _time.sleep(3)  # Brief pause for Telegram to release old polling lock
     except Exception as e:
         logging.warning(f"Pre-startup cleanup failed: {e}")
 
