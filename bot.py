@@ -10013,12 +10013,13 @@ def main() -> None:
 
     try:
         app.run_polling(
-            drop_pending_updates=False,
+            drop_pending_updates=True,
             allowed_updates=["message", "callback_query"],
         )
     except Exception as e:
         if "Conflict" in str(e) or "terminated by other getUpdates" in str(e):
-            logger.warning("Another bot instance is running. Shutting down this local instance gracefully to prevent conflicts.")
+            logger.error("CONFLICT: Another polling session detected — crashing so Render restarts cleanly.")
+            raise  # Force crash → Render restarts → start.py clears old session via /close
         else:
             raise
 
