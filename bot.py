@@ -10011,17 +10011,79 @@ def main() -> None:
         name="gumroad_sync",
     )
 
-    try:
-        app.run_polling(
-            drop_pending_updates=True,
-            allowed_updates=["message", "callback_query"],
-        )
-    except Exception as e:
-        if "Conflict" in str(e) or "terminated by other getUpdates" in str(e):
-            logger.error("CONFLICT: Another polling session detected — crashing so Render restarts cleanly.")
-        raise  # Always re-raise — let start.py handle crash + report
-    # run_polling() returned normally — this should never happen.
-    raise RuntimeError("run_polling() exited without exception — polling stopped unexpectedly.")
+    # ── Direct httpx polling loop — bypasses PTB run_polling() Python 3.14 issues ──
+    import asyncio as _asyncio
+    import httpx as _httpx
+    from telegram import Update as _Update
+
+    async def _direct_poll_loop():
+        """
+        Raw getUpdates loop — never returns under normal operation.
+        PTB app.process_update() dispatches to all registered handlers.
+        """
+        await app.initialize()
+        await app.start()
+        logger.info("[POLL] Direct polling loop started (Python 3.14 compat mode)")
+        offset = None
+        consecutive_errors = 0
+
+        # Drop pending updates (skip backlog)
+        async with _httpx.AsyncClient(timeout=5) as _c:
+            try:
+                _r = await _c.get(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
+                    params={"offset": -1, "limit": 1, "timeout": 0},
+                )
+                _d = _r.json()
+                if _d.get("ok") and _d["result"]:
+                    offset = _d["result"][-1]["update_id"] + 1
+                    logger.info(f"[POLL] Skipped pending updates, offset={offset}")
+            except Exception:
+                pass
+
+        async with _httpx.AsyncClient(timeout=35) as client:
+            while True:
+                try:
+                    resp = await client.get(
+                        f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
+                        params={
+                            "offset": offset,
+                            "timeout": 25,
+                            "allowed_updates": '["message","callback_query"]',
+                        },
+                        timeout=30,
+                    )
+                    data = resp.json()
+                    consecutive_errors = 0
+
+                    if not data.get("ok"):
+                        desc = data.get("description", "")
+                        if "Conflict" in desc or "409" in str(resp.status_code):
+                            logger.error(f"[POLL] CONFLICT detected: {desc} — crashing for clean restart")
+                            raise RuntimeError(f"CONFLICT: {desc}")
+                        logger.warning(f"[POLL] Non-ok response: {data}")
+                        await _asyncio.sleep(5)
+                        continue
+
+                    for raw_upd in data.get("result", []):
+                        try:
+                            upd = _Update.de_json(raw_upd, app.bot)
+                            await app.process_update(upd)
+                        except Exception as pe:
+                            logger.error(f"[POLL] process_update error: {pe}")
+                        offset = raw_upd["update_id"] + 1
+
+                except RuntimeError:
+                    raise
+                except Exception as e:
+                    consecutive_errors += 1
+                    logger.error(f"[POLL] Error #{consecutive_errors}: {e}")
+                    if consecutive_errors > 20:
+                        raise RuntimeError(f"[POLL] Too many consecutive errors: {e}")
+                    await _asyncio.sleep(min(5 * consecutive_errors, 60))
+
+    _asyncio.run(_direct_poll_loop())
+    raise RuntimeError("Direct poll loop exited — crashing for Render restart")
 
 
 if __name__ == "__main__":
