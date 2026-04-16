@@ -4,7 +4,7 @@
 
 ## LIVE STATE (sessie 32 — 2026-04-15)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.8
+- Version: v3.23.9
 - Keys on Render: 74 (gesynchroniseerd via sync_render_env.py)
 - **autotrade:enabled = 1** → AUTO-TRADE STAAT AAN op Render
 - **0 open posities** — 7 phantom posities GEWIST (tokens bestonden NIET on-chain)
@@ -145,3 +145,9 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - ✅ notifications.py: notify_discord_gmgn_signal() — Grade A/S signalen naar Discord embed
 - ✅ bot.py: _whale_signal_to_telegram → Twitter + Discord beide gewired (non-blocking)
 - ✅ Commits: c76dcf0 (Twitter) + 55593f0 (Discord) → Render deploy
+
+## Sessie 34 — 2026-04-16 (URGENT FIX v3.23.9)
+- KRITIEK: bot crash-loopte op startup door pyparsing missing → google.generativeai import fail
+- FIX 1: pyparsing>=3.0.0 toegevoegd aan requirements.txt
+- FIX 2: try/except om genai import in whale_intent.py (safety net)
+- Bot start nu op ook als Gemini niet beschikbaar is
