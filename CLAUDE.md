@@ -1,39 +1,13 @@
 # ApexFlash Bot — CLAUDE.md (Single Source of Truth)
-> Laatste update: 2026-04-13 (sessie 29)
+> **VERPLICHT LEZEN VOOR ELKE ACTIE.** Dit bestand is leidend boven alle andere docs.
+> Laatste update: 2026-04-16
 
----
-
-## ⛔ STOP — LEES DIT EERST. GEEN UITZONDERINGEN.
-
-**STAP 1 — Lees nu direct dit bestand volledig:**
-```
-C:/Users/erik_/projects/apexflash-bot/NOW.md
-```
-Dit bevat: wat open staat, wat gedaan is, waar te starten. **Zonder dit lezen: NIETS uitvoeren.**
-
-**STAP 2 — Maak een plan op basis van NOW.md → notuleer als todo list**
-
-**STAP 3 — Uitvoeren, stuk voor stuk, direct markeren als done**
-
-**STAP 4 — Na IEDERE wijziging: NOW.md bijwerken + git commit**
-
-**STAP 5 — Sessie afsluiten: "VOLGENDE SESSIE — START HIER" bijwerken in NOW.md**
-
-### MEMO (Erik's wet — nooit overtreden):
-- UPDATE = VOORUITGANG, NOOIT ACHTERUITGANG
-- ALLES SYNCHROON NA IEDERE WIJZIGING (Redis · Git · Render · NOW.md)
-- PDCA 99.9% SLA — testen VOOR opleveren, niet erna
-- MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
-
-### SECRETS SSOT (altijd hier ophalen, nooit hardcoden):
-| Locatie | Inhoud |
-|---------|--------|
-| `C:/Users/erik_/Box/MEGA BOT/MASTER_ENV_APEXFLASH.txt` | Alle bot secrets (leidend) |
-| `C:/Users/erik_/.config/gmgm/.env` | GMGN API + private key |
-| `C:/Users/erik_/Box/08_OPERATIONS/8.1_ApexFlash_Bot/.env` | ISO9001 backup copy |
-| Sync naar Render: | `python C:/Users/erik_/projects/apexflash-bot/sync_render_env.py` |
-
----
+## MVAI SYSTEEM — CONTEXT BUDGET & ROUTING (ABSOLUUT)
+❌ NOOIT PDFs lezen | ❌ NOOIT bestanden >150 regels volledig lezen
+✅ Gebruik tail -50 / grep voor geheugen | ✅ Analyse → MVAI-SENSEI
+✅ Grondwet: `head -50 "C:\Users\erik_\.claude\CONSTITUTION.md"`
+✅ MVAI-SENSEI: POST https://mvai-sensei.onrender.com/v1/chat
+✅ Log altijd via append >> naar handover, nooit volledig herlezen
 
 ---
 
