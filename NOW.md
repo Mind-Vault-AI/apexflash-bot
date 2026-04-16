@@ -1,10 +1,10 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-15 (Sessie 32)
+# Last updated: 2026-04-16 (Sessie 34c)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
-## LIVE STATE (sessie 32 — 2026-04-15)
+## LIVE STATE (sessie 34c — 2026-04-16)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.10
+- Version: v3.23.11
 - Keys on Render: 74 (gesynchroniseerd via sync_render_env.py)
 - **autotrade:enabled = 1** → AUTO-TRADE STAAT AAN op Render
 - **0 open posities** — 7 phantom posities GEWIST (tokens bestonden NIET on-chain)
@@ -15,6 +15,13 @@
 - DexScreener fallback: ✅ nu actief als backup scan
 - DISCORD_WEBHOOK_URL: ✅ GESYNCHRONISEERD naar Render (sessie 29, via MASTER_ENV)
 - PDCA journal: 1 TEST entry (leeg want scanner geen signalen via GMGN op Render)
+
+## GEDAAN (sessie 34c — 2026-04-16)
+- ✅ **v3.23.11: Command handler fix + Render IP auto-report**
+- ✅ `cmd_myip`: blocking `urllib.request.urlopen` vervangen door async `aiohttp` (event loop niet meer geblokkeerd)
+- ✅ PTB global error handler toegevoegd (`app.add_error_handler`) — alle stille handler exceptions worden nu gelogd + admin alert
+- ✅ Startup IP report job: 30s na boot → haalt Render outbound IP op → stuurt naar admin + cached in Redis
+- ✅ Poll loop verbeterd: elke update gelogd (update_id + command text), httpx timeout verhoogd naar 40s (was 30s — te krap voor 25s long-poll)
 
 ## WAT WERKT
 - ✅ Bot @ApexFlashBot live

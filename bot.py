@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.3"
+VERSION = "3.23.11"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -7620,12 +7620,15 @@ async def cmd_myip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("⛔ Unauthorized.")
         return
 
-    import urllib.request as _ur, json as _json
+    # Use async aiohttp — blocking urllib.request would stall the event loop
     try:
-        req = _ur.Request("https://api.ipify.org?format=json",
-                          headers={"User-Agent": "ApexFlash/1.0"})
-        with _ur.urlopen(req, timeout=8) as resp:
-            ip = _json.loads(resp.read()).get("ip", "unknown")
+        async with aiohttp.ClientSession() as _ses:
+            async with _ses.get(
+                "https://api.ipify.org?format=json",
+                headers={"User-Agent": "ApexFlash/1.0"},
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as _resp:
+                ip = (await _resp.json()).get("ip", "unknown")
     except Exception as e:
         ip = f"error: {e}"
 
@@ -8968,6 +8971,26 @@ def main() -> None:
         handle_token_address,
     ))
 
+    # ── Global PTB error handler: surface ALL silent handler exceptions ───────
+    async def _ptb_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Catch and log every unhandled exception from any PTB handler or job."""
+        import traceback as _tb
+        err_text = "".join(_tb.format_exception(type(context.error), context.error, context.error.__traceback__))
+        logger.error(f"[PTB-ERROR] Unhandled handler exception:\n{err_text}")
+        # Alert admin so we know exactly what's breaking
+        for admin_id in ADMIN_IDS:
+            try:
+                snippet = str(context.error)[:300]
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=f"⚠️ *Bot handler error*\n`{type(context.error).__name__}: {snippet}`",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+
+    app.add_error_handler(_ptb_error_handler)
+
     # Whale scanner repeating job
     app.job_queue.run_repeating(
         scan_and_alert,
@@ -10011,6 +10034,42 @@ def main() -> None:
         name="gumroad_sync",
     )
 
+    # ── One-time startup: report Render outbound IP to admin ─────────────────
+    async def _startup_ip_report(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Fire once 30s after boot: fetch outbound IP via ipify, cache in Redis, alert admin."""
+        try:
+            async with aiohttp.ClientSession() as _ses:
+                async with _ses.get(
+                    "https://api.ipify.org?format=json",
+                    headers={"User-Agent": "ApexFlash/1.0"},
+                    timeout=aiohttp.ClientTimeout(total=8),
+                ) as _r:
+                    ip = (await _r.json()).get("ip", "unknown")
+        except Exception as _e:
+            ip = f"error: {_e}"
+
+        r = _get_redis()
+        if r:
+            r.setex("apexflash:render:outbound_ip", 7200, ip)
+
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=(
+                        f"🌐 *Render IP — startup report*\n"
+                        f"Outbound IP: `{ip}`\n\n"
+                        f"📋 *GMGN whitelist action:*\n"
+                        f"gmgn.ai → Profile → API Settings → Trusted IPs → Add `{ip}`"
+                    ),
+                    parse_mode="Markdown",
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
+
+    app.job_queue.run_once(_startup_ip_report, when=30, name="startup_ip_report")
+
     # ── Direct httpx polling loop — bypasses PTB run_polling() Python 3.14 issues ──
     import asyncio as _asyncio
     import httpx as _httpx
@@ -10041,7 +10100,8 @@ def main() -> None:
             except Exception:
                 pass
 
-        async with _httpx.AsyncClient(timeout=35) as client:
+        _poll_count = 0
+        async with _httpx.AsyncClient(timeout=50) as client:
             while True:
                 try:
                     resp = await client.get(
@@ -10051,10 +10111,11 @@ def main() -> None:
                             "timeout": 25,
                             "allowed_updates": '["message","callback_query"]',
                         },
-                        timeout=30,
+                        timeout=40,  # 15s margin over Telegram's 25s long-poll
                     )
                     data = resp.json()
                     consecutive_errors = 0
+                    _poll_count += 1
 
                     if not data.get("ok"):
                         desc = data.get("description", "")
@@ -10065,19 +10126,27 @@ def main() -> None:
                         await _asyncio.sleep(5)
                         continue
 
-                    for raw_upd in data.get("result", []):
+                    updates = data.get("result", [])
+                    if updates:
+                        logger.info(f"[POLL] #{_poll_count}: {len(updates)} update(s) received")
+                    for raw_upd in updates:
+                        upd_id = raw_upd.get("update_id")
+                        msg = raw_upd.get("message", {})
+                        cmd_text = msg.get("text", "")[:60] if msg else ""
+                        logger.info(f"[POLL] Processing update {upd_id}: {cmd_text!r}")
                         try:
                             upd = _Update.de_json(raw_upd, app.bot)
                             await app.process_update(upd)
+                            logger.info(f"[POLL] Update {upd_id} dispatched OK")
                         except Exception as pe:
-                            logger.error(f"[POLL] process_update error: {pe}")
-                        offset = raw_upd["update_id"] + 1
+                            logger.error(f"[POLL] process_update error for {upd_id}: {pe}", exc_info=True)
+                        offset = upd_id + 1
 
                 except RuntimeError:
                     raise
                 except Exception as e:
                     consecutive_errors += 1
-                    logger.error(f"[POLL] Error #{consecutive_errors}: {e}")
+                    logger.error(f"[POLL] Error #{consecutive_errors}: {type(e).__name__}: {e}")
                     if consecutive_errors > 20:
                         raise RuntimeError(f"[POLL] Too many consecutive errors: {e}")
                     await _asyncio.sleep(min(5 * consecutive_errors, 60))
