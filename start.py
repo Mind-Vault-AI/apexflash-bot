@@ -78,6 +78,12 @@ try:
     import bot
     logger.info("Bot module imported OK, starting main()...")
     bot.main()
+    # bot.main() should NEVER return normally (run_polling blocks forever).
+    # If it does, something silently stopped polling — force Render to restart.
+    logger.error("bot.main() returned without exception — polling died silently. Forcing restart.")
+    sys.exit(1)
+except SystemExit:
+    raise  # pass through sys.exit() calls
 except Exception as e:
     err = f"\U0001f534 BOT CRASH:\n\n{type(e).__name__}: {e}\n\n{traceback.format_exc()}"
     logger.error(err)

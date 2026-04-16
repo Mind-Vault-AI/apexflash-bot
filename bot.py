@@ -10019,9 +10019,9 @@ def main() -> None:
     except Exception as e:
         if "Conflict" in str(e) or "terminated by other getUpdates" in str(e):
             logger.error("CONFLICT: Another polling session detected — crashing so Render restarts cleanly.")
-            raise  # Force crash → Render restarts → start.py clears old session via /close
-        else:
-            raise
+        raise  # Always re-raise — let start.py handle crash + report
+    # run_polling() returned normally — this should never happen.
+    raise RuntimeError("run_polling() exited without exception — polling stopped unexpectedly.")
 
 
 if __name__ == "__main__":
