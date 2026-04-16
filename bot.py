@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.11"
+VERSION = "3.23.12"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -7633,6 +7633,7 @@ async def cmd_myip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ip = f"error: {e}"
 
     # Also check cached IP from last GMGN 403
+    from core.persistence import _get_redis
     r = _get_redis()
     cached_ip = r.get("apexflash:render:outbound_ip") if r else None
 
@@ -10048,6 +10049,7 @@ def main() -> None:
         except Exception as _e:
             ip = f"error: {_e}"
 
+        from core.persistence import _get_redis
         r = _get_redis()
         if r:
             r.setex("apexflash:render:outbound_ip", 7200, ip)

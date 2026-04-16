@@ -4,7 +4,7 @@
 
 ## LIVE STATE (sessie 34c — 2026-04-16)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.11
+- Version: v3.23.12
 - Keys on Render: 74 (gesynchroniseerd via sync_render_env.py)
 - **autotrade:enabled = 1** → AUTO-TRADE STAAT AAN op Render
 - **0 open posities** — 7 phantom posities GEWIST (tokens bestonden NIET on-chain)
