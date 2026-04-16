@@ -25,7 +25,12 @@ import os
 from datetime import datetime, timezone, timedelta
 
 import aiohttp
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    _GENAI_OK = True
+except Exception:
+    genai = None
+    _GENAI_OK = False
 from dotenv import load_dotenv
 
 load_dotenv()

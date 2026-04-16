@@ -4,7 +4,7 @@
 
 ## LIVE STATE (sessie 32 — 2026-04-15)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.9
+- Version: v3.23.10
 - Keys on Render: 74 (gesynchroniseerd via sync_render_env.py)
 - **autotrade:enabled = 1** → AUTO-TRADE STAAT AAN op Render
 - **0 open posities** — 7 phantom posities GEWIST (tokens bestonden NIET on-chain)
@@ -151,3 +151,8 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - FIX 1: pyparsing>=3.0.0 toegevoegd aan requirements.txt
 - FIX 2: try/except om genai import in whale_intent.py (safety net)
 - Bot start nu op ook als Gemini niet beschikbaar is
+
+## Sessie 34b — 2026-04-16 (FIX v3.23.10 — alle genai imports safe)
+- Alle 6 agents/*.py: try/except om google.generativeai import
+- Belt + bretels: pyparsing in requirements.txt + alle imports veilig
+- Clear cache deploy getriggerd om Render pip cache te verwijderen

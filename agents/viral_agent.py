@@ -13,7 +13,12 @@ Logic:
 import asyncio
 import logging
 import os
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    _GENAI_OK = True
+except Exception:
+    genai = None
+    _GENAI_OK = False
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from core.persistence import get_recent_wins, _get_redis
 from core.config import BOT_TOKEN, ALERT_CHANNEL_ID, VERSION, TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET

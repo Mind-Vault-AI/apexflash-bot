@@ -7,7 +7,12 @@ Logic: Transform "Missed Signals" into persuasive Opportunity Reports.
 
 import asyncio
 import logging
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    _GENAI_OK = True
+except Exception:
+    genai = None
+    _GENAI_OK = False
 from core.persistence import get_missed_signals
 from core.i18n import get_text
 from core.config import VERSION
