@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.12"
+VERSION = "3.23.13"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -6050,136 +6050,83 @@ async def _send_admin_panel(chat_id: int, context: ContextTypes.DEFAULT_TYPE) ->
 # ══════════════════════════════════════════════
 
 def format_whale_alert(alert: dict, prices: dict, sentiment: dict | None = None) -> str:
-    """Format a whale alert message with signal quality, affiliate CTA and AI sentiment."""
+    """Format whale alert — compact, scannable, direct action. GMGN-style."""
     sentiment = sentiment or {}
-
     chain = alert["chain"]
     value = alert["value"]
     symbol = alert["symbol"]
     direction = alert.get("direction", "IN")
     alert_type = alert.get("type", "TRANSFER")
 
-    # SWAP alerts = most actionable (whale buying a specific token)
-    if alert_type == "SWAP":
-        emoji = "\U0001f6a8"  # 🚨
-        amount = alert.get("amount", 0)
-        amount_str = f"{amount:,.0f}" if amount >= 100 else f"{amount:,.2f}"
-        wallet = alert.get("wallet_name", "Unknown Whale")
+    # Signal quality
+    from sentiment import format_signal_quality
+    sq = alert.get("_signal_quality") or {}
+    grade = sq.get("grade", "B")
+    action = sq.get("action", "WATCH")
+    quality = sq.get("quality", 0)
+    grade_emoji = {"S": "🔥", "A": "⚡", "B": "📊", "C": "👁"}.get(grade, "📊")
 
-        price = prices.get(symbol, 0)
-        usd_value = value * price if value > 0 else 0
-        usd_str = f"(~${usd_value:,.0f})" if usd_value > 0 else ""
-
-        # Special SWAP format — actionable
-        text = (
-            f"{emoji} *WHALE BUY DETECTED* \u2502 {chain}\n"
-            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-            f"\n"
-            f"\U0001f4b0 *{wallet}* just bought:\n"
-            f"\U0001f3af *{amount_str} {symbol}* {usd_str}\n"
-            f"\U0001f6a8 This is a LIVE swap — whale is accumulating!\n"
-        )
-
-        # Signal quality
-        from sentiment import format_signal_quality
-        sq = alert.get("_signal_quality")
-        if sq:
-            text += f"\n{format_signal_quality(sq)}"
-
-        # Sentiment
-        sentiment_line = format_sentiment_line(sentiment)
-        if sentiment_line:
-            text += f"\n\U0001f9e0 *AI Sentiment*\n{sentiment_line}"
-
-        explorer = f"https://solscan.io/tx/{alert['tx_hash']}"
-        text += f"\n\U0001f517 [View Swap on Solscan]({explorer})\n"
-
-        # Exchange promo
-        featured = [k for k, v in AFFILIATE_LINKS.items() if v.get("featured")]
-        aff_key = random.choice(featured) if featured else list(AFFILIATE_LINKS.keys())[0]
-        aff = AFFILIATE_LINKS[aff_key]
-        promo = aff.get("promo", "")
-
-        text += (
-            f"\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-        )
-        if promo:
-            text += f"\U0001f381 *{promo}*\n"
-        text += (
-            f"\U0001f525 [{aff['name']} \u2014 {aff['commission']}]({aff['url']})\n"
-            f"\U0001f48e /deals for all exchange bonuses"
-        )
-        return text
-
-    # Regular TRANSFER alert (existing format)
-    emoji = "\U0001f534" if direction == "OUT" else "\U0001f7e2"
-    value_str = f"{value:,.0f}" if value >= 100 else f"{value:,.2f}"
-
-    price = prices.get(symbol, 0)
-    usd_value = value * price
-    usd_str = f"(~${usd_value:,.0f})" if usd_value > 0 else ""
-
-    # Random featured affiliate with promo bonus
+    # Affiliate (rotates)
     featured = [k for k, v in AFFILIATE_LINKS.items() if v.get("featured")]
     aff_key = random.choice(featured) if featured else list(AFFILIATE_LINKS.keys())[0]
     aff = AFFILIATE_LINKS[aff_key]
 
-    # Explorer
+    if alert_type == "SWAP":
+        # ── SWAP: whale buying a token ──────────────────────────────────────
+        amount = alert.get("amount", 0)
+        amount_str = f"{amount:,.0f}" if amount >= 100 else f"{amount:,.2f}"
+        wallet = alert.get("wallet_name", "Unknown Whale")
+        price = prices.get(symbol, 0)
+        usd_value = value * price if value > 0 else 0
+        usd_str = f"~${usd_value:,.0f}" if usd_value > 1000 else ""
+        explorer = f"https://solscan.io/tx/{alert['tx_hash']}"
+
+        text = (
+            f"{grade_emoji} *WHALE SWAP* | {chain} | Grade {grade}\n\n"
+            f"💰 *{amount_str} {symbol}* {usd_str}\n"
+            f"🐋 {wallet}\n"
+            f"🎯 {action}\n\n"
+            f"[🔍 Solscan]({explorer}) | [📈 Chart](https://dexscreener.com/solana/{alert.get('token_address','')}) | "
+            f"[⚡ {aff['name']}]({aff['url']})\n"
+            f"💎 /premium — SOL + instant alerts"
+        )
+        return text
+
+    # ── TRANSFER ─────────────────────────────────────────────────────────────
+    dir_emoji = "🔴" if direction == "OUT" else "🟢"
+    value_str = f"{value:,.0f}" if value >= 100 else f"{value:,.2f}"
+    price = prices.get(symbol, 0)
+    usd_value = value * price
+    usd_str = f"~${usd_value:,.0f}" if usd_value > 1000 else ""
+
     if chain == "ETH":
         explorer = f"https://etherscan.io/tx/{alert['tx_hash']}"
+        chart_link = f"https://www.coingecko.com/en/coins/ethereum"
     elif chain == "SOL":
         explorer = f"https://solscan.io/tx/{alert['tx_hash']}"
+        chart_link = f"https://dexscreener.com/solana"
     else:
         explorer = ""
+        chart_link = ""
 
-    # AI Sentiment line (CryptoBERT)
+    from_lbl = alert['from_label']
+    to_lbl = alert['to_label']
+
+    # Sentiment one-liner
     sentiment_line = format_sentiment_line(sentiment)
+    si = f"\n🧠 {sentiment_line}" if sentiment_line else ""
 
-    # Signal quality line
-    from sentiment import format_signal_quality
-    sq = alert.get("_signal_quality")
-    sq_line = format_signal_quality(sq) if sq else ""
+    tx_link = f"[🔍 TX]({explorer}) | " if explorer else ""
+    chart = f"[📈 Chart]({chart_link}) | " if chart_link else ""
 
     text = (
-        f"{emoji} *WHALE ALERT* \u2502 {chain}\n"
-        f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-        f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-        f"\n"
-        f"\U0001f4b0 *{value_str} {symbol}* {usd_str}\n"
-        f"\U0001f4e4 From: `{alert['from_label']}`\n"
-        f"\U0001f4e5 To: `{alert['to_label']}`\n"
+        f"{dir_emoji}{grade_emoji} *WHALE ALERT* | {chain} | Grade {grade}\n\n"
+        f"💰 *{value_str} {symbol}* {usd_str}\n"
+        f"📤 `{from_lbl}` → `{to_lbl}`\n"
+        f"🎯 {action} ({quality}/100){si}\n\n"
+        f"{tx_link}{chart}[⚡ {aff['name']} {aff['commission']}]({aff['url']})\n"
+        f"💎 /premium — more chains + instant alerts"
     )
-
-    # Signal quality (new — shows grade + action)
-    if sq_line:
-        text += f"\n\U0001f3af *Signal Analysis*\n{sq_line}"
-
-    if sentiment_line:
-        text += f"\n\U0001f9e0 *AI Sentiment*\n{sentiment_line}"
-
-    if explorer:
-        text += f"\n\U0001f517 [View Transaction]({explorer})\n"
-
-    # Exchange promo with bonus (rotates)
-    promo_line = aff.get("promo", "")
-    if promo_line:
-        text += (
-            f"\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-            f"\U0001f381 *{promo_line}*\n"
-            f"\U0001f525 [{aff['name']} \u2014 {aff['commission']} fee rebate]({aff['url']})\n"
-            f"\U0001f48e Instant alerts + more chains \u2192 /premium"
-        )
-    else:
-        text += (
-            f"\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
-            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-            f"\U0001f525 [{aff['name']} \u2014 {aff['commission']} fee rebate]({aff['url']})\n"
-            f"\U0001f48e Instant alerts + more chains \u2192 /premium"
-        )
-
     return text
 
 
