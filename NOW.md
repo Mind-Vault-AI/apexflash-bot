@@ -4,13 +4,22 @@
 
 ## LIVE STATE (sessie 35 — 2026-04-18)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.14
+- Version: v3.23.15
 - GMGN IP whitelist: 4.220.51.250 ✅ (Erik gedaan)
-- WinRate: 51.4% → target >65% (fix deployed in v3.23.14)
+- WinRate: 51.4% → target >=70% (v3.23.15 ZLEE auto-enforced)
+- ZLEE active: pauzeert signals als Grade A WR < 70% (min 10 trades)
 
 ## GEDAAN (sessie 35 — 2026-04-18)
 - ✅ **v3.23.14: SELL usd=0 bug GEFIXT** — autotrade SELL logde usd_value=0 hardcoded. AI Advisor zag kapotte data. Nu: SOL prijs gefetcht + usd_value=sold_sol*sol_price + entry_price_usd=sol_price bij elke SELL.
-- ✅ **v3.23.14: Grade A drempel aangescherpt** — scalper.py: abs5m 2%→3%, abs15m>=1.5% vereist (nieuw), volume $1.5M→$2M. Target 2.5%→3.0%, stop loss 1.5%→1.0%. Verwachte WinRate: 51.4%→>65%.
+- ✅ **v3.23.14: Grade A drempel aangescherpt** — scalper.py: abs5m 2%→3%, abs15m>=1.5% vereist (nieuw), volume $1.5M→$2M. Target 2.5%→3.0%, stop loss 1.5%→1.0%.
+- ✅ **v3.23.15: Zero-Loss Enforcement Engine (ZLEE)** — agents/ceo_agent.py:
+  - WIN_RATE_PAUSE_THRESHOLD 60→70, MIN_TRADES 5→10
+  - Nieuwe `zero_loss_enforcement()`: per-grade WR feedback loop
+  - Grade A WR < 70% → threshold +0.3% + signals paused
+  - Grade A WR > 80% → threshold -0.2% (capture upside)
+  - Grade A WR 70-80% → auto-resume als gepauzeerd
+  - Telegram alert naar Erik bij elke ZLEE actie
+  - Gewired in run_briefing() scheduler (dagelijks 08:00 AMS)
 - ✅ GMGN IP whitelist 4.220.51.250 bevestigd door Erik (screenshot)
 
 ## OPENSTAAND (sessie 35)
