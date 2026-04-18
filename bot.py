@@ -3906,18 +3906,25 @@ async def _cb_execute_sell(query, user, context, data):
         "\u23f3 *Fetching token balance...*", parse_mode="Markdown",
     )
 
-    # Fresh balance fetch — always accurate even after bot restarts
+    # Fresh balance fetch with RPC retry (Helius can be slow under load)
     pubkey = user["wallet_pubkey"]
     logger.info(f"SELL: fetching balance for {pubkey[:8]}... mint={sell_mint[:8]}...")
-    tokens = await get_token_balances(pubkey)
-    logger.info(f"SELL: got {len(tokens)} token(s) from wallet {pubkey[:8]}...")
-    token_info = next((t for t in tokens if t["mint"] == sell_mint), None)
+    token_info = None
+    for _attempt in range(3):  # retry up to 3x with 2s delay
+        tokens = await get_token_balances(pubkey)
+        logger.info(f"SELL attempt {_attempt+1}: got {len(tokens)} token(s)")
+        token_info = next((t for t in tokens if t["mint"] == sell_mint), None)
+        if token_info:
+            break
+        if _attempt < 2:
+            import asyncio as _aio
+            await _aio.sleep(2)
     if not token_info:
-        logger.warning(f"SELL: mint {sell_mint[:8]}... not found. Tokens in wallet: {[t['mint'][:8] for t in tokens]}")
+        logger.warning(f"SELL: mint {sell_mint[:8]}... not found after 3 retries. Wallet has: {[t['mint'][:8] for t in tokens]}")
         await query.edit_message_text(
             "\u26a0\ufe0f *Token not found in wallet.*\n\n"
-            "_Balance may have changed or RPC is slow._\n"
-            "_Tap Retry to refresh._",
+            "_Tried 3x — RPC may be slow or token already sold._\n"
+            "_Tap Retry to try again._",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("\U0001f504 Retry", callback_data="trade_sell")],
                 [_back_main()[0]],

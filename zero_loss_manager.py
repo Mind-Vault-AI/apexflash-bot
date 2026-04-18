@@ -486,17 +486,42 @@ async def auto_trader_loop(bot=None):
                     sig, out_tokens, entry_err = await execute_trade(keypair, "BUY", SOL_MINT, mint, int(trade_sol * 1e9))
 
                     if sig and out_tokens > 0:
+                        sl_pct_val = gov.get('sl_pct', STOP_LOSS_PCT)
+                        tp_pct_val = gov.get('tp_pct', TAKE_PROFIT_PCT)
                         active_positions[sym] = {
-                            "mint": mint,          # stored so resume works after restart
+                            "mint": mint,
                             "entry_price": s['price'],
                             "entry_sol": trade_sol,
                             "amount": out_tokens,
-                            "sl_price": s['price'] * (1 - (gov.get('sl_pct', STOP_LOSS_PCT)/100)),
-                            "tp_price": s['price'] * (1 + (gov.get('tp_pct', TAKE_PROFIT_PCT)/100)),
+                            "sl_price": s['price'] * (1 - sl_pct_val / 100),
+                            "tp_price": s['price'] * (1 + tp_pct_val / 100),
                             "created_at": int(time.time()),
                         }
                         save_active_positions(active_positions)
-                        await _notify_admin(bot, f"⚡ *ZERO-LOSS BUY* — {sym}\nAmt: *{trade_sol:.4f} SOL*\nTx: `{sig}`")
+
+                        # ── SYNC to user active_positions for manual SELL visibility ──
+                        try:
+                            from bot import users as _bot_users  # noqa: PLC0415
+                            if admin_id in _bot_users:
+                                _u = _bot_users[admin_id]
+                                if "active_positions" not in _u:
+                                    _u["active_positions"] = []
+                                # Remove any stale entry for same mint before adding
+                                _u["active_positions"] = [p for p in _u["active_positions"] if p.get("mint") != mint]
+                                _u["active_positions"].append({
+                                    "token": sym,
+                                    "mint": mint,
+                                    "entry_sol": trade_sol,
+                                    "token_amount_raw": int(out_tokens),
+                                    "sl_pct": sl_pct_val,
+                                    "tp_pct": tp_pct_val,
+                                    "peak_sol": trade_sol,
+                                    "source": "autotrade",
+                                })
+                        except Exception as _sync_err:
+                            logger.warning("Position sync to bot users failed: %s", _sync_err)
+
+                        await _notify_admin(bot, f"⚡ *ZERO-LOSS BUY* — {sym}\nAmt: *{trade_sol:.4f} SOL*\nTx: `{sig}`\nSL: -{sl_pct_val}% | TP: +{tp_pct_val}%")
                         _manager_tasks[sym] = asyncio.create_task(position_manager(keypair, sym, mint, bot=bot))
                         AUTOTRADE_STATE["last_entry_symbol"] = sym
                         AUTOTRADE_STATE["last_entry_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
