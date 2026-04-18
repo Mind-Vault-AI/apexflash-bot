@@ -57,19 +57,33 @@ def _get(path: str, params: dict = None) -> dict:
                 f"GMGN 403 FORBIDDEN — outbound IP [{ip}] not whitelisted. "
                 f"Add it at gmgn.ai → API settings → Trusted IPs."
             )
-            # Store in Redis for /myip Telegram command
-            try:
-                from core.persistence import _get_redis
-                r_conn = _get_redis()
-                if r_conn:
-                    r_conn.setex("apexflash:render:outbound_ip", 3600, ip)
-            except Exception:
-                pass
+            _record_403(ip)
             raise RuntimeError(f"GMGN 403 — IP {ip} not whitelisted")
         raise RuntimeError(f"GMGN HTTP {e.code}: {e.reason}")
     if data.get("code") != 0:
         raise RuntimeError(f"GMGN error {data.get('code')}: {data.get('message', data)}")
     return data["data"]
+
+
+def _record_403(ip: str) -> None:
+    """
+    Track every GMGN 403 in Redis so bot.py's /ip_status and escalate-job
+    can surface a coherent picture to the admin. Escalates after 3 in 1h.
+    """
+    try:
+        from core.persistence import _get_redis
+        r = _get_redis()
+        if not r:
+            return
+        r.setex("apexflash:render:outbound_ip", 3600, ip)
+        r.setex("apexflash:gmgn:403_last_ip", 7200, ip)
+        r.setex("apexflash:gmgn:403_last_ts", 7200, str(int(time.time())))
+        cnt = r.incr("apexflash:gmgn:403_count_total")
+        r.expire("apexflash:gmgn:403_count_total", 3600)
+        if cnt and int(cnt) >= 3:
+            r.setex("apexflash:gmgn:403_escalate", 3600, ip)
+    except Exception:
+        pass
 
 
 def _post(path: str, body: dict, params: dict = None) -> dict:
@@ -91,6 +105,7 @@ def _post(path: str, body: dict, params: dict = None) -> dict:
         if e.code == 403:
             ip = _get_outbound_ip()
             logger.error(f"GMGN 403 — IP {ip} not whitelisted")
+            _record_403(ip)
             raise RuntimeError(f"GMGN 403 — IP {ip} not whitelisted")
         raise RuntimeError(f"GMGN HTTP {e.code}: {e.reason}")
     if data.get("code") != 0:

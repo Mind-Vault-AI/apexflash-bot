@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.15"
+VERSION = "3.23.16"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -7608,6 +7608,72 @@ async def cmd_myip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
 
 
+async def cmd_ip_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/ip_status — Admin diagnostics: current IP, previous, history, GMGN 403 counters."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    try:
+        async with aiohttp.ClientSession() as _ses:
+            async with _ses.get(
+                "https://api.ipify.org?format=json",
+                headers={"User-Agent": "ApexFlash/1.0"},
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as _resp:
+                current_ip = (await _resp.json()).get("ip", "unknown")
+    except Exception as e:
+        current_ip = f"error: {e}"
+
+    from core.persistence import _get_redis
+    r = _get_redis()
+
+    def _decode(v):
+        if v is None:
+            return None
+        return v.decode() if isinstance(v, bytes) else v
+
+    prev_ip = last_403_ip = gmgn_403_cnt = None
+    history_entries = []
+    if r:
+        try:
+            prev_ip = _decode(r.get("apexflash:render:ip_previous"))
+            last_403_ip = _decode(r.get("apexflash:gmgn:403_last_ip"))
+            gmgn_403_cnt = _decode(r.get("apexflash:gmgn:403_count_total")) or "0"
+            raw_hist = r.lrange("apexflash:render:ip_history", 0, 9) or []
+            for item in raw_hist:
+                s = _decode(item)
+                if not s or "|" not in s:
+                    continue
+                ip_part, ts_part = s.split("|", 1)
+                try:
+                    ts_fmt = time.strftime("%m-%d %H:%M", time.gmtime(int(ts_part)))
+                except Exception:
+                    ts_fmt = ts_part
+                history_entries.append(f"• `{ip_part}` — {ts_fmt}Z")
+        except Exception as _e:
+            logger.error(f"/ip_status Redis read failed: {_e}")
+
+    changed = bool(prev_ip and current_ip and prev_ip != current_ip and not current_ip.startswith("error"))
+    change_line = "🚨 CHANGED vs last boot" if changed else "✅ stable"
+
+    hist_block = "\n".join(history_entries) if history_entries else "_(empty)_"
+
+    text = (
+        f"🌐 *IP Status Diagnostics*\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"Current:  `{current_ip}`\n"
+        f"Previous: `{prev_ip or '—'}`\n"
+        f"Status:   {change_line}\n\n"
+        f"*GMGN 403 telemetry*\n"
+        f"Last rejected IP: `{last_403_ip or '—'}`\n"
+        f"403 count (1h):   {gmgn_403_cnt}\n\n"
+        f"*IP history (last 10)*\n"
+        f"{hist_block}"
+    )
+    await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+
+
 async def cmd_qa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin-only lean QA summary: integrity + watchdog + autotrade readiness."""
     if not is_admin(update.effective_user.id):
@@ -8883,6 +8949,7 @@ def main() -> None:
     app.add_handler(CommandHandler("whale_intel", cmd_whale_intel))
     app.add_handler(CommandHandler("pdca", cmd_pdca))
     app.add_handler(CommandHandler("myip", cmd_myip))
+    app.add_handler(CommandHandler("ip_status", cmd_ip_status))
     app.add_handler(CommandHandler("qa", cmd_qa))
     app.add_handler(CommandHandler("smoke", cmd_smoke))
     app.add_handler(CommandHandler("sla", cmd_sla))
@@ -9988,9 +10055,12 @@ def main() -> None:
         name="gumroad_sync",
     )
 
-    # ── One-time startup: report Render outbound IP to admin ─────────────────
+    # ── Startup: IP change-detection + history + GMGN escalation ────────────
     async def _startup_ip_report(context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Fire once 30s after boot: fetch outbound IP via ipify, cache in Redis, alert admin."""
+        """
+        Fire 30s after boot. Detect IP rotation vs previous boot, maintain
+        rolling history of last 10 IPs, alert admin CRITICAL on change.
+        """
         try:
             async with aiohttp.ClientSession() as _ses:
                 async with _ses.get(
@@ -10004,19 +10074,50 @@ def main() -> None:
 
         from core.persistence import _get_redis
         r = _get_redis()
+        prev_ip = None
+        changed = False
         if r:
-            r.setex("apexflash:render:outbound_ip", 7200, ip)
+            try:
+                prev_ip_raw = r.get("apexflash:render:ip_previous")
+                prev_ip = prev_ip_raw.decode() if isinstance(prev_ip_raw, bytes) else prev_ip_raw
+            except Exception:
+                prev_ip = None
+            changed = bool(prev_ip and prev_ip != ip and not ip.startswith("error"))
+            try:
+                r.setex("apexflash:render:outbound_ip", 7200, ip)
+                if not ip.startswith("error"):
+                    r.set("apexflash:render:ip_previous", ip)
+                    ts = int(time.time())
+                    r.lpush("apexflash:render:ip_history", f"{ip}|{ts}")
+                    r.ltrim("apexflash:render:ip_history", 0, 9)
+            except Exception as _re:
+                logger.error(f"IP report Redis write failed: {_re}")
+
+        if changed:
+            header = "🚨 *RENDER IP CHANGED — ACTION REQUIRED*"
+            body = (
+                f"Previous: `{prev_ip}`\n"
+                f"New:      `{ip}`\n\n"
+                f"⚠️ GMGN whale scanner will 403 until whitelist updated.\n\n"
+                f"📋 *FIX NOW:*\n"
+                f"1. gmgn.ai → Profile → API Settings → Trusted IPs\n"
+                f"2. Add: `{ip}`\n"
+                f"3. Remove stale: `{prev_ip}`"
+            )
+        else:
+            header = "🌐 *Render IP — startup report*"
+            suffix = " _(unchanged)_" if prev_ip == ip else ""
+            body = (
+                f"Outbound IP: `{ip}`{suffix}\n\n"
+                f"📋 *GMGN whitelist action (if not yet added):*\n"
+                f"gmgn.ai → Profile → API Settings → Trusted IPs → Add `{ip}`"
+            )
 
         for admin_id in ADMIN_IDS:
             try:
                 await context.bot.send_message(
                     chat_id=admin_id,
-                    text=(
-                        f"🌐 *Render IP — startup report*\n"
-                        f"Outbound IP: `{ip}`\n\n"
-                        f"📋 *GMGN whitelist action:*\n"
-                        f"gmgn.ai → Profile → API Settings → Trusted IPs → Add `{ip}`"
-                    ),
+                    text=f"{header}\n{body}",
                     parse_mode="Markdown",
                     disable_web_page_preview=True,
                 )
@@ -10024,6 +10125,50 @@ def main() -> None:
                 pass
 
     app.job_queue.run_once(_startup_ip_report, when=30, name="startup_ip_report")
+
+    # ── Periodic: escalate GMGN 403 floods to admin ──────────────────────────
+    async def _gmgn_403_escalate_check(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Every 60s: if gmgn_market.py raised the escalate flag, alert admin once."""
+        try:
+            from core.persistence import _get_redis
+            r = _get_redis()
+            if not r:
+                return
+            flag = r.get("apexflash:gmgn:403_escalate")
+            if not flag:
+                return
+            bad_ip = flag.decode() if isinstance(flag, bytes) else flag
+            try:
+                cnt_raw = r.get("apexflash:gmgn:403_count_total") or b"0"
+                cnt = int(cnt_raw.decode() if isinstance(cnt_raw, bytes) else cnt_raw)
+            except Exception:
+                cnt = 0
+            for admin_id in ADMIN_IDS:
+                try:
+                    await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=(
+                            f"🚨 *GMGN 403 STORM*\n"
+                            f"IP rejected: `{bad_ip}`\n"
+                            f"403 count (1h): {cnt}\n\n"
+                            f"📋 Whitelist `{bad_ip}` on gmgn.ai NOW.\n"
+                            f"Whale scanner is degraded until fixed."
+                        ),
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    pass
+            r.delete("apexflash:gmgn:403_escalate")
+        except Exception as _e:
+            logger.error(f"gmgn 403 escalate check failed: {_e}")
+
+    app.job_queue.run_repeating(
+        _gmgn_403_escalate_check,
+        interval=60,
+        first=90,
+        name="gmgn_403_escalate",
+    )
 
     # ── Direct httpx polling loop — bypasses PTB run_polling() Python 3.14 issues ──
     import asyncio as _asyncio

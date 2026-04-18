@@ -4,8 +4,8 @@
 
 ## LIVE STATE (sessie 35 — 2026-04-18)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.15
-- GMGN IP whitelist: 4.220.51.250 ✅ (Erik gedaan)
+- Version: v3.23.16
+- GMGN IP whitelist: 74.220.51.250 (actueel) — change-detect live in v3.23.16
 - WinRate: 51.4% → target >=70% (v3.23.15 ZLEE auto-enforced)
 - ZLEE active: pauzeert signals als Grade A WR < 70% (min 10 trades)
 
@@ -184,3 +184,17 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - Alle 6 agents/*.py: try/except om google.generativeai import
 - Belt + bretels: pyparsing in requirements.txt + alle imports veilig
 - Clear cache deploy getriggerd om Render pip cache te verwijderen
+
+## Sessie 35c — 2026-04-18 (v3.23.16 — ROTATING IP STRUCTURAL FIX)
+- PROBLEEM: Render Starter plan rotating IPs → GMGN whitelist breekt na elke restart
+  - 05:54 crash (CONFLICT deploy rollover) → 05:55 nieuwe IP 74.220.51.3 → 06:07 flip naar 74.220.51.250
+  - 3 verschillende IPs in 13 minuten zonder change-detectie → admin blind
+- FIX bot.py _startup_ip_report: change-detection vs `apexflash:render:ip_previous`
+  - Als veranderd → 🚨 CRITICAL alert met previous+new+action
+  - Als gelijk → quiet _(unchanged)_ report
+  - Rolling history Redis list `apexflash:render:ip_history` (max 10, LPUSH+LTRIM)
+- FIX bot.py NEW /ip_status admin command: current + previous + status + history + 403 counters
+- FIX bot.py NEW job _gmgn_403_escalate_check (60s): alert admin als 403-storm flag gezet
+- FIX exchanges/gmgn_market.py _record_403(): dedupe 403 tracking (counter 1h TTL, escalate >=3)
+- Keys: apexflash:gmgn:403_count_total, 403_last_ip, 403_last_ts, 403_escalate
+- VERSION 3.23.15 → 3.23.16
