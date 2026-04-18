@@ -4,8 +4,8 @@
 
 ## LIVE STATE (sessie 35 — 2026-04-18)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.16
-- GMGN IP whitelist: 74.220.51.250 (actueel) — change-detect live in v3.23.16
+- Version: v3.23.17
+- GMGN IP whitelist: 74.220.51.252 (actueel) — change-detect + history live
 - WinRate: 51.4% → target >=70% (v3.23.15 ZLEE auto-enforced)
 - ZLEE active: pauzeert signals als Grade A WR < 70% (min 10 trades)
 
@@ -198,3 +198,9 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - FIX exchanges/gmgn_market.py _record_403(): dedupe 403 tracking (counter 1h TTL, escalate >=3)
 - Keys: apexflash:gmgn:403_count_total, 403_last_ip, 403_last_ts, 403_escalate
 - VERSION 3.23.15 → 3.23.16
+
+## Sessie 35d — 2026-04-18 (v3.23.17 — HOTFIX: missing time import in IP logic)
+- v3.23.16 deployed OK (commando /ip_status werkt) maar IP history bleef (empty)
+- ROOT CAUSE: `time` niet module-level geïmporteerd in bot.py → `time.time()` in _startup_ip_report faalde met NameError → silent skip LPUSH
+- FIX: local `import time as _t` in _startup_ip_report (write path) + cmd_ip_status (format path)
+- VERSION 3.23.16 → 3.23.17

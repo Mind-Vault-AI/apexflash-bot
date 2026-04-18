@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.16"
+VERSION = "3.23.17"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -7641,13 +7641,14 @@ async def cmd_ip_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             last_403_ip = _decode(r.get("apexflash:gmgn:403_last_ip"))
             gmgn_403_cnt = _decode(r.get("apexflash:gmgn:403_count_total")) or "0"
             raw_hist = r.lrange("apexflash:render:ip_history", 0, 9) or []
+            import time as _t
             for item in raw_hist:
                 s = _decode(item)
                 if not s or "|" not in s:
                     continue
                 ip_part, ts_part = s.split("|", 1)
                 try:
-                    ts_fmt = time.strftime("%m-%d %H:%M", time.gmtime(int(ts_part)))
+                    ts_fmt = _t.strftime("%m-%d %H:%M", _t.gmtime(int(ts_part)))
                 except Exception:
                     ts_fmt = ts_part
                 history_entries.append(f"• `{ip_part}` — {ts_fmt}Z")
@@ -10087,7 +10088,8 @@ def main() -> None:
                 r.setex("apexflash:render:outbound_ip", 7200, ip)
                 if not ip.startswith("error"):
                     r.set("apexflash:render:ip_previous", ip)
-                    ts = int(time.time())
+                    import time as _t
+                    ts = int(_t.time())
                     r.lpush("apexflash:render:ip_history", f"{ip}|{ts}")
                     r.ltrim("apexflash:render:ip_history", 0, 9)
             except Exception as _re:
