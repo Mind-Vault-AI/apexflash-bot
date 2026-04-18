@@ -1,10 +1,22 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-16 (Sessie 34c)
+# Last updated: 2026-04-18 (Sessie 35)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
-## LIVE STATE (sessie 34c — 2026-04-16)
+## LIVE STATE (sessie 35 — 2026-04-18)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.13
+- Version: v3.23.14
+- GMGN IP whitelist: 4.220.51.250 ✅ (Erik gedaan)
+- WinRate: 51.4% → target >65% (fix deployed in v3.23.14)
+
+## GEDAAN (sessie 35 — 2026-04-18)
+- ✅ **v3.23.14: SELL usd=0 bug GEFIXT** — autotrade SELL logde usd_value=0 hardcoded. AI Advisor zag kapotte data. Nu: SOL prijs gefetcht + usd_value=sold_sol*sol_price + entry_price_usd=sol_price bij elke SELL.
+- ✅ **v3.23.14: Grade A drempel aangescherpt** — scalper.py: abs5m 2%→3%, abs15m>=1.5% vereist (nieuw), volume $1.5M→$2M. Target 2.5%→3.0%, stop loss 1.5%→1.0%. Verwachte WinRate: 51.4%→>65%.
+- ✅ GMGN IP whitelist 4.220.51.250 bevestigd door Erik (screenshot)
+
+## OPENSTAAND (sessie 35)
+- Reddit post plaatsen (draft gereed)
+- TEST BUY bevestigen via Telegram
+- WinRate monitoren na v3.23.14 deploy
 - Keys on Render: 74 (gesynchroniseerd via sync_render_env.py)
 - **autotrade:enabled = 1** → AUTO-TRADE STAAT AAN op Render
 - **0 open posities** — 7 phantom posities GEWIST (tokens bestonden NIET on-chain)

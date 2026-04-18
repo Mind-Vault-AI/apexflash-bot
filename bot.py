@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.13"
+VERSION = "3.23.14"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -2798,10 +2798,16 @@ async def sl_tp_monitor_job(context: ContextTypes.DEFAULT_TYPE):
                     else:
                         trigger_label = "🟢 TAKE PROFIT"
 
-                    # Record trade
+                    # Record trade (fetch SOL price for USD value — was hardcoded 0)
+                    try:
+                        _sell_prices = await get_crypto_prices()
+                        _sol_px = _sell_prices.get("SOL") or FALLBACK_PRICES.get("SOL", 130)
+                    except Exception:
+                        _sol_px = FALLBACK_PRICES.get("SOL", 130)
                     _record_trade(
                         chat_id, user, "SELL", pos["token"], pos["mint"],
-                        sold_sol, 0, tx_sig,
+                        sold_sol, sold_sol * _sol_px, tx_sig,
+                        entry_price_usd=_sol_px,
                     )
 
                     # Track win rate (critical for marketing + trust)
