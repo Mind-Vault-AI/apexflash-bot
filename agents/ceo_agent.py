@@ -834,6 +834,34 @@ async def run_briefing() -> None:
     """Main CEO Agent task — collect KPIs, prioritise, send briefing."""
     logger.info("CEO Agent: starting daily briefing run")
     try:
+        # ── v3.23.22: Self-healing KPI reconcile BEFORE reading counters ──
+        # Rebuilds platform:total_users / platform:trades_today / winrate:total_trades
+        # from the authoritative users dict to eliminate "new baseline" drift.
+        try:
+            from core.persistence import reconcile_kpis
+            recon = reconcile_kpis()
+            if recon.get("drift_severe"):
+                # Option B: loud heal — Telegram alert if drift > 10%
+                try:
+                    from telegram import Bot as _Bot
+                    _drift_msg = (
+                        f"⚠️ *KPI Drift Healed (v3.23.22)*\n"
+                        f"Redis counters were lagging the authoritative users dict.\n"
+                        f"• total_users: {recon['before']['platform:total_users']} → {recon['after']['platform:total_users']}\n"
+                        f"• trades_today: {recon['before']['platform:trades_today']} → {recon['after']['platform:trades_today']}\n"
+                        f"• trades_all_time: {recon['before']['winrate:total_trades']} → {recon['after']['winrate:total_trades']}\n"
+                        f"• drift: {recon['drift_pct']}%\n"
+                        f"_Briefing below uses the healed values._"
+                    )
+                    await _Bot(token=BOT_TOKEN).send_message(
+                        chat_id=ERIK_TELEGRAM_ID, text=_drift_msg, parse_mode="Markdown"
+                    )
+                except Exception as _e:
+                    logger.debug(f"KPI drift alert send failed: {_e}")
+            logger.info(f"CEO Agent reconcile: {recon}")
+        except Exception as _e:
+            logger.warning(f"CEO Agent reconcile failed (non-blocking): {_e}")
+
         kpis = collect_kpis()
         priorities = gemini_prioritise(kpis)
         

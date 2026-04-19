@@ -1,10 +1,25 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-18 (Sessie 35)
+# Last updated: 2026-04-19 (Sessie 36)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
-## LIVE STATE (sessie 35 — 2026-04-18)
+## LIVE STATE (sessie 36 — 2026-04-19)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.21
+- Version: v3.23.22
+- Status: commit pending deploy — Erik approval
+- Pending fixes: Elite deeplink SLA, KPI reconcile, sell diagnostic ring buffer
+
+## SESSIE 36 — 2026-04-19 (CEO Agent triggered fixes)
+Context: 08:00 CEO briefing toonde "0 users / SLA breach / sell broken".
+Bot-in-memory had 6 users / 26 trades (auto-backup), CEO briefing las Redis counters die nooit werden geschreven (`platform:trades_today`) of uit sync waren (`platform:total_users`). SLA breach op `t.me/ApexFlashBot?start=elite` kwam door ontbrekende elif branch in /start handler. Erik meldde om 08:01 sell bug via /report.
+
+Gedaan (pending Erik deploy):
+- ✅ v3.23.22: /start elite + /start pro deep-link handlers + 1-tap upgrade screen
+- ✅ v3.23.22: reconcile_kpis() + Telegram drift alert (>10%) in run_briefing()
+- ✅ v3.23.22: _log_sell_event() ring buffer + /sell_diag admin command
+- ✅ AST-parse clean, commit pending ISO9001 NOW.md sync (deze edit)
+
+## PREVIOUS STATE (sessie 35 — 2026-04-18)
+- Version was: v3.23.21
 - GMGN IP whitelist: 74.220.51.252 (actueel) — change-detect + history live
 - WinRate: 51.4% → target >=70% (v3.23.15 ZLEE auto-enforced)
 - ZLEE active: pauzeert signals als Grade A WR < 70% (min 10 trades)

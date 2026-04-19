@@ -851,6 +851,99 @@ def track_new_user():
         logger.debug(f"track_new_user failed: {e}")
 
 
+# ══════════════════════════════════════════════
+# KPI RECONCILIATION (v3.23.22)
+# ══════════════════════════════════════════════
+# Problem: auto_backup reads in-memory users dict → "6 users / 26 trades"
+#          CEO briefing reads Redis counters → "0 users" (never written, or reset)
+#          Result: daily briefing shows false "new baseline" every day.
+#
+# Fix: reconcile_kpis() rebuilds aggregate counters from the authoritative users
+#      dict BEFORE each CEO briefing. Option B (loud heal): returns a report
+#      with before/after values so the caller can Telegram-alert on drift > 10%.
+
+def _coerce_int(v, default=0):
+    try:
+        return int(v) if v is not None else default
+    except (ValueError, TypeError):
+        return default
+
+
+def reconcile_kpis() -> dict:
+    """Self-heal KPI counter drift. Call before each daily CEO briefing.
+
+    Strategy:
+      - total_users       → upwards-only (never decrement; protects monotonicity)
+      - trades_today      → overwrite (daily counter, authoritative = users dict)
+      - trades_all_time   → upwards-only (same as users)
+
+    Returns audit dict:
+      {"status": "ok"|"no_redis"|"error",
+       "before": {...}, "after": {...}, "drift_pct": float,
+       "users_in_dict": int, "trades_today_sum": int}
+    """
+    r = _get_redis()
+    if not r:
+        return {"status": "no_redis"}
+
+    try:
+        from datetime import date
+        today = date.today().isoformat()
+
+        users = load_users()
+        total_users = len(users)
+        total_trades_sum = sum(_coerce_int(u.get("total_trades")) for u in users.values())
+        trades_today_sum = sum(
+            _coerce_int(u.get("trades_today")) for u in users.values()
+            if u.get("last_trade_day") == today
+        )
+
+        before = {
+            "platform:total_users": _coerce_int(r.get("platform:total_users")),
+            "platform:trades_today": _coerce_int(r.get("platform:trades_today")),
+            "winrate:total_trades": _coerce_int(r.get("winrate:total_trades")),
+        }
+
+        # Upwards-only reconcile for total_users (monotonic counter)
+        if total_users > before["platform:total_users"]:
+            r.set("platform:total_users", total_users)
+
+        # Overwrite trades_today (daily counter, users dict is authoritative)
+        r.set("platform:trades_today", trades_today_sum)
+
+        # Upwards-only reconcile for winrate:total_trades
+        if total_trades_sum > before["winrate:total_trades"]:
+            r.set("winrate:total_trades", total_trades_sum)
+
+        after = {
+            "platform:total_users": _coerce_int(r.get("platform:total_users")),
+            "platform:trades_today": _coerce_int(r.get("platform:trades_today")),
+            "winrate:total_trades": _coerce_int(r.get("winrate:total_trades")),
+        }
+
+        # Compute drift_pct (how badly Redis was lagging vs truth)
+        if total_users > 0:
+            drift_pct = round(
+                abs(total_users - before["platform:total_users"]) / total_users * 100, 1
+            )
+        else:
+            drift_pct = 0.0
+
+        return {
+            "status": "ok",
+            "users_in_dict": total_users,
+            "trades_today_sum": trades_today_sum,
+            "trades_all_time_sum": total_trades_sum,
+            "before": before,
+            "after": after,
+            "drift_pct": drift_pct,
+            "drift_severe": drift_pct > 10.0,
+        }
+    except Exception as e:
+        logger.error(f"reconcile_kpis failed: {e}")
+        return {"status": "error", "error": str(e)}
+
+
 def track_user_active(user_id: int):
     """
     Track daily active user for churn KPI.

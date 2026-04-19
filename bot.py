@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.17"
+VERSION = "3.23.22"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -656,6 +656,18 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             context.user_data["_auto_aff"] = exchange
             logger.info(f"Deep link: user {uid} tracked for affiliate {exchange}")
 
+        # Format: elite (Elite-upgrade deep link from marketing / health-check)  v3.23.18
+        elif arg == "elite":
+            context.user_data["_auto_elite"] = True
+            track_funnel("deeplink_elite")
+            logger.info(f"Deep link: user {uid} requested Elite upgrade")
+
+        # Format: pro (Pro-upgrade deep link)  v3.23.18
+        elif arg == "pro":
+            context.user_data["_auto_pro"] = True
+            track_funnel("deeplink_pro")
+            logger.info(f"Deep link: user {uid} requested Pro upgrade")
+
         # Format: buy_MINTADDRESS_ref_USERID (viral token link with referral)
         elif arg.startswith("buy_"):
             parts = arg[4:]  # Remove "buy_"
@@ -867,6 +879,65 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         except Exception as e:
             logger.warning(f"Auto-aff trigger failed: {e}")
+
+    # ── Auto-trigger Elite Upgrade if deep linked (v3.23.18, option C: hybrid) ──
+    if context.user_data.pop("_auto_elite", False):
+        try:
+            elite_sol = await _get_tier_price_sol("elite")
+            text = (
+                "\U0001f451 *Elite Upgrade \u2014 1-tap*\n"
+                "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+                "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+                f"\n"
+                f"*${ELITE_PRICE_USD}/mo \u2014 pay {elite_sol} SOL, 30 days access*\n"
+                "\n"
+                "\u2022 All chains (ETH, SOL, BSC, ARB)\n"
+                "\u2022 100 tracked wallets\n"
+                "\u2022 AI-powered signals (Grade A/B+)\n"
+                "\u2022 Copy Trading + DCA Bot\n"
+                "\u2022 1-on-1 onboarding call\n"
+                "\n"
+                "_Instant activation on SOL payment. 0% platform fee._\n"
+            )
+            kb = [
+                [InlineKeyboardButton(f"\U0001f451 Pay {elite_sol} SOL now", callback_data="pay_sol_elite")],
+                [InlineKeyboardButton("\U0001f4b0 Compare all plans", callback_data="premium")],
+                [InlineKeyboardButton("\u2b05\ufe0f Back to Menu", callback_data="main_menu")],
+            ]
+            await update.message.reply_text(
+                text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
+            )
+            track_funnel("deeplink_elite_shown")
+        except Exception as e:
+            logger.warning(f"Auto-elite trigger failed: {e}")
+
+    # ── Auto-trigger Pro Upgrade if deep linked (v3.23.18) ──
+    if context.user_data.pop("_auto_pro", False):
+        try:
+            pro_sol = await _get_tier_price_sol("pro")
+            text = (
+                "\U0001f680 *Pro Upgrade \u2014 1-tap*\n"
+                "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+                "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+                f"\n"
+                f"*${PRO_PRICE_USD}/mo \u2014 pay {pro_sol} SOL, 30 days access*\n"
+                "\n"
+                "\u2022 ETH + SOL alerts (instant)\n"
+                "\u2022 20 tracked wallets\n"
+                "\u2022 Copy Trading + DCA Bot\n"
+                "\u2022 Priority support\n"
+            )
+            kb = [
+                [InlineKeyboardButton(f"\U0001f680 Pay {pro_sol} SOL now", callback_data="pay_sol_pro")],
+                [InlineKeyboardButton("\U0001f4b0 Compare all plans", callback_data="premium")],
+                [InlineKeyboardButton("\u2b05\ufe0f Back to Menu", callback_data="main_menu")],
+            ]
+            await update.message.reply_text(
+                text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
+            )
+            track_funnel("deeplink_pro_shown")
+        except Exception as e:
+            logger.warning(f"Auto-pro trigger failed: {e}")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3880,6 +3951,94 @@ async def _cb_execute_buy(query, user, context, data):
     )
 
 
+def _log_sell_event(user_id: int, status: str, reason: str, mint: str = "", extra: str = "") -> None:
+    """Push a sell audit entry to a Redis ring buffer (v3.23.22).
+
+    status: 'success' | 'fail'
+    Keeps last 30 entries under apexflash:sell_diag so /sell_diag is self-serve.
+    """
+    try:
+        from core.persistence import _get_redis as _pr
+        r = _pr()
+        if not r:
+            return
+        from datetime import datetime, timezone
+        entry = json.dumps({
+            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "uid": user_id,
+            "status": status,
+            "reason": reason,
+            "mint": (mint or "")[:12],
+            "extra": (extra or "")[:120],
+        })
+        r.lpush("apexflash:sell_diag", entry)
+        r.ltrim("apexflash:sell_diag", 0, 29)
+    except Exception as _e:
+        logger.debug(f"_log_sell_event failed: {_e}")
+
+
+async def cmd_sell_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/sell_diag — Admin: show last 30 sell events (success + failure reasons)."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("\u26d4 Unauthorized.")
+        return
+
+    try:
+        from core.persistence import _get_redis as _pr
+        r = _pr()
+        if not r:
+            await update.message.reply_text("\u26a0\ufe0f Redis unavailable — no sell diag data.")
+            return
+
+        entries_raw = r.lrange("apexflash:sell_diag", 0, 29) or []
+        if not entries_raw:
+            await update.message.reply_text(
+                "\U0001f4ca *Sell Diagnostic*\n\n_No sell events logged yet (v3.23.22+)._\n"
+                "_Try a sell from the bot; events will appear here._",
+                parse_mode="Markdown"
+            )
+            return
+
+        lines = ["\U0001f4ca *Sell Diagnostic \u2014 last 30 events*", ""]
+        counts = {"success": 0, "fail": 0}
+        fail_reasons: dict = {}
+
+        for raw in entries_raw:
+            try:
+                ev = json.loads(raw)
+            except Exception:
+                continue
+            counts[ev.get("status", "fail")] = counts.get(ev.get("status", "fail"), 0) + 1
+            if ev.get("status") == "fail":
+                reason = ev.get("reason", "unknown")
+                fail_reasons[reason] = fail_reasons.get(reason, 0) + 1
+            icon = "\u2705" if ev.get("status") == "success" else "\u274c"
+            lines.append(
+                f"{icon} `{ev.get('ts', '')[-8:]}` u={ev.get('uid')} {ev.get('reason')} "
+                f"mint=`{ev.get('mint', '')}`"
+            )
+
+        total = counts["success"] + counts["fail"]
+        success_rate = (counts["success"] / total * 100) if total > 0 else 0.0
+        summary = [
+            "",
+            f"\U0001f4c8 *Summary:* {counts['success']}/{total} success ({success_rate:.0f}%)",
+        ]
+        if fail_reasons:
+            summary.append("\U0001f534 *Top failure reasons:*")
+            for reason, n in sorted(fail_reasons.items(), key=lambda x: -x[1])[:5]:
+                summary.append(f"\u2022 `{reason}` \u2014 {n}\u00d7")
+
+        text = "\n".join(lines + summary)
+        # Telegram message limit: 4096 chars
+        if len(text) > 3900:
+            text = text[:3900] + "\n\n_\u2026truncated_"
+        await update.message.reply_text(text, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"cmd_sell_diag failed: {e}")
+        await update.message.reply_text(f"\u26a0\ufe0f sell_diag error: `{e}`", parse_mode="Markdown")
+
+
 async def _cb_execute_sell(query, user, context, data):
     """Execute a sell order. data = csel_{pct}_{mint}"""
     if not user.get("wallet_pubkey") or not user.get("wallet_secret_enc"):
@@ -3921,6 +4080,8 @@ async def _cb_execute_sell(query, user, context, data):
             await _aio.sleep(2)
     if not token_info:
         logger.warning(f"SELL: mint {sell_mint[:8]}... not found after 3 retries. Wallet has: {[t['mint'][:8] for t in tokens]}")
+        _log_sell_event(query.from_user.id, "fail", "token_not_found_3x", sell_mint,
+                        f"wallet_mints={[t['mint'][:8] for t in tokens]}")
         await query.edit_message_text(
             "\u26a0\ufe0f *Token not found in wallet.*\n\n"
             "_Tried 3x — RPC may be slow or token already sold._\n"
@@ -3938,6 +4099,8 @@ async def _cb_execute_sell(query, user, context, data):
     logger.info(f"SELL: raw_total={raw_total} sell_raw={sell_raw} pct={pct}")
 
     if sell_raw <= 0:
+        _log_sell_event(query.from_user.id, "fail", "zero_balance", sell_mint,
+                        f"raw_total={raw_total} pct={pct}")
         await query.edit_message_text(
             "\u26a0\ufe0f Nothing to sell (zero balance).",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
@@ -3982,6 +4145,8 @@ async def _cb_execute_sell(query, user, context, data):
                 "_Jupiter could not respond. Try again in 30 seconds._"
             )
         logger.warning(f"SELL quote failed mint={sell_mint[:8]}... reason={reason}")
+        _log_sell_event(query.from_user.id, "fail", f"quote_{reason}", sell_mint,
+                        f"slippage_steps=(300,1000,2500)")
         await query.edit_message_text(
             err_text,
             reply_markup=InlineKeyboardMarkup([
@@ -4011,6 +4176,13 @@ async def _cb_execute_sell(query, user, context, data):
     logger.info(f"SELL: calling execute_swap mint={sell_mint[:8]}... raw={sell_raw}")
     tx_sig, swap_err = await execute_swap(keypair, quote)
     logger.info(f"SELL: execute_swap result tx_sig={tx_sig} err={swap_err[:80] if swap_err else None}")
+
+    if not tx_sig:
+        _log_sell_event(query.from_user.id, "fail", "swap_execute_failed", sell_mint,
+                        f"err={(swap_err or '')[:100]} slippage={slip_used}bps")
+    else:
+        _log_sell_event(query.from_user.id, "success", "swap_ok", sell_mint,
+                        f"tx={tx_sig[:16]}... slippage={slip_used}bps")
 
     if tx_sig:
         user["total_trades"] = user.get("total_trades", 0) + 1
@@ -8979,6 +9151,7 @@ def main() -> None:
     app.add_handler(CommandHandler("pdca", cmd_pdca))
     app.add_handler(CommandHandler("myip", cmd_myip))
     app.add_handler(CommandHandler("ip_status", cmd_ip_status))
+    app.add_handler(CommandHandler("sell_diag", cmd_sell_diag))  # v3.23.22
     app.add_handler(CommandHandler("qa", cmd_qa))
     app.add_handler(CommandHandler("smoke", cmd_smoke))
     app.add_handler(CommandHandler("sla", cmd_sla))
