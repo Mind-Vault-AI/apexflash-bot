@@ -79,13 +79,57 @@ async def get_quote(
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 if resp.status == 200:
-                    return await resp.json()
+                    data = await resp.json()
+                    # Jupiter sometimes returns 200 with empty/invalid route
+                    if not data or not data.get("outAmount"):
+                        logger.warning(f"Jupiter quote 200 but no route: in={input_mint[:8]} out={output_mint[:8]}")
+                        return None
+                    return data
                 error = await resp.text()
-                logger.error(f"Jupiter quote {resp.status}: {error}")
+                logger.error(f"Jupiter quote {resp.status}: {error[:200]}")
                 return None
     except Exception as e:
         logger.error(f"Jupiter quote error: {e}")
         return None
+
+
+# ══════════════════════════════════════════════
+# QUOTE WITH ESCALATING SLIPPAGE (v3.23.19)
+# ══════════════════════════════════════════════
+
+async def get_quote_with_escalation(
+    input_mint: str,
+    output_mint: str,
+    amount_raw: int,
+    slippage_steps: tuple[int, ...] = (300, 1000, 2500),
+) -> tuple[dict | None, str]:
+    """Try quote at each slippage tier until one succeeds.
+
+    Returns (quote, reason).
+    - (quote, "") on success — caller can check quote['_slippage_used'] for the bps used.
+    - (None, "no_route") if all tiers return no route → token likely RUGGED / no liquidity.
+    - (None, "api_error") if Jupiter API itself errored on every tier.
+
+    Use for SELL paths where memecoin liquidity is thin and a fixed
+    slippage often fails. Standard practice in Bonkbot/Trojan/Photon.
+    """
+    api_errors = 0
+    for slip in slippage_steps:
+        try:
+            quote = await get_quote(input_mint, output_mint, amount_raw, slippage_bps=slip)
+            if quote:
+                quote["_slippage_used"] = slip
+                logger.info(f"Quote OK at {slip}bps slippage: in={input_mint[:8]} out={output_mint[:8]}")
+                return quote, ""
+        except Exception as e:
+            api_errors += 1
+            logger.warning(f"Quote escalation tier {slip}bps raised: {e}")
+            continue
+
+    # All tiers exhausted
+    if api_errors == len(slippage_steps):
+        return None, "api_error"
+    return None, "no_route"
 
 
 # ══════════════════════════════════════════════

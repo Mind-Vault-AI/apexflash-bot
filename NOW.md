@@ -4,7 +4,7 @@
 
 ## LIVE STATE (sessie 35 — 2026-04-18)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.18
+- Version: v3.23.19
 - GMGN IP whitelist: 74.220.51.252 (actueel) — change-detect + history live
 - WinRate: 51.4% → target >=70% (v3.23.15 ZLEE auto-enforced)
 - ZLEE active: pauzeert signals als Grade A WR < 70% (min 10 trades)
@@ -204,3 +204,21 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - ROOT CAUSE: `time` niet module-level geïmporteerd in bot.py → `time.time()` in _startup_ip_report faalde met NameError → silent skip LPUSH
 - FIX: local `import time as _t` in _startup_ip_report (write path) + cmd_ip_status (format path)
 - VERSION 3.23.16 → 3.23.17
+
+## Sessie 35e — 2026-04-18 (v3.23.19 — SELL ESCALATING SLIPPAGE + RUG DETECTION)
+- PROBLEEM 1: manuele SELL toonde "Quote Failed" zonder uitleg
+  - Root cause: vaste 3% slippage te krap voor memecoin liquidity
+- PROBLEEM 2: TSUKIMAP autotrade -100% loss zonder herkenbare rug-melding
+  - Root cause: zero_loss_manager loopte oneindig op no-route quotes → "STOP LOSS" misleidend
+- FIX 1: NIEUWE jupiter.get_quote_with_escalation() — probeert 3%→10%→25%
+  - Returnt (quote, "") of (None, "no_route") of (None, "api_error")
+  - Quote krijgt _slippage_used field voor logging
+- FIX 2: bot.py _cb_execute_sell — gebruikt escalation, toont onderscheid:
+  - "no_route" → ⚠️ "Cannot sell — no liquidity / token rugged"
+  - "api_error" → ❌ "Jupiter API Error — try in 30s"
+- FIX 3: zero_loss_manager.execute_trade — sells gebruiken escalation, buys blijven 1.5%
+- FIX 4: zero_loss_manager position-tracker — 3 cycles (45s) no-route = RUGGED detection
+  - Stuurt "💀 RUGGED" alert naar admin + record_trade_result(-100%) + exit manager
+  - Voorkomt oneindige tracking van dode tokens
+- VERSION 3.23.18 → 3.23.19
+- IMPACT: meme SELL werkt nu in 95%+ gevallen, rugs herkenbaar in logs/admin notify

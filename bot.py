@@ -3955,17 +3955,35 @@ async def _cb_execute_sell(query, user, context, data):
     # Sell: swap ALL tokens → SOL, then collect fee from SOL output
     # (No upfront token deduction — fee is taken from SOL received)
 
-    # Get quote (token → SOL)
-    quote = await get_quote(
+    # Get quote with ESCALATING SLIPPAGE (v3.23.19)
+    # Memecoins have thin liquidity → 3% often fails. Retry 3% → 10% → 25%.
+    from exchanges.jupiter import get_quote_with_escalation
+    quote, reason = await get_quote_with_escalation(
         input_mint=sell_mint,
         output_mint=SOL_MINT,
         amount_raw=sell_raw,
-        slippage_bps=DEFAULT_SLIPPAGE_BPS,
+        slippage_steps=(300, 1000, 2500),
     )
 
     if not quote:
+        if reason == "no_route":
+            # Token has no Jupiter liquidity = RUGGED or paused trading
+            err_text = (
+                "\u26a0\ufe0f *Cannot sell — no liquidity*\n\n"
+                "_Jupiter returned no route at any slippage tier (3%, 10%, 25%)._\n"
+                "_This usually means the token has been **rugged** (LP removed) "
+                "or trading is paused._\n\n"
+                "_Token stays in your wallet. You can keep trying — sometimes "
+                "liquidity returns. If it stays gone, the token is dead._"
+            )
+        else:  # api_error
+            err_text = (
+                "\u274c *Jupiter API Error*\n\n"
+                "_Jupiter could not respond. Try again in 30 seconds._"
+            )
+        logger.warning(f"SELL quote failed mint={sell_mint[:8]}... reason={reason}")
         await query.edit_message_text(
-            "\u274c *Quote Failed*\n\nCould not get price.",
+            err_text,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("\U0001f504 Retry", callback_data=data)],
                 [_back_main()[0]],
@@ -3973,6 +3991,9 @@ async def _cb_execute_sell(query, user, context, data):
             parse_mode="Markdown",
         )
         return
+
+    slip_used = quote.get("_slippage_used", DEFAULT_SLIPPAGE_BPS)
+    logger.info(f"SELL quote OK at {slip_used}bps slippage")
 
     try:
         keypair = load_keypair(user["wallet_secret_enc"])

@@ -140,15 +140,29 @@ async def _notify_admin(bot, text: str) -> None:
             logger.debug("Admin notify failed for %s: %s", admin_id, e)
 
 async def execute_trade(keypair, action, input_mint, output_mint, amount_raw):
-    """Executes a buy/sell via Jupiter (primary) → GMGN (fallback)."""
+    """Executes a buy/sell via Jupiter (primary) → GMGN (fallback).
+
+    v3.23.19: SELL paths use escalating slippage (3% → 10% → 25%) — memecoins
+    have thin liquidity and a fixed low slippage causes silent SL failures.
+    BUY paths keep tight slippage (1.5%) to protect entry price.
+    """
     # ── Primary: Jupiter ──────────────────────────────────────────────────────
-    quote = await get_quote(input_mint, output_mint, amount_raw, slippage_bps=150)
+    is_sell = (action or "").lower().startswith("sell") or output_mint.endswith("So11111111111111111111111111111111111111112")
+    if is_sell:
+        from exchanges.jupiter import get_quote_with_escalation
+        quote, _reason = await get_quote_with_escalation(
+            input_mint, output_mint, amount_raw,
+            slippage_steps=(300, 1000, 2500),
+        )
+    else:
+        quote = await get_quote(input_mint, output_mint, amount_raw, slippage_bps=150)
     if quote:
         out_amount = int(quote.get("outAmount", 0))
         if out_amount > 0:
             sig, err = await execute_swap(keypair, quote)
             if sig:
-                logger.info("[%s] Jupiter swap OK: %s", action, sig)
+                slip_info = f" (slip={quote.get('_slippage_used', 'n/a')}bps)" if is_sell else ""
+                logger.info("[%s] Jupiter swap OK%s: %s", action, slip_info, sig)
                 return sig, out_amount, ""
             logger.warning("[%s] Jupiter failed: %s - trying GMGN fallback", action, err)
         else:
@@ -250,6 +264,10 @@ async def position_manager(keypair, symbol, mint, bot=None):
 
     logger.info("🛡️ MANAGER ACTIVE: %s (Entry: $%.6f)", symbol, pos["entry_price"])
 
+    # v3.23.19: rug detection — count consecutive no-route quotes
+    no_route_count = 0
+    NO_ROUTE_RUG_THRESHOLD = 3  # 3 cycles × 15s = 45s of no liquidity = rug
+
     while symbol in active_positions:
         try:
             await asyncio.sleep(15) # Optimal interval for RPC safety
@@ -269,10 +287,36 @@ async def position_manager(keypair, symbol, mint, bot=None):
                 _sl_pct = 0.5
                 logger.warning("🛡️ SHOCK BREAKER: Tightening %s SL due to Panic (%s)", symbol, panic)
 
-            quote = await get_quote(mint, SOL_MINT, pos["amount"])
+            # Use escalating slippage quote so memecoin price-check works at all tiers
+            from exchanges.jupiter import get_quote_with_escalation
+            quote, q_reason = await get_quote_with_escalation(
+                mint, SOL_MINT, pos["amount"],
+                slippage_steps=(300, 1000, 2500),
+            )
             if not quote:
-                logger.debug("Quote unavailable for %s, retrying next cycle", symbol)
+                if q_reason == "no_route":
+                    no_route_count += 1
+                    logger.warning("🚨 %s no Jupiter route (%d/%d) — possible rug",
+                                   symbol, no_route_count, NO_ROUTE_RUG_THRESHOLD)
+                    if no_route_count >= NO_ROUTE_RUG_THRESHOLD:
+                        # Confirmed rug — token has no liquidity for 45+ seconds
+                        _entry_sol = float(pos.get("entry_sol", AUTONOMOUS_TRADE_AMOUNT_SOL) or AUTONOMOUS_TRADE_AMOUNT_SOL)
+                        logger.error("💀 RUGGED: %s — exiting manager (no liquidity %ds)",
+                                     symbol, no_route_count * 15)
+                        await _notify_admin(
+                            bot,
+                            f"💀 *RUGGED* — {symbol}\n"
+                            f"No Jupiter route at any slippage for {no_route_count*15}s.\n"
+                            f"Position abandoned (token cannot be sold).\n"
+                            f"Entry: {_entry_sol:.4f} SOL = total loss."
+                        )
+                        record_trade_result(ADMIN_IDS[0], symbol, -100.0, -_entry_sol)
+                        break
+                else:  # api_error
+                    logger.debug("Quote API error for %s, retrying next cycle", symbol)
                 continue
+            # Quote OK → reset rug counter
+            no_route_count = 0
 
             out_amount = quote.get("outAmount")
             if not out_amount or out_amount <= 0:
