@@ -206,8 +206,16 @@ async def notify_discord_trade(user_name: str, action: str, amount: str,
 # ══════════════════════════════════════════════
 
 async def notify_telegram_channel(bot, alert: dict, alert_text: str, alert_kb=None,
-                                  channel_id: str = "") -> bool:
-    """Post an alert to the public Telegram channel (Gold Signals)."""
+                                  channel_id: str = "",
+                                  parse_mode: str = "Markdown") -> bool:
+    """Post an alert to the public Telegram channel (Gold Signals).
+
+    v3.23.21: parse_mode now defaults to "Markdown" because the upstream
+    formatter (format_whale_alert in bot.py) emits Markdown — previously
+    sending Markdown with parse_mode="HTML" caused raw [text](url) and *bold*
+    to render literally in the channel. Falls back to plain text if Markdown
+    parsing fails (e.g. unescapable underscores in deep-link URLs).
+    """
     from core.config import ALERT_CHANNEL_ID
     # Trigger Social Manager for Viral Viral Drop (v3.15.2)
     bot_info = await bot.get_me() if bot else None
@@ -224,13 +232,27 @@ async def notify_telegram_channel(bot, alert: dict, alert_text: str, alert_kb=No
             chat_id=target,
             text=alert_text,
             reply_markup=alert_kb,
-            parse_mode="HTML",
+            parse_mode=parse_mode,
             disable_web_page_preview=True,
         )
         return True
     except Exception as e:
-        logger.error(f"Telegram channel post failed: {e}")
-        return False
+        # Markdown parse errors (e.g. lone underscore in URL) — retry plain
+        logger.warning(
+            f"Telegram channel {parse_mode} parse failed: {e} — retry plain text"
+        )
+        try:
+            await bot.send_message(
+                chat_id=target,
+                text=alert_text,
+                reply_markup=alert_kb,
+                parse_mode=None,
+                disable_web_page_preview=True,
+            )
+            return True
+        except Exception as e2:
+            logger.error(f"Telegram channel plain-text retry also failed: {e2}")
+            return False
 
 
 async def notify_channel_trade(bot, action: str, sol_amount: float,

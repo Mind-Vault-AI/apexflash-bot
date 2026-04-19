@@ -4,7 +4,7 @@
 
 ## LIVE STATE (sessie 35 — 2026-04-18)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.20
+- Version: v3.23.21
 - GMGN IP whitelist: 74.220.51.252 (actueel) — change-detect + history live
 - WinRate: 51.4% → target >=70% (v3.23.15 ZLEE auto-enforced)
 - ZLEE active: pauzeert signals als Grade A WR < 70% (min 10 trades)
@@ -238,3 +238,16 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - INTEGRATIE: bestaande call op line 530 `if not await security_audit(mint):` werkt nu echt
 - VERSION 3.23.19 → 3.23.20
 - IMPACT: dode tokens / honeypots / dev-stacked rugs → alert + skip BEFORE we lose SOL
+
+## SESSIE 36 — 2026-04-19 — #8 TELEGRAM MARKDOWN FIX
+- ISO LOG #8 TELEGRAM MARKDOWN FIX
+    -> START: 19-04-2026 10:55 | door: Claude (autonoom)
+    -> HALF:  19-04-2026 10:58 | status: root cause gevonden — notify_telegram_channel sendt Markdown text met parse_mode="HTML"
+    -> KLAAR: 19-04-2026 11:02 | getest: nee — live verify nodig (whale alert in @ApexFlashAlerts moet bold/links renderen) | door: Claude
+- WAAROM: screenshots toonden raw `[text](url)` en `*WHALE ALERT*` in channel — Telegram las Markdown als HTML.
+- WAT VERANDERD: agents/notifications.py
+  - `notify_telegram_channel()` parse_mode default "HTML" → "Markdown"
+  - parse_mode is nu een parameter (override mogelijk per call)
+  - Fallback: als Markdown parse faalt (bv. lone `_` in URL) → retry plain text → alert komt altijd door
+- IMPACT: channel posts (whale signals) tonen nu correcte bold + clickable links ipv raw markdown
+- VERSION 3.23.20 → 3.23.21
