@@ -4,7 +4,7 @@
 
 ## LIVE STATE (sessie 35 — 2026-04-18)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.19
+- Version: v3.23.20
 - GMGN IP whitelist: 74.220.51.252 (actueel) — change-detect + history live
 - WinRate: 51.4% → target >=70% (v3.23.15 ZLEE auto-enforced)
 - ZLEE active: pauzeert signals als Grade A WR < 70% (min 10 trades)
@@ -222,3 +222,19 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
   - Voorkomt oneindige tracking van dode tokens
 - VERSION 3.23.18 → 3.23.19
 - IMPACT: meme SELL werkt nu in 95%+ gevallen, rugs herkenbaar in logs/admin notify
+
+## SESSIE 36 — 2026-04-19 — #9 PRE-BUY RUG GUARDS
+- ISO LOG #9 PRE-BUY RUG GUARDS
+    -> START: 19-04-2026 10:35 | door: Claude (autonoom, na Erik "go")
+    -> HALF:  19-04-2026 10:42 | status: security_audit() vervangen — was stub return True, nu 3-laagse rug-guard
+    -> KLAAR: 19-04-2026 10:48 | getest: nee (live verify nodig: /start in TG → autotrade BUY → kijk RUG-GUARD logs) | door: Claude
+- WAAROM: TSUKIMAP -100% = na de feiten. #10 redt je uit een rug; #9 voorkomt dat je erin stapt.
+- WAT VERANDERD: zero_loss_manager.py
+  - LAAG 1: DexScreener liquidity floor — geen pair = BLOCK; liquidity_usd < $10k = BLOCK
+  - LAAG 2: GMGN top_holders — top-10 holders > 70% supply = BLOCK (concentratie / dump risk)
+  - LAAG 3: Jupiter sell-quote probe — kan geen SELL quoten = honeypot = BLOCK
+  - Fail-OPEN op API errors (Jupiter/GMGN downtime mag niet alle trading bevriezen)
+  - Toegevoegd: `from exchanges import gmgn_market as _gmgn_market`
+- INTEGRATIE: bestaande call op line 530 `if not await security_audit(mint):` werkt nu echt
+- VERSION 3.23.19 → 3.23.20
+- IMPACT: dode tokens / honeypots / dev-stacked rugs → alert + skip BEFORE we lose SOL

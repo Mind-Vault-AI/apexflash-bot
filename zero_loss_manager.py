@@ -34,6 +34,7 @@ from core.persistence import (
 from core.wallet import load_keypair, get_sol_balance
 from exchanges.jupiter import get_quote, execute_swap
 from exchanges import gmgn as _gmgn
+from exchanges import gmgn_market as _gmgn_market
 from scalper import check_scalp_signals, SCALP_TOKENS
 
 logging.basicConfig(
@@ -210,22 +211,120 @@ async def execute_trade(keypair, action, input_mint, output_mint, amount_raw):
 
 async def security_audit(mint: str) -> bool:
     """
-    Perform a security audit of a token before buying.
-    Checks for: LP lock, Mintable authority, concentrations.
+    Pre-buy rug-guard (v3.23.20).
+
+    BLOCKS the BUY (returns False) if any active failure:
+      1. DexScreener has no pair       → no market exists
+      2. liquidity_usd < $10,000       → thin pool / rug-prone
+      3. top-10 holders own > 70%      → concentrated dump risk
+      4. Jupiter cannot quote a SELL   → honeypot suspected
+
+    Fails-OPEN (returns True) on API errors / not-configured —
+    we don't want Jupiter or GMGN downtime to freeze all trading.
     """
+    short = (mint or "?")[:8]
     try:
-        # 1. Using RugCheck.xyz or Birdeye Check logic
-        # For now, let's pretend we have a check for 'Mintable' status
-        # and 'Risky' score. Any score > 50 is an ABORT.
-        logger.info("🛡️ RUG-GUARD: Auditing token %s...", mint[:8])
+        logger.info("🛡️ RUG-GUARD: Auditing %s...", short)
 
-        # Integration point for actual RugCheck API:
-        # status = await get_rugcheck_status(mint)
-        # if status == "DANGER": return False
+        # ── 1. DexScreener: market existence + liquidity floor ──────────────
+        if aiohttp is not None:
+            try:
+                url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        url, timeout=aiohttp.ClientTimeout(total=6)
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json(content_type=None)
+                            pairs = data.get("pairs") or []
+                            if not pairs:
+                                logger.error(
+                                    "🚨 RUG-GUARD: %s — no DexScreener pair (no market)",
+                                    short,
+                                )
+                                return False
+                            best = max(
+                                pairs,
+                                key=lambda p: float(
+                                    ((p or {}).get("liquidity") or {}).get("usd") or 0
+                                ),
+                            )
+                            liq_usd = float(
+                                (best.get("liquidity") or {}).get("usd") or 0
+                            )
+                            if liq_usd < 10_000:
+                                logger.error(
+                                    "🚨 RUG-GUARD: %s — liquidity $%.0f below $10k floor",
+                                    short, liq_usd,
+                                )
+                                return False
+                            logger.info(
+                                "🛡️ RUG-GUARD: %s liquidity $%.0f ✅", short, liq_usd
+                            )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.debug(
+                    "RUG-GUARD: dexscreener probe failed for %s: %s — fail-open",
+                    short, e,
+                )
 
-        return True # Default to Pass for valid markets
-    except (TypeError, ValueError, RuntimeError):
-        return True # Default to Pass if audit fails
+        # ── 2. GMGN top-10 holder concentration ────────────────────────────
+        try:
+            holders = await asyncio.to_thread(
+                _gmgn_market.top_holders, mint, "sol", 10
+            )
+            if holders:
+                total_pct = 0.0
+                for h in holders:
+                    raw = (
+                        h.get("amount_percentage")
+                        or h.get("amount_percent")
+                        or h.get("percentage")
+                        or h.get("percent")
+                        or 0
+                    )
+                    try:
+                        total_pct += float(raw)
+                    except (TypeError, ValueError):
+                        pass
+                # GMGN may return 0..1 fraction or 0..100 percent — normalize
+                if 0 < total_pct <= 1.5:
+                    total_pct *= 100
+                if total_pct > 70.0:
+                    logger.error(
+                        "🚨 RUG-GUARD: %s — top10 holders own %.1f%% (>70%% concentration)",
+                        short, total_pct,
+                    )
+                    return False
+                if total_pct > 0:
+                    logger.info(
+                        "🛡️ RUG-GUARD: %s top10 holders %.1f%% ✅", short, total_pct
+                    )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.debug(
+                "RUG-GUARD: gmgn holders probe failed for %s: %s — fail-open",
+                short, e,
+            )
+
+        # ── 3. Jupiter honeypot probe: can we get a SELL quote? ────────────
+        try:
+            probe = await get_quote(mint, SOL_MINT, 1000, slippage_bps=2500)
+            if probe is None:
+                logger.error(
+                    "🚨 RUG-GUARD: %s — Jupiter cannot quote SELL (honeypot suspected)",
+                    short,
+                )
+                return False
+            logger.info("🛡️ RUG-GUARD: %s sell-quote OK ✅", short)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.debug(
+                "RUG-GUARD: honeypot probe failed for %s: %s — fail-open",
+                short, e,
+            )
+
+        return True
+    except (TypeError, ValueError, RuntimeError) as e:
+        logger.debug("RUG-GUARD: outer exception for %s: %s — fail-open", short, e)
+        return True
 
 _trend_cache: dict = {"pct": 0.0, "ts": 0.0}
 
