@@ -1,12 +1,23 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-20 (Sessie 37)
+# Last updated: 2026-04-20 (Sessie 38)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
-## LIVE STATE (sessie 37 — 2026-04-20)
+## LIVE STATE (sessie 38 — 2026-04-20)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.23
-- Status: sell-display fix — commit pending deploy
-- Pending fixes: sell-button UX (dust 0.0000 SOL → honest display)
+- Version: v3.23.24
+- Status: Tier-Board HTML + /admin_* commands — one commit = one restart
+- Deliverables: promo/tier_board.html + cmd_admin_status + cmd_admin_bn_{add,list,close}
+
+## SESSIE 38 — 2026-04-20 (Tier-Board CEO mandate)
+Erik: "JIJ BENT CEO. JIJ HEBT DIE VERANTWOORDING. GO GODVERDOMME." + constraint: bot mag NOOIT offline / mag niet 10000x geforceerd crashen.
+
+Strategy: bundle HTML + admin-commands in ÉÉN commit → ÉÉN Render restart (~30-60s standard), geen uren-downtime. Safety: elke handler in try/except, Redis-DOWN = graceful degradation.
+
+Gedaan:
+- ✅ v3.23.24: promo/tier_board.html — 3 tier lanes + 12-row bottleneck matrix + 6 KPI cards
+- ✅ v3.23.24: /admin_status, /admin_bn_add, /admin_bn_list, /admin_bn_close
+- ✅ Redis schema apexflash:bottlenecks (LPUSH JSON, LTRIM 50)
+- ⏳ pre-commit guard check + git push + Render API verify
 
 ## SESSIE 37 — 2026-04-20 (SELL-button UX fix)
 Erik screenshot toonde Recent-Trades met `SELL 0.0000 SOL → TSUKIMAP`. Root cause: swap-output < 0.0001 SOL wordt gerond naar "0.0000" in display (regel 2163 + 4216). Users denken dat bot stuk is terwijl token dust is.

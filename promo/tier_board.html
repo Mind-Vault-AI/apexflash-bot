@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ApexFlash — Tier Board (Control Room)</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+       background: #0b0f19; color: #e5e7eb; padding: 12px; line-height: 1.4; }
+h1 { font-size: 20px; margin-bottom: 4px; color: #fbbf24; }
+.sub { font-size: 12px; color: #9ca3af; margin-bottom: 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.tier { border-radius: 10px; padding: 14px; border: 1px solid; }
+.t1 { background: #1e1b4b; border-color: #6366f1; }
+.t2 { background: #1f2937; border-color: #3b82f6; }
+.t3 { background: #111827; border-color: #6b7280; }
+.tier h2 { font-size: 14px; margin-bottom: 4px; }
+.tier .who { font-size: 12px; color: #9ca3af; margin-bottom: 8px; }
+.tier .state { font-size: 18px; font-weight: bold; }
+.ok { color: #10b981; } .warn { color: #f59e0b; } .bad { color: #ef4444; }
+h3 { font-size: 15px; margin: 20px 0 8px; color: #fbbf24; border-bottom: 1px solid #374151; padding-bottom: 4px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #374151; vertical-align: top; }
+th { background: #1f2937; color: #9ca3af; text-transform: uppercase; font-size: 10px; font-weight: 600; }
+.cat-1 { background: rgba(239,68,68,0.1); }
+.cat-2 { background: rgba(245,158,11,0.05); }
+.cat-3 { background: rgba(16,185,129,0.05); }
+.strat { background: rgba(99,102,241,0.08); }
+.st { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+.st-problem { background: #dc2626; color: white; }
+.st-stall { background: #ea580c; color: white; }
+.st-started { background: #f59e0b; color: black; }
+.st-ongoing { background: #3b82f6; color: white; }
+.st-done { background: #10b981; color: white; }
+.st-blocked { background: #991b1b; color: white; }
+.esc { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+details { margin-top: 16px; background: #111827; border-radius: 8px; padding: 12px; border: 1px solid #374151; }
+summary { cursor: pointer; font-weight: 600; color: #fbbf24; font-size: 14px; }
+details[open] summary { margin-bottom: 8px; }
+details ul { margin-left: 18px; font-size: 12px; color: #d1d5db; }
+details li { margin: 3px 0; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 8px; margin: 12px 0; }
+.kpi { background: #1f2937; padding: 10px; border-radius: 6px; border-left: 3px solid #3b82f6; }
+.kpi .lbl { font-size: 10px; color: #9ca3af; text-transform: uppercase; }
+.kpi .val { font-size: 20px; font-weight: bold; margin-top: 2px; }
+.kpi .delta { font-size: 11px; margin-top: 2px; }
+.ts { color: #6b7280; font-size: 10px; }
+.footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #374151; font-size: 11px; color: #6b7280; text-align: center; }
+.badge { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 600; }
+.b-live { background: #10b981; color: white; }
+.b-pending { background: #f59e0b; color: black; }
+</style>
+</head>
+<body>
+
+<h1>🏛️ ApexFlash — Tier Board</h1>
+<div class="sub">
+  Control Room · Single Source of Truth · Auto-refresh: manual v1
+  · Last render: <span id="ts"></span> · Bron: <code>promo/tier_board.html</code>
+</div>
+
+<!-- TIER LANES -->
+<div class="grid">
+  <div class="tier t1">
+    <h2>TIER 1 — Strategie</h2>
+    <div class="who">CEO Erik · keurt · beslist</div>
+    <div class="state warn">🟡 ACTIVE</div>
+    <div class="esc">Main Goal: €1M netto vóór 29-03-2028 · Runway: ~23 mnd</div>
+  </div>
+  <div class="tier t2">
+    <h2>TIER 2 — Tactiek</h2>
+    <div class="who">AI CEO (Claude) · analyseert · delegeert · rapporteert</div>
+    <div class="state warn">🟡 ACTIVE</div>
+    <div class="esc">09:00 dagelijkse walk-through · escaleert bij deadline-miss</div>
+  </div>
+  <div class="tier t3">
+    <h2>TIER 3 — Werkvloer</h2>
+    <div class="who">Dev / Render / GitHub / Telegram</div>
+    <div class="state ok">🟢 GREEN</div>
+    <div class="esc">v3.23.23 LIVE op srv-d6kcjbpaae7s73aadsu0 (04:52 UTC)</div>
+  </div>
+</div>
+
+<!-- KPI STRIP -->
+<h3>📊 KPI — live (bron: Render API + Redis)</h3>
+<div class="kpi-grid">
+  <div class="kpi"><div class="lbl">Bot version LIVE</div><div class="val ok">v3.23.23</div><div class="delta">= repo HEAD ✅</div></div>
+  <div class="kpi"><div class="lbl">Users</div><div class="val">1</div><div class="delta bad">target 12k (m6) −99.99%</div></div>
+  <div class="kpi"><div class="lbl">Trades all-time</div><div class="val">38</div><div class="delta warn">today 0</div></div>
+  <div class="kpi"><div class="lbl">Win rate</div><div class="val warn">50%</div><div class="delta bad">target 65% −15pp</div></div>
+  <div class="kpi"><div class="lbl">PnL</div><div class="val bad">−0.1 SOL</div><div class="delta">≈ −$17</div></div>
+  <div class="kpi"><div class="lbl">Subscribers</div><div class="val">1</div><div class="delta">ARR ≈ €300</div></div>
+</div>
+
+<!-- ACTIVE BOTTLENECK SPREADSHEET -->
+<h3>📋 Active bottleneck matrix — URGENT FIRST (FIFO binnen CAT)</h3>
+<table>
+  <thead><tr>
+    <th>Datum/Tijd</th><th>Creator</th><th>Actiehouder</th><th>Status</th>
+    <th>Aktie / Bottleneck</th><th>CAT</th><th>Deadline</th><th>Tier</th><th>Opmerking / audit-trail</th>
+  </tr></thead>
+  <tbody>
+    <tr class="cat-1">
+      <td>20-04 / 06:52</td><td>T2 Claude</td><td>T1 Erik</td>
+      <td><span class="st st-started">STARTED</span></td>
+      <td>Live-test sell-button UX (v3.23.23)</td>
+      <td>CAT-1</td><td>vandaag</td><td>1</td>
+      <td>Na test keuring T1 → status <span class="st st-done">DONE</span>. Zonder keuring blijft v3.23.23 niet-gevalideerd.</td>
+    </tr>
+    <tr class="cat-1">
+      <td>20-04 / 06:52</td><td>T1 Erik</td><td>T1 Erik</td>
+      <td><span class="st st-problem">PROBLEM</span></td>
+      <td>GMGN 403 Storm — IP whitelist</td>
+      <td>CAT-1</td><td>vandaag</td><td>1</td>
+      <td>Render rotating IPs (Starter plan). Huidige IP <code>74.220.51.252</code> whitelisten bij gmgn.ai. Permanente fix = static IP (paid plan).</td>
+    </tr>
+    <tr class="cat-1">
+      <td>20-04 / 06:52</td><td>T1 Erik</td><td>T2 Claude</td>
+      <td><span class="st st-started">STARTED</span></td>
+      <td>Autonome <code>/admin_*</code> Telegram-interface</td>
+      <td>CAT-1</td><td>21-04</td><td>2</td>
+      <td>Mobiele regie voor Erik (reis-modus). <code>/admin_status</code>, <code>/admin_bn_add</code>, <code>/admin_bn_close</code>. Live Redis-backed. Zelfde bron als deze HTML.</td>
+    </tr>
+    <tr class="cat-1">
+      <td>20-04 / 06:52</td><td>T1 Erik</td><td>T2 Claude</td>
+      <td><span class="st st-ongoing">ON-GOING</span></td>
+      <td>Tier Board HTML live-data endpoint</td>
+      <td>CAT-1</td><td>21-04</td><td>2</td>
+      <td>v1 = static (dit bestand). v2 = <code>/api/tier_board</code> endpoint in apexflash-app, leest Redis-schema <code>apexflash:bottlenecks</code>. Auto-refresh 60s.</td>
+    </tr>
+    <tr class="cat-2">
+      <td>20-04 / 06:52</td><td>T2 Claude</td><td>T2 Claude</td>
+      <td><span class="st st-ongoing">ON-GOING</span></td>
+      <td>Marketing attribution <code>src_*</code> deep-link</td>
+      <td>CAT-2</td><td>22-04</td><td>2</td>
+      <td>Code klaar (uncommitted). Release als v3.23.24 na CAT-1 done. Meet Reddit/Twitter/TG acquisitie-ROI.</td>
+    </tr>
+    <tr class="cat-2">
+      <td>20-04 / 06:52</td><td>T2 Claude</td><td>T2 Claude</td>
+      <td><span class="st st-started">STARTED</span></td>
+      <td>Zero-Loss Engine — retentie-eis 100%</td>
+      <td>CAT-2</td><td>27-04</td><td>2</td>
+      <td>Huidige win-rate 50% is niet "precision machine". Doel: 0% uitval als tool-commerciële USP. Gekoppeld aan v3.23.20 pre-buy rug guards.</td>
+    </tr>
+    <tr class="cat-2">
+      <td>20-04 / 06:52</td><td>T1 Erik</td><td>T2 Claude</td>
+      <td><span class="st st-ongoing">ON-GOING</span></td>
+      <td>War Watch — Crisis-vulture logic</td>
+      <td>CAT-2</td><td>30-04</td><td>2</td>
+      <td>Offensieve variant: niet stoppen bij breaking news, maar shorten + dip-buy. Monopoly-USP.</td>
+    </tr>
+    <tr class="cat-2">
+      <td>20-04 / 06:52</td><td>T1 Erik</td><td>T2 Claude</td>
+      <td><span class="st st-ongoing">ON-GOING</span></td>
+      <td>Game-Simulator on-boarding funnel</td>
+      <td>CAT-2</td><td>05-05</td><td>2</td>
+      <td>Paper-trading game → "aha" → betalende klant. Jong + oud begrijpbaar. "Be unique not stupid".</td>
+    </tr>
+    <tr class="cat-3">
+      <td>20-04 / 04:52</td><td>T2 Claude</td><td>T2 Claude</td>
+      <td><span class="st st-done">DONE</span></td>
+      <td>Sell-button UX: 0.0000 SOL → <code>&lt;0.0001 SOL (dust)</code></td>
+      <td>CAT-1→3</td><td>20-04</td><td>3</td>
+      <td>v3.23.23 commit <code>0f69fbd</code> — Render live 2026-04-20T04:52:05Z. Code: bot.py regel ~2160 + ~4216.</td>
+    </tr>
+    <tr class="cat-3">
+      <td>19-04 / 21:51</td><td>T2 Claude</td><td>T2 Claude</td>
+      <td><span class="st st-done">DONE</span></td>
+      <td>Elite/Pro deeplink SLA + KPI reconcile + sell diagnostic ring buffer</td>
+      <td>CAT-1→3</td><td>19-04</td><td>3</td>
+      <td>v3.23.22 commit <code>f1c8f21</code> — Render live 2026-04-19T21:51Z. <code>/sell_diag</code> admin command, <code>reconcile_kpis()</code>, deep-link <code>?start=elite|pro</code>.</td>
+    </tr>
+    <tr class="cat-3">
+      <td>19-04 / 03:47</td><td>T2 Claude</td><td>T2 Claude</td>
+      <td><span class="st st-done">DONE</span></td>
+      <td>Escalating slippage SELL (3% → 10% → 25%)</td>
+      <td>CAT-1→3</td><td>19-04</td><td>3</td>
+      <td>v3.23.19 commit <code>91e33f4</code>. Root cause sell-faal op memecoins opgelost.</td>
+    </tr>
+    <tr class="strat">
+      <td>20-04 / 06:52</td><td>T1 Erik</td><td>T1 Erik</td>
+      <td><span class="st st-ongoing">ON-GOING</span></td>
+      <td>Main Goal — €1.000.000 netto</td>
+      <td>STRAT</td><td>29-03-2028</td><td>1</td>
+      <td>Runway 23 mnd. Pad: 500 subs × €50/mnd × 23 mnd = €575k. Gap vs €1M → hogere ARPU / 2e revenue-pilaar. Markt bepaalt.</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ESCALATION RULES -->
+<details open>
+<summary>⚙️ Escalatie-protocol (binaire werking)</summary>
+<ul>
+  <li><b>T3 werkvloer</b> faalt → deadline-mis → auto-escalatie naar <b>T2</b> (Claude). T2 probeert autonome oplossing (alternatieve route, backup RPC, etc).</li>
+  <li><b>T2</b> vastloopt → bottleneck escaleert naar <b>T1</b> (Erik) met expliciete vraag ("keuring nodig" / "bron-data nodig" / "knopkeuze").</li>
+  <li><b>T1 keurt</b> elke CAT-1 <code>DONE</code> → zonder T1 knip is er geen "klaar".</li>
+  <li><b>09:00 CEO-rondje</b>: T2 rapporteert afwijkingen van gisteren (niet de hele lijst, alleen delta).</li>
+  <li><b>Auto-pause</b>: CAT-1 deadline T-0 overschreden → bot-trading pauzeert tot T1-vrijgave.</li>
+</ul>
+</details>
+
+<!-- LEAN/SIX SIGMA STUBS -->
+<details>
+<summary>📐 Methoden-stubs (SQA · 6D · DMAIC · SIPOC · Kaizen · Fishbone · VSM · Six Sigma) — vulling volgende iteraties</summary>
+<ul>
+  <li><b>DMAIC — huidige cycle:</b> Define=SELL-perceptie, Measure=win-rate 50%, Analyze=slippage + UX-dust, Improve=v3.23.19+23, Control=<code>/sell_diag</code> ring buffer.</li>
+  <li><b>SIPOC — ApexFlash:</b> <i>Supplier</i>=Helius/Jupiter/GMGN, <i>Input</i>=on-chain tx + whale signals, <i>Process</i>=detect→grade→alert→swap, <i>Output</i>=Grade A/B/C trade, <i>Customer</i>=Free/Pro/Elite user.</li>
+  <li><b>Fishbone sell-bug:</b> Man (user typt tekst ipv mint) · Machine (Render rotating IP) · Method (1-try slippage) · Material (memecoin liq) · Measurement (display 0.0000) · Environment (Jupiter downtime).</li>
+  <li><b>VSM current-state:</b> Push → GitHub → Render auto-deploy (3 min) → Live. Gap: geen auto-verificatie live-VERSION ↔ repo-VERSION (fix = <code>/admin_status</code> watchdog).</li>
+  <li><b>Unit economics:</b> CAC unknown (no marketing spend) · ARPU ~€30/mnd · LTV onbekend · churn onbekend. Moet gemeten met <code>src_*</code> attribution.</li>
+  <li><b>Six Sigma target:</b> sell-success 99.73% (3σ) huidig ~85% (schatting) — gap 14pp.</li>
+  <li><b>Kaizen kleine win deze week:</b> sell-dust display (v23) + tier-board HTML (v24).</li>
+  <li><b>Transport/Building cost:</b> Render Starter $7/mnd bot + $7/mnd site = $14/mnd infra. GMGN/Jupiter/Helius free tiers. Break-even na 1 Pro-sub ≥ €30.</li>
+</ul>
+</details>
+
+<!-- COMMERCIAL ANGLES -->
+<details>
+<summary>💰 Commerciële invalshoeken (Marketing · Sales · R&D tricks)</summary>
+<ul>
+  <li><b>Marketing trick:</b> "De enige bot die 0% uitval garandeert — Zero-Loss gecertificeerd." (claim ondersteunen met win-rate publiek-dashboard)</li>
+  <li><b>Sales trick:</b> Free-tier onboarding → Game-simulator → "je zou X% winst hebben gemaakt met Pro" → upsell. Funnel-key <code>src_sim_converted</code>.</li>
+  <li><b>Commercie trick:</b> Bitunix / Blofin / MEXC affiliate — $8k+ signup bonus, bot verwijst naar deze exchanges voor hefboom. Zero-cost acquisition mirror-effect.</li>
+  <li><b>R&D prio:</b> CryptoBERT sentiment + on-chain flow-joint model. Pas onze unieke dataset-combinatie (Helius tx + GMGN smart-degen) kopieerbaar ≠ triviaal.</li>
+  <li><b>Slipstream move:</b> niet concurreren op "snelste", concurreren op "veiligste winst". Werk-paard segment = HBO-belegger (koopkracht > gokker).</li>
+</ul>
+</details>
+
+<div class="footer">
+  ApexFlash Tier Board · v0.1-static · Next: wire to <code>/api/tier_board</code> + <code>/admin_*</code> Telegram commands<br>
+  Source: <code>apexflash-bot/promo/tier_board.html</code> · Rendered local-only · No external deps
+</div>
+
+<script>
+  document.getElementById('ts').textContent = new Date().toISOString().replace('T',' ').substring(0,19) + ' UTC';
+</script>
+</body>
+</html>

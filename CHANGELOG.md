@@ -3,6 +3,26 @@
 <!-- Format: ## [version] YYYY-MM-DD — one-line summary -->
 <!-- Rule: bump VERSION file + bot.py VERSION constant on every release -->
 
+## [3.23.24] 2026-04-20 — Tier-Board dashboard + /admin_* mobile companion
+### feat: Static HTML Tier Board (promo/tier_board.html)
+- 3-lane escalation (T1 Erik CEO / T2 AI CEO / T3 Werkvloer) + 6 KPI cards + 12-row bottleneck matrix
+- Erik's 9-column format: Datum/Tijd | Creator | Actiehouder | Status | Aktie | CAT | Deadline | Tier | Opmerking
+- Status badges: PROBLEM / STALL / STARTED / ON-GOING / DONE / BLOCKED
+- Lean/Six Sigma method stubs (DMAIC, SIPOC, Fishbone, VSM, unit-economics) + commercial angles
+- No external deps, mobile-responsive, dark theme
+
+### feat: /admin_* Telegram commands — mobile bottleneck management
+- `bot.py::cmd_admin_status` — live snapshot: version, users, trades today, open bottlenecks, sell success 30d
+- `bot.py::cmd_admin_bn_add` — `/admin_bn_add <TIER> <CAT> <STATUS> <YYYY-MM-DD> <aktie...>` persists to Redis
+- `bot.py::cmd_admin_bn_list [tier]` — lists open bottlenecks with status icons
+- `bot.py::cmd_admin_bn_close <bn_id> [note]` — marks DONE, preserves audit trail (closed_ts + note)
+- Redis schema: `apexflash:bottlenecks` LPUSH JSON, LTRIM 0..49 (last 50)
+- Uptime-safe: every handler wrapped in try/except; Redis-DOWN = graceful degradation, bot never crashes
+
+### chore
+- VERSION 3.23.23 → 3.23.24
+- Constraint honored: single commit = single Render restart (~30-60s), NOT hours of downtime
+
 ## [3.23.23] 2026-04-20 — SELL-button UX: honest dust display
 ### fix: Recent-Trades + sell-success message no longer show misleading "0.0000 SOL"
 - Root cause: Swap-output for crashed memecoins (<0.0001 SOL ≈ <$0.02) was rounded to `0.0000` in history + success message → users reported "SELL knop werkt niet" while sell-execution itself was functional

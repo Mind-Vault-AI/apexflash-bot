@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.23"
+VERSION = "3.23.24"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -4046,6 +4046,260 @@ async def cmd_sell_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     except Exception as e:
         logger.error(f"cmd_sell_diag failed: {e}")
         await update.message.reply_text(f"\u26a0\ufe0f sell_diag error: `{e}`", parse_mode="Markdown")
+
+
+# ============================================================
+# v3.23.24 — Tier-Board admin commands (mobile companion for promo/tier_board.html)
+# ISO9001: all changes survive restart via Redis. Bot-safe: every handler wrapped.
+# Erik's rule: bot must NEVER crash. Redis-unavailable = graceful degradation.
+# ============================================================
+
+_BN_KEY = "apexflash:bottlenecks"      # LPUSH JSON, LTRIM 0..49 (keep last 50)
+_BN_MAX = 50
+_BN_VALID_STATUS = {"PROBLEM", "STALL", "STARTED", "ON-GOING", "DONE", "BLOCKED"}
+_BN_VALID_TIER = {"T1", "T2", "T3"}
+
+
+def _bn_redis():
+    """Return Redis client or None (never raises)."""
+    try:
+        from core.persistence import _get_redis as _pr
+        return _pr()
+    except Exception as _e:
+        logger.debug(f"_bn_redis failed: {_e}")
+        return None
+
+
+async def cmd_admin_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/admin_status — Tier-Board live snapshot: version, users, trades, bottlenecks."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("\u26d4 Unauthorized.")
+        return
+    try:
+        r = _bn_redis()
+        # Bot version (this process)
+        bot_ver = VERSION
+        # User count from in-memory dict (monolith pattern)
+        try:
+            n_users = len(users) if isinstance(users, dict) else 0
+        except Exception:
+            n_users = -1
+        # Redis-backed KPIs (best-effort)
+        n_trades_today = 0
+        n_bn_open = 0
+        sell_success_pct = None
+        if r is not None:
+            try:
+                from datetime import datetime, timezone
+                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                n_trades_today = int(r.get(f"platform:trades:{today}") or 0)
+            except Exception:
+                pass
+            try:
+                entries = r.lrange(_BN_KEY, 0, _BN_MAX - 1) or []
+                for raw in entries:
+                    try:
+                        bn = json.loads(raw)
+                        if bn.get("status") not in ("DONE",):
+                            n_bn_open += 1
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            try:
+                sd = r.lrange("apexflash:sell_diag", 0, 29) or []
+                ok = sum(1 for raw in sd if (json.loads(raw).get("status") == "success"))
+                if sd:
+                    sell_success_pct = int(ok / len(sd) * 100)
+            except Exception:
+                pass
+
+        redis_state = "UP" if r is not None else "DOWN"
+        lines = [
+            "\U0001f3db *Tier-Board \u2014 /admin\\_status*",
+            "",
+            f"\U0001f4cc *Version:* `{bot_ver}` (bot-process)",
+            f"\U0001f4be *Redis:* `{redis_state}`",
+            f"\U0001f464 *Users:* `{n_users}`",
+            f"\U0001f4c8 *Trades today:* `{n_trades_today}`",
+            f"\U0001f6a7 *Open bottlenecks:* `{n_bn_open}`",
+        ]
+        if sell_success_pct is not None:
+            lines.append(f"\U0001f4b8 *Sell success 30d:* `{sell_success_pct}%`")
+        lines += [
+            "",
+            "_Commands:_ `/admin_bn_add` `/admin_bn_list` `/admin_bn_close`",
+            "_Dashboard:_ `promo/tier_board.html`",
+        ]
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"cmd_admin_status failed: {e}")
+        try:
+            await update.message.reply_text(f"\u26a0\ufe0f admin_status error: `{e}`", parse_mode="Markdown")
+        except Exception:
+            pass
+
+
+async def cmd_admin_bn_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/admin_bn_add <TIER> <CAT> <STATUS> <DEADLINE> <aktie...>
+    Example: /admin_bn_add T3 TECH PROBLEM 2026-04-21 Sell knop stuurt 0.0000
+    """
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("\u26d4 Unauthorized.")
+        return
+    try:
+        args = context.args or []
+        if len(args) < 5:
+            await update.message.reply_text(
+                "*Usage:* `/admin_bn_add <T1|T2|T3> <CAT> <STATUS> <YYYY-MM-DD> <aktie...>`\n"
+                f"_STATUS in:_ {', '.join(sorted(_BN_VALID_STATUS))}",
+                parse_mode="Markdown"
+            )
+            return
+        tier, cat, status, deadline = args[0].upper(), args[1].upper(), args[2].upper(), args[3]
+        aktie = " ".join(args[4:])
+        if tier not in _BN_VALID_TIER:
+            await update.message.reply_text(f"\u274c TIER must be one of: {', '.join(sorted(_BN_VALID_TIER))}")
+            return
+        if status not in _BN_VALID_STATUS:
+            await update.message.reply_text(f"\u274c STATUS must be one of: {', '.join(sorted(_BN_VALID_STATUS))}")
+            return
+
+        from datetime import datetime, timezone
+        bn_id = f"bn_{int(datetime.now(timezone.utc).timestamp())}"
+        entry = {
+            "id": bn_id,
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "creator": f"tg:{update.effective_user.id}",
+            "owner": "T2-AI-CEO",   # default to Claude; Erik can reassign
+            "status": status,
+            "aktie": aktie,
+            "cat": cat,
+            "deadline": deadline,
+            "tier": tier,
+            "note": "",
+        }
+        r = _bn_redis()
+        if r is None:
+            await update.message.reply_text("\u26a0\ufe0f Redis DOWN \u2014 bottleneck NOT persisted.")
+            return
+        r.lpush(_BN_KEY, json.dumps(entry))
+        r.ltrim(_BN_KEY, 0, _BN_MAX - 1)
+        await update.message.reply_text(
+            f"\u2705 Bottleneck added: `{bn_id}`\n*{tier}* \u00b7 *{status}* \u00b7 deadline `{deadline}`\n\u2192 {aktie}",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"cmd_admin_bn_add failed: {e}")
+        try:
+            await update.message.reply_text(f"\u26a0\ufe0f bn_add error: `{e}`", parse_mode="Markdown")
+        except Exception:
+            pass
+
+
+async def cmd_admin_bn_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/admin_bn_list [tier] — list open bottlenecks (optionally filter by T1/T2/T3)."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("\u26d4 Unauthorized.")
+        return
+    try:
+        tier_filter = None
+        if context.args:
+            tf = context.args[0].upper()
+            if tf in _BN_VALID_TIER:
+                tier_filter = tf
+        r = _bn_redis()
+        if r is None:
+            await update.message.reply_text("\u26a0\ufe0f Redis DOWN \u2014 cannot list.")
+            return
+        raw_entries = r.lrange(_BN_KEY, 0, _BN_MAX - 1) or []
+        if not raw_entries:
+            await update.message.reply_text("\U0001f7e2 *No bottlenecks.* Clean board.", parse_mode="Markdown")
+            return
+        lines = [f"\U0001f4cb *Bottlenecks* ({'all' if not tier_filter else tier_filter})", ""]
+        shown = 0
+        for raw in raw_entries:
+            try:
+                bn = json.loads(raw)
+            except Exception:
+                continue
+            if bn.get("status") == "DONE":
+                continue
+            if tier_filter and bn.get("tier") != tier_filter:
+                continue
+            icon = {"PROBLEM": "\U0001f534", "STALL": "\U0001f7e0", "STARTED": "\U0001f535",
+                    "ON-GOING": "\U0001f7e1", "BLOCKED": "\u26d4"}.get(bn.get("status"), "\u26aa")
+            lines.append(
+                f"{icon} `{bn.get('id','?')}` \u00b7 *{bn.get('tier','?')}* \u00b7 "
+                f"{bn.get('status','?')} \u00b7 dl `{bn.get('deadline','?')}`\n"
+                f"    \u2192 {bn.get('aktie','?')[:120]}"
+            )
+            shown += 1
+            if shown >= 15:
+                lines.append(f"\n_\u2026 truncated at 15 (total open > 15)_")
+                break
+        if shown == 0:
+            lines.append("_(none match filter)_")
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"cmd_admin_bn_list failed: {e}")
+        try:
+            await update.message.reply_text(f"\u26a0\ufe0f bn_list error: `{e}`", parse_mode="Markdown")
+        except Exception:
+            pass
+
+
+async def cmd_admin_bn_close(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/admin_bn_close <bn_id> [note] — mark bottleneck DONE (audit trail preserved)."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("\u26d4 Unauthorized.")
+        return
+    try:
+        args = context.args or []
+        if not args:
+            await update.message.reply_text("*Usage:* `/admin_bn_close <bn_id> [note]`", parse_mode="Markdown")
+            return
+        bn_id = args[0]
+        note = " ".join(args[1:]) if len(args) > 1 else ""
+        r = _bn_redis()
+        if r is None:
+            await update.message.reply_text("\u26a0\ufe0f Redis DOWN \u2014 cannot close.")
+            return
+        raw_entries = r.lrange(_BN_KEY, 0, _BN_MAX - 1) or []
+        updated = False
+        new_list = []
+        for raw in raw_entries:
+            try:
+                bn = json.loads(raw)
+            except Exception:
+                new_list.append(raw)
+                continue
+            if bn.get("id") == bn_id and bn.get("status") != "DONE":
+                bn["status"] = "DONE"
+                bn["note"] = (bn.get("note", "") + f" | closed by tg:{update.effective_user.id}: {note}").strip(" |")
+                from datetime import datetime, timezone
+                bn["closed_ts"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                new_list.append(json.dumps(bn))
+                updated = True
+            else:
+                new_list.append(raw)
+        if not updated:
+            await update.message.reply_text(f"\u26a0\ufe0f `{bn_id}` not found or already DONE.", parse_mode="Markdown")
+            return
+        # Atomic-ish rewrite: delete + rpush reversed
+        pipe = r.pipeline()
+        pipe.delete(_BN_KEY)
+        # new_list is in original LPUSH order (newest first); rpush in that order preserves it
+        for item in new_list:
+            pipe.rpush(_BN_KEY, item)
+        pipe.execute()
+        await update.message.reply_text(f"\u2705 `{bn_id}` marked DONE.", parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"cmd_admin_bn_close failed: {e}")
+        try:
+            await update.message.reply_text(f"\u26a0\ufe0f bn_close error: `{e}`", parse_mode="Markdown")
+        except Exception:
+            pass
 
 
 async def _cb_execute_sell(query, user, context, data):
@@ -9180,6 +9434,11 @@ def main() -> None:
     app.add_handler(CommandHandler("myip", cmd_myip))
     app.add_handler(CommandHandler("ip_status", cmd_ip_status))
     app.add_handler(CommandHandler("sell_diag", cmd_sell_diag))  # v3.23.22
+    # v3.23.24 — Tier-Board mobile companion
+    app.add_handler(CommandHandler("admin_status", cmd_admin_status))
+    app.add_handler(CommandHandler("admin_bn_add", cmd_admin_bn_add))
+    app.add_handler(CommandHandler("admin_bn_list", cmd_admin_bn_list))
+    app.add_handler(CommandHandler("admin_bn_close", cmd_admin_bn_close))
     app.add_handler(CommandHandler("qa", cmd_qa))
     app.add_handler(CommandHandler("smoke", cmd_smoke))
     app.add_handler(CommandHandler("sla", cmd_sla))
