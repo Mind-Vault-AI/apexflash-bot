@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.22"
+VERSION = "3.23.23"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -2143,7 +2143,16 @@ async def _cb_trade_wallet(query, user, context):
         text += "\n\U0001f4dc *Recent Trades:*\n"
         for t in history[-5:]:
             side_emoji = "\U0001f7e2" if t["side"] == "BUY" else "\U0001f534"
-            sol_str = f"{t['sol']:.2f}" if t['sol'] >= 0.01 else f"{t['sol']:.4f}"
+            # v3.23.23: honest dust display — "0.0000 SOL" looked broken
+            _v = t.get('sol', 0) or 0
+            if _v >= 0.01:
+                sol_str = f"{_v:.2f}"
+            elif _v >= 0.0001:
+                sol_str = f"{_v:.4f}"
+            elif _v > 0:
+                sol_str = "<0.0001"
+            else:
+                sol_str = "0"
             text += f"{side_emoji} {t['side']} {sol_str} SOL \u2192 {t['token']}\n"
 
     # Platform activity (social proof)
@@ -4190,14 +4199,33 @@ async def _cb_execute_sell(query, user, context, data):
         out_lamports = int(quote.get("outAmount", 0))
         sol_received = out_lamports / 1_000_000_000
 
+        # v3.23.23: Honest dust reporting. Users were seeing "Received: 0.0000 SOL"
+        # on crashed memecoins, thought the bot was broken. Show reality instead.
+        if sol_received >= 0.0001:
+            received_str = f"{sol_received:.4f} SOL"
+            dust_warning = ""
+        elif sol_received > 0:
+            received_str = "<0.0001 SOL (dust)"
+            dust_warning = (
+                "\n\u26a0\ufe0f *Note:* Token had near-zero liquidity — "
+                "you received dust. This is the token's state, not a bot error.\n"
+            )
+        else:
+            received_str = "0 SOL"
+            dust_warning = (
+                "\n\u26a0\ufe0f *Note:* Swap reported zero output. "
+                "Token likely fully rugged.\n"
+            )
+
         text = (
             "\u2705 *Sell Successful!*\n"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
             "\n"
             f"\U0001f4b8 Sold: *{pct_label}* of token\n"
-            f"\U0001f4b5 Received: ~*{sol_received:.4f} SOL*\n"
+            f"\U0001f4b5 Received: ~*{received_str}*\n"
             f"\U0001f4b0 Fee: {PLATFORM_FEE_PCT}%\n"
+            f"{dust_warning}"
             "\n"
             f"\U0001f517 [View on Solscan](https://solscan.io/tx/{tx_sig})\n"
             "\n"

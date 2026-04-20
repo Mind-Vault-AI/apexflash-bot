@@ -3,6 +3,18 @@
 <!-- Format: ## [version] YYYY-MM-DD — one-line summary -->
 <!-- Rule: bump VERSION file + bot.py VERSION constant on every release -->
 
+## [3.23.23] 2026-04-20 — SELL-button UX: honest dust display
+### fix: Recent-Trades + sell-success message no longer show misleading "0.0000 SOL"
+- Root cause: Swap-output for crashed memecoins (<0.0001 SOL ≈ <$0.02) was rounded to `0.0000` in history + success message → users reported "SELL knop werkt niet" while sell-execution itself was functional
+- `bot.py::_cb_trade_wallet` (line ~2160) — tiered display: `>=0.01` → 2dp, `>=0.0001` → 4dp, `>0` → `<0.0001`, else `0`
+- `bot.py::_cb_execute_sell` (line ~4216) — dust-warning added to success message: "Token had near-zero liquidity — you received dust. This is the token's state, not a bot error."
+- No change to sell-execution logic itself (it was never broken — the display was)
+
+### chore
+- VERSION 3.23.22 → 3.23.23
+- NOW.md updated to session 37
+- `src_*` marketing-attribution branch deferred to v3.23.24 (separate concern, ISO9001 hygiene)
+
 ## [3.23.22] 2026-04-19 — Deep-link SLA fix + KPI self-heal + sell diagnostics
 ### fix: Elite/Pro deep-link handlers (SLA breach root cause)
 - `/start elite` and `/start pro` now route to a 1-tap upgrade screen (were silently falling through to default welcome → SLA breach on `t.me/ApexFlashBot?start=elite` observed 2026-04-19 12:11 UTC)

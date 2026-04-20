@@ -1,12 +1,21 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-19 (Sessie 36)
+# Last updated: 2026-04-20 (Sessie 37)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
-## LIVE STATE (sessie 36 — 2026-04-19)
+## LIVE STATE (sessie 37 — 2026-04-20)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.22
-- Status: commit pending deploy — Erik approval
-- Pending fixes: Elite deeplink SLA, KPI reconcile, sell diagnostic ring buffer
+- Version: v3.23.23
+- Status: sell-display fix — commit pending deploy
+- Pending fixes: sell-button UX (dust 0.0000 SOL → honest display)
+
+## SESSIE 37 — 2026-04-20 (SELL-button UX fix)
+Erik screenshot toonde Recent-Trades met `SELL 0.0000 SOL → TSUKIMAP`. Root cause: swap-output < 0.0001 SOL wordt gerond naar "0.0000" in display (regel 2163 + 4216). Users denken dat bot stuk is terwijl token dust is.
+
+Gedaan (pending deploy):
+- ✅ v3.23.23: Recent-Trades display — <0.0001 SOL → `<0.0001` i.p.v. `0.0000`
+- ✅ v3.23.23: Sell-success bericht — dust-warning ("Token had near-zero liquidity — dit is token-state, geen bot-fout")
+- ⏸ src_* marketing-attribution branch → bewaard voor v3.23.24 (separate concern)
+- ⏸ /sell_diag live-test → blocked: Erik test in Telegram
 
 ## SESSIE 36 — 2026-04-19 (CEO Agent triggered fixes)
 Context: 08:00 CEO briefing toonde "0 users / SLA breach / sell broken".
