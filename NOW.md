@@ -1,10 +1,10 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-21 (Sessie 39 — KRITIEKE FIX)
+# Last updated: 2026-04-22 (Sessie 39 — KRITIEKE FIX)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
 ## LIVE STATE (sessie 39 — 2026-04-21)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.26
+- Version: v3.23.27
 - Status: 2x knop-fix — Trade Now + Start Trading knoppen in kanaal deden niets
 - Root cause v3.23.25: photo/text mismatch → knoppen dood na signal link
 - Root cause v3.23.26: Trade Now URL miste ?start= parameter → bot opende zonder actie
