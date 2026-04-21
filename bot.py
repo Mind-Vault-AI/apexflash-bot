@@ -825,25 +825,20 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     [_back_main()[0]],
                 ]
 
-                # Try with chart
+                # ALWAYS send as text so inline buttons (edit_message_text) work.
+                # Photo messages break all callbacks — chart accessible via button.
                 try:
                     chart_url = await get_token_chart_url(deep_link_mint, hours=24)
-                    if chart_url:
-                        await update.message.reply_photo(
-                            photo=chart_url, caption=msg,
-                            reply_markup=InlineKeyboardMarkup(kb),
-                            parse_mode="Markdown",
-                        )
-                    else:
-                        await update.message.reply_text(
-                            msg, reply_markup=InlineKeyboardMarkup(kb),
-                            parse_mode="Markdown",
-                        )
                 except Exception:
-                    await update.message.reply_text(
-                        msg, reply_markup=InlineKeyboardMarkup(kb),
-                        parse_mode="Markdown",
-                    )
+                    chart_url = None
+                kb_final = kb[:]
+                if chart_url:
+                    kb_final.insert(-1, [InlineKeyboardButton("📈 View Chart", url=chart_url)])
+                await update.message.reply_text(
+                    msg, reply_markup=InlineKeyboardMarkup(kb_final),
+                    parse_mode="Markdown",
+                    disable_web_page_preview=True,
+                )
                 logger.info(f"Deep link buy: user={uid} token={symbol} mint={deep_link_mint[:12]}")
         except Exception as e:
             logger.warning(f"Deep link token lookup failed: {e}")
@@ -1248,6 +1243,27 @@ async def _cb_switch_network(query, user, context):
     )
 
 
+async def _safe_edit_message(query, text: str, reply_markup=None, parse_mode: str = "Markdown") -> None:
+    """Edit message text or caption safely regardless of message type.
+
+    Telegram does not allow edit_message_text on photo/video messages.
+    This helper detects the message type and uses the correct API call,
+    preventing the silent crash that makes buttons appear unresponsive.
+    """
+    kwargs = {"reply_markup": reply_markup, "parse_mode": parse_mode}
+    try:
+        if query.message and (query.message.photo or query.message.video or query.message.document):
+            await query.edit_message_caption(caption=text, **kwargs)
+        else:
+            await query.edit_message_text(text=text, **kwargs)
+    except Exception as e:
+        logger.warning(f"_safe_edit_message fallback triggered: {e}")
+        try:
+            await query.message.reply_text(text=text, **kwargs)
+        except Exception:
+            pass
+
+
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Route all inline button presses to handlers."""
     query = update.callback_query
@@ -1481,7 +1497,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if data == "buy_custom":
         # Prompt user to type a custom SOL amount
         context.user_data["awaiting_input"] = "custom_buy_amount"
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             "\u270f\ufe0f *Custom Buy Amount*\n"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
@@ -1490,7 +1507,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("\u274c Cancel", callback_data="trade_buy")],
             ]),
-            parse_mode="Markdown",
         )
         return
 
@@ -1499,13 +1515,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await _cb_preview_buy(query, user, context, data)
         except Exception as e:
             logger.error(f"Buy preview [{data}] error: {e}")
-            try:
-                await query.edit_message_text(
-                    "\u26a0\ufe0f Trade failed. Use /start to return.",
-                    parse_mode="Markdown",
-                )
-            except Exception:
-                pass
+            await _safe_edit_message(
+                query,
+                "\u26a0\ufe0f Trade failed. Use /start to return.",
+            )
         return
 
     # sell_tok_{mint} — user selected a token from wallet list
@@ -3228,7 +3241,8 @@ async def _cb_preview_buy(query, user, context, data):
 
     # Check terms first
     if not user.get("accepted_terms"):
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             RISK_DISCLAIMER,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton(
@@ -3236,30 +3250,29 @@ async def _cb_preview_buy(query, user, context, data):
                 )],
                 [_back_main()[0]],
             ]),
-            parse_mode="Markdown",
         )
         return
 
     if not user.get("wallet_pubkey"):
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             "\u26a0\ufe0f Create a wallet first!",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("\U0001f510 Create Wallet", callback_data="trade_create")],
                 [_back_main()[0]],
             ]),
-            parse_mode="Markdown",
         )
         return
 
     target_mint = context.user_data.get("target_mint")
     if not target_mint:
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             "\u26a0\ufe0f No token selected. Paste a mint address first!",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("\U0001f4b5 Buy Token", callback_data="trade_buy")],
                 [_back_main()[0]],
             ]),
-            parse_mode="Markdown",
         )
         return
 
@@ -3278,29 +3291,30 @@ async def _cb_preview_buy(query, user, context, data):
     # Risk checks
     error = _check_trade_allowed(user, sol_amount)
     if error:
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             error,
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
-            parse_mode="Markdown",
         )
         return
 
     # Balance check (None = RPC unreachable)
     balance = await get_sol_balance(user["wallet_pubkey"])
     if balance is None:
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             "⚠️ *RPC Temporarily Unavailable*\n\n"
             "Could not check your balance. Please try again in a moment.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Retry", callback_data=query.data)],
                 [_back_main()[0]],
             ]),
-            parse_mode="Markdown",
         )
         return
     needed = sol_amount + MIN_SOL_RESERVE
     if balance < needed:
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             f"\u26a0\ufe0f *Insufficient Balance*\n\n"
             f"Balance: *{balance:.4f} SOL*\n"
             f"Needed: *{sol_amount} SOL* + {MIN_SOL_RESERVE} reserve\n"
@@ -3329,14 +3343,11 @@ async def _cb_preview_buy(query, user, context, data):
                 ],
                 [_back_main()[0]],
             ]),
-            parse_mode="Markdown",
         )
         return
 
     # Get quote for preview
-    await query.edit_message_text(
-        "\U0001f50d *Getting quote...*", parse_mode="Markdown",
-    )
+    await _safe_edit_message(query, "\U0001f50d *Getting quote...*")
 
     total_lamports = int(sol_amount * 1_000_000_000)
     swap_lamports, fee_lamports = calculate_fee(total_lamports)
@@ -3349,13 +3360,13 @@ async def _cb_preview_buy(query, user, context, data):
     )
 
     if not quote:
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             "\u274c *Quote Failed*\n\nCould not get price. Token may be illiquid.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("\U0001f504 Retry", callback_data=data)],
                 [_back_main()[0]],
             ]),
-            parse_mode="Markdown",
         )
         return
 
@@ -3489,8 +3500,8 @@ async def _cb_preview_buy(query, user, context, data):
         [InlineKeyboardButton("\u274c Cancel", callback_data="trade")],
     ]
 
-    await query.edit_message_text(
-        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown",
+    await _safe_edit_message(
+        query, text, reply_markup=InlineKeyboardMarkup(kb),
     )
 
 
@@ -3710,22 +3721,22 @@ async def _cb_leaderboard(query, user, context):
 async def _cb_execute_buy(query, user, context, data):
     """Execute a buy order. data = buy_01, buy_05, buy_1, buy_5"""
     if not user.get("wallet_pubkey") or not user.get("wallet_secret_enc"):
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             "\u26a0\ufe0f No wallet. Create one first!",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
-            parse_mode="Markdown",
         )
         return
 
     target_mint = context.user_data.get("target_mint")
     if not target_mint:
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             "\u26a0\ufe0f No token selected. Paste a mint address first!",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("\U0001f4b5 Buy Token", callback_data="trade_buy")],
                 [_back_main()[0]],
             ]),
-            parse_mode="Markdown",
         )
         return
 
@@ -3741,17 +3752,19 @@ async def _cb_execute_buy(query, user, context, data):
     else:
         sol_amount = amount_map.get(data)
     if not sol_amount:
-        await query.edit_message_text("\u26a0\ufe0f Invalid amount.",
+        await _safe_edit_message(
+            query,
+            "\u26a0\ufe0f Invalid amount.",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
-            parse_mode="Markdown")
+        )
         return
 
-    await query.edit_message_text(
+    await _safe_edit_message(
+        query,
         f"\u23f3 *Swapping {sol_amount} SOL...*\n"
         f"Token: `{target_mint[:20]}...`\n"
         f"Fee: {PLATFORM_FEE_PCT}%\n\n"
         "_Getting best price via Jupiter..._",
-        parse_mode="Markdown",
     )
 
     # Calculate amounts (SOL has 9 decimals)
@@ -3776,7 +3789,8 @@ async def _cb_execute_buy(query, user, context, data):
         )
 
     if not quote:
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             "\u274c *Quote Failed*\n\n"
             "Could not get a price for this token.\n"
             "The token may be illiquid or invalid.",
@@ -3785,7 +3799,6 @@ async def _cb_execute_buy(query, user, context, data):
                 [InlineKeyboardButton("\U0001f4b0 Trade Menu", callback_data="trade")],
                 [_back_main()[0]],
             ]),
-            parse_mode="Markdown",
         )
         return
 
@@ -3794,10 +3807,10 @@ async def _cb_execute_buy(query, user, context, data):
         keypair = load_keypair(user["wallet_secret_enc"])
     except Exception as e:
         logger.error(f"Keypair load error: {e}")
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             "\u274c Wallet error. Please contact support.",
             reply_markup=InlineKeyboardMarkup([[_back_main()[0]]]),
-            parse_mode="Markdown",
         )
         return
 
@@ -3954,9 +3967,8 @@ async def _cb_execute_buy(query, user, context, data):
         except Exception:
             pass
 
-    await query.edit_message_text(
-        text, reply_markup=InlineKeyboardMarkup(kb),
-        parse_mode="Markdown", disable_web_page_preview=True,
+    await _safe_edit_message(
+        query, text, reply_markup=InlineKeyboardMarkup(kb),
     )
 
 

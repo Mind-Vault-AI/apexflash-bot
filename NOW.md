@@ -1,12 +1,13 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-20 (Sessie 38)
+# Last updated: 2026-04-21 (Sessie 39 — KRITIEKE FIX)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
-## LIVE STATE (sessie 38 — 2026-04-20)
+## LIVE STATE (sessie 39 — 2026-04-21)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.24
-- Status: Tier-Board HTML + /admin_* commands — one commit = one restart
-- Deliverables: promo/tier_board.html + cmd_admin_status + cmd_admin_bn_{add,list,close}
+- Version: v3.23.25
+- Status: KRITIEKE FIX — signal-link buy buttons werkten niet (photo/text mismatch)
+- Root cause: cmd_start stuurde buy-scherm als reply_photo, callbacks riepen edit_message_TEXT aan → silent crash → knoppen dood
+- Fix: (1) reply_text + View Chart knop ipv reply_photo, (2) _safe_edit_message() helper, (3) alle buy-flow callbacks op safe_edit
 
 ## SESSIE 38 — 2026-04-20 (Tier-Board CEO mandate)
 Erik: "JIJ BENT CEO. JIJ HEBT DIE VERANTWOORDING. GO GODVERDOMME." + constraint: bot mag NOOIT offline / mag niet 10000x geforceerd crashen.
