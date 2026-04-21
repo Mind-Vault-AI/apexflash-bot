@@ -4,10 +4,11 @@
 
 ## LIVE STATE (sessie 39 — 2026-04-21)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.25
-- Status: KRITIEKE FIX — signal-link buy buttons werkten niet (photo/text mismatch)
-- Root cause: cmd_start stuurde buy-scherm als reply_photo, callbacks riepen edit_message_TEXT aan → silent crash → knoppen dood
-- Fix: (1) reply_text + View Chart knop ipv reply_photo, (2) _safe_edit_message() helper, (3) alle buy-flow callbacks op safe_edit
+- Version: v3.23.26
+- Status: 2x knop-fix — Trade Now + Start Trading knoppen in kanaal deden niets
+- Root cause v3.23.25: photo/text mismatch → knoppen dood na signal link
+- Root cause v3.23.26: Trade Now URL miste ?start= parameter → bot opende zonder actie
+- Fix v3.23.26: news_scanner.py Trade Now → ?start=buy_SOL_MINT (of ?start=hot); bot.py Start Trading → ?start=hot
 
 ## SESSIE 38 — 2026-04-20 (Tier-Board CEO mandate)
 Erik: "JIJ BENT CEO. JIJ HEBT DIE VERANTWOORDING. GO GODVERDOMME." + constraint: bot mag NOOIT offline / mag niet 10000x geforceerd crashen.

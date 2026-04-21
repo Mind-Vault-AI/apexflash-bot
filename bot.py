@@ -6803,7 +6803,7 @@ async def scan_and_alert(context: ContextTypes.DEFAULT_TYPE) -> None:
                     "🔥 Trending Tokens", url=f"https://t.me/{BOT_USERNAME}?start=hot",
                 )])
                 ch_buttons.append([InlineKeyboardButton(
-                    "⚡ Start Trading", url=f"https://t.me/{BOT_USERNAME}",
+                    "⚡ Start Trading", url=f"https://t.me/{BOT_USERNAME}?start=hot",
                 )])
 
                 channel_kb = InlineKeyboardMarkup(ch_buttons)
