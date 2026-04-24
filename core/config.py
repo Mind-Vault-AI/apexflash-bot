@@ -94,9 +94,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # <KAIZEN_AUTONOMOUS_START>
 AUTONOMOUS_TRADE_AMOUNT_SOL = float(os.getenv("AUTONOMOUS_TRADE_AMOUNT_SOL", "0.25"))
-BREAKEVEN_TRIGGER_PCT = float(os.getenv("BREAKEVEN_TRIGGER_PCT", "0.5"))
-TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "2.0"))
-STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "1.0"))
+BREAKEVEN_TRIGGER_PCT = float(os.getenv("BREAKEVEN_TRIGGER_PCT", "10.0"))  # trail SL kicks in at +10%
+TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "50.0"))   # default TP: +50% (Solana meme range)
+STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "15.0"))        # default SL: -15% (meme volatility room)
 AUTONOMOUS_COOLDOWN = int(os.getenv("AUTONOMOUS_COOLDOWN", "300"))
 
 # RUG-GUARD SECURITY THRESHOLDS

@@ -135,9 +135,11 @@ def _redis_set(key: str, value: str, ex: int = None):
 
 # ── Win Rate Auto-Pause (TIER 2) ──────────────────────────────────────────────
 
-WIN_RATE_PAUSE_THRESHOLD = 60   # Pause signals if win rate drops below this %
-WIN_RATE_MIN_TRADES = 5         # Minimum trades before auto-pause can trigger
+WIN_RATE_PAUSE_THRESHOLD = 70   # v3.23.15: Zero-Loss target — pause if WR < 70%
+WIN_RATE_MIN_TRADES = 10        # v3.23.15: Erik spec — 10 trade statistical floor
 CONSECUTIVE_LOSS_LIMIT = 3      # Pause after N losses in a row (early warning)
+GRADE_A_WINRATE_TARGET = 70     # Grade A signals must hit >=70% to keep broadcasting
+GRADE_A_MIN_SAMPLES = 10        # Need 10 Grade A trades before auto-tuning kicks in
 
 
 def check_win_rate_and_pause() -> dict:
@@ -229,6 +231,89 @@ def check_and_tune_parameters() -> dict:
         return {"action": "stable", "tp": tp, "sl": sl}
     except Exception as e:
         logger.error(f"Tuning failed: {e}")
+        return {"action": "error", "msg": str(e)}
+
+
+# ── Zero-Loss Enforcement Engine (v3.23.15) ────────────────────────────────
+# 24/7 self-improvement: per-grade win rate tracking + auto-tune thresholds.
+# Layer 1: Closed-loop feedback (trades -> WR per grade)
+# Layer 2: Signal self-improvement (auto-tune Grade A threshold every 10 trades)
+# Layer 3: Zero-loss enforcement (pause if Grade A WR < 70%)
+
+def zero_loss_enforcement() -> dict:
+    """
+    Main self-improvement loop. Reads per-grade WR from Redis and:
+      - Pauses signals if Grade A WR < 70% AND >= 10 samples
+      - Tightens grade_a_min_pct (+0.3%) if Grade A WR < 70%
+      - Loosens grade_a_min_pct (-0.2%) if Grade A WR > 80% (capture more upside)
+      - Auto-resumes signals once new Grade A WR projects >=70% post-tuning
+    Returns: {action, grade_a_wr, grade_a_total, new_threshold, paused}
+    """
+    r = _get_redis()
+    if not r:
+        return {"action": "skip", "reason": "no redis"}
+
+    try:
+        # Per-grade win rate from Redis (set by record_trade_result)
+        a_total = _safe_int(r.get("kpi:grade:A:total"))
+        a_wins = _safe_int(r.get("kpi:grade:A:wins"))
+        grade_a_wr = round(a_wins / a_total * 100, 1) if a_total > 0 else 0.0
+
+        gov = get_governance_config()
+        current_thr = float(gov.get("grade_a_min_pct", 3.0) or 3.0)
+        result = {
+            "action": "stable",
+            "grade_a_wr": grade_a_wr,
+            "grade_a_total": a_total,
+            "threshold_pct": current_thr,
+        }
+
+        if a_total < GRADE_A_MIN_SAMPLES:
+            result["action"] = "skip"
+            result["reason"] = f"need {GRADE_A_MIN_SAMPLES} Grade A trades, have {a_total}"
+            return result
+
+        already_paused = _safe_int(r.get("signals:paused"))
+
+        # ── Underperformance: Grade A WR < 70% → tighten + pause ──────────
+        if grade_a_wr < GRADE_A_WINRATE_TARGET:
+            new_thr = min(5.0, round(current_thr + 0.3, 2))
+            update_governance_config("grade_a_min_pct", new_thr)
+            if not already_paused:
+                _redis_set("signals:paused", "1")
+                result["action"] = "paused_and_tightened"
+            else:
+                result["action"] = "tightened"
+            result["new_threshold"] = new_thr
+            result["paused"] = True
+            logger.warning(
+                f"ZLEE: Grade A WR {grade_a_wr}% < {GRADE_A_WINRATE_TARGET}% "
+                f"→ threshold {current_thr}→{new_thr}, signals paused"
+            )
+
+        # ── Outperformance: Grade A WR > 80% → loosen to capture more ─────
+        elif grade_a_wr > 80:
+            new_thr = max(2.0, round(current_thr - 0.2, 2))
+            if new_thr != current_thr:
+                update_governance_config("grade_a_min_pct", new_thr)
+                result["action"] = "loosened"
+                result["new_threshold"] = new_thr
+                logger.info(
+                    f"ZLEE: Grade A WR {grade_a_wr}% > 80% "
+                    f"→ threshold {current_thr}→{new_thr} (capture more upside)"
+                )
+
+        # ── Stable 70-80%: consider resume if paused ──────────────────────
+        elif already_paused and grade_a_wr >= GRADE_A_WINRATE_TARGET:
+            _redis_set("signals:paused", "0")
+            result["action"] = "resumed"
+            result["paused"] = False
+            logger.info(f"ZLEE: Grade A WR {grade_a_wr}% >= {GRADE_A_WINRATE_TARGET}% → signals RESUMED")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"ZLEE failed: {e}")
         return {"action": "error", "msg": str(e)}
 
 
@@ -749,13 +834,63 @@ async def run_briefing() -> None:
     """Main CEO Agent task — collect KPIs, prioritise, send briefing."""
     logger.info("CEO Agent: starting daily briefing run")
     try:
+        # ── v3.23.22: Self-healing KPI reconcile BEFORE reading counters ──
+        # Rebuilds platform:total_users / platform:trades_today / winrate:total_trades
+        # from the authoritative users dict to eliminate "new baseline" drift.
+        try:
+            from core.persistence import reconcile_kpis
+            recon = reconcile_kpis()
+            if recon.get("drift_severe"):
+                # Option B: loud heal — Telegram alert if drift > 10%
+                try:
+                    from telegram import Bot as _Bot
+                    _drift_msg = (
+                        f"⚠️ *KPI Drift Healed (v3.23.22)*\n"
+                        f"Redis counters were lagging the authoritative users dict.\n"
+                        f"• total_users: {recon['before']['platform:total_users']} → {recon['after']['platform:total_users']}\n"
+                        f"• trades_today: {recon['before']['platform:trades_today']} → {recon['after']['platform:trades_today']}\n"
+                        f"• trades_all_time: {recon['before']['winrate:total_trades']} → {recon['after']['winrate:total_trades']}\n"
+                        f"• drift: {recon['drift_pct']}%\n"
+                        f"_Briefing below uses the healed values._"
+                    )
+                    await _Bot(token=BOT_TOKEN).send_message(
+                        chat_id=ERIK_TELEGRAM_ID, text=_drift_msg, parse_mode="Markdown"
+                    )
+                except Exception as _e:
+                    logger.debug(f"KPI drift alert send failed: {_e}")
+            logger.info(f"CEO Agent reconcile: {recon}")
+        except Exception as _e:
+            logger.warning(f"CEO Agent reconcile failed (non-blocking): {_e}")
+
         kpis = collect_kpis()
         priorities = gemini_prioritise(kpis)
         
-        # Kaizen: Autonomous Tuning (Godmode)
+        # Kaizen: Autonomous Tuning (Godmode) — TP/SL on global win rate
         tuning = check_and_tune_parameters()
         if tuning.get("action") == "tuned":
             logger.info(f"CEO Agent: Tuned parameters to TP={tuning['new_tp']}, SL={tuning['new_sl']}")
+
+        # Zero-Loss Enforcement Engine — per-grade self-improvement (v3.23.15)
+        zlee = zero_loss_enforcement()
+        zlee_action = zlee.get("action", "")
+        if zlee_action in ("paused_and_tightened", "tightened", "loosened", "resumed"):
+            logger.warning(f"CEO Agent ZLEE: {zlee_action} | Grade A WR={zlee.get('grade_a_wr')}% | threshold={zlee.get('new_threshold', zlee.get('threshold_pct'))}%")
+            # Send Erik an immediate Telegram alert for any ZLEE action
+            try:
+                from telegram import Bot as _Bot
+                _msg = (
+                    f"🛡️ *ZLEE — Zero-Loss Enforcement*\n"
+                    f"Action: `{zlee_action}`\n"
+                    f"Grade A WR: {zlee.get('grade_a_wr')}% (target ≥{GRADE_A_WINRATE_TARGET}%)\n"
+                    f"Grade A trades: {zlee.get('grade_a_total')}\n"
+                    f"Threshold: {zlee.get('threshold_pct')}% → {zlee.get('new_threshold', zlee.get('threshold_pct'))}%\n"
+                    f"Signals paused: `{zlee.get('paused', False)}`"
+                )
+                await _Bot(token=BOT_TOKEN).send_message(
+                    chat_id=ERIK_TELEGRAM_ID, text=_msg, parse_mode="Markdown"
+                )
+            except Exception:
+                pass
 
         success = await send_briefing(kpis, priorities)
         await send_discord_briefing(kpis, priorities)  # Mirror to Discord #apexflash

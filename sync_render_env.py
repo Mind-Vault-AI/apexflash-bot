@@ -12,7 +12,9 @@ import json
 import os
 import urllib.request
 
-RENDER_API_KEY = os.getenv("RENDER_API_KEY", "rnd_F6SnsNvz5CKtds7WZ3EGwp9xlDGZ")
+RENDER_API_KEY = os.getenv("RENDER_API_KEY")
+if not RENDER_API_KEY:
+    raise RuntimeError("RENDER_API_KEY missing — add it to .env (Box Drive master file). NEVER hardcode.")
 SERVICE_ID = "srv-d6kcjbpaae7s73aadsu0"
 API = f"https://api.render.com/v1/services/{SERVICE_ID}/env-vars"
 HDR = {

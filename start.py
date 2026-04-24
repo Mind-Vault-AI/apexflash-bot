@@ -59,17 +59,12 @@ try:
         )
         logger.info(f"deleteWebhook: {resp.status_code} {resp.text[:120]}")
 
-        # Step 2: Close any active getUpdates session
-        resp2 = httpx.post(
-            f"https://api.telegram.org/bot{tok}/close",
-            timeout=10,
-        )
-        logger.info(f"close session: {resp2.status_code} {resp2.text[:120]}")
-
-        # Step 3: Wait for Telegram to release old polling connections
-        # Telegram needs ~7s to time out an old long-poll session
-        logger.info("Waiting 10s for Telegram to release old polling connections...")
-        time.sleep(10)
+        # Step 2: Wait briefly for Telegram to process webhook deletion
+        # NOTE: /close is intentionally NOT called here — it terminates the bot
+        # session and causes run_polling to silently stop receiving updates.
+        # deleteWebhook is sufficient to clear stale connections.
+        logger.info("Waiting 3s for Telegram to process webhook deletion...")
+        time.sleep(3)
 
         # Step 4: Confirm bot is reachable
         resp3 = httpx.get(f"https://api.telegram.org/bot{tok}/getMe", timeout=10)
@@ -83,6 +78,12 @@ try:
     import bot
     logger.info("Bot module imported OK, starting main()...")
     bot.main()
+    # bot.main() should NEVER return normally (run_polling blocks forever).
+    # If it does, something silently stopped polling — force Render to restart.
+    logger.error("bot.main() returned without exception — polling died silently. Forcing restart.")
+    sys.exit(1)
+except SystemExit:
+    raise  # pass through sys.exit() calls
 except Exception as e:
     err = f"\U0001f534 BOT CRASH:\n\n{type(e).__name__}: {e}\n\n{traceback.format_exc()}"
     logger.error(err)

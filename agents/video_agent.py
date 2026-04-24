@@ -9,7 +9,12 @@ Engine: Pillow (PIL) + Gemini 2.0
 import os
 import logging
 from PIL import Image, ImageDraw, ImageFont
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    _GENAI_OK = True
+except Exception:
+    genai = None
+    _GENAI_OK = False
 
 logger = logging.getLogger("VisualAlpha")
 

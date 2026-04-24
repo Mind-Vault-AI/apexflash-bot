@@ -34,6 +34,7 @@ from core.persistence import (
 from core.wallet import load_keypair, get_sol_balance
 from exchanges.jupiter import get_quote, execute_swap
 from exchanges import gmgn as _gmgn
+from exchanges import gmgn_market as _gmgn_market
 from scalper import check_scalp_signals, SCALP_TOKENS
 
 logging.basicConfig(
@@ -140,15 +141,29 @@ async def _notify_admin(bot, text: str) -> None:
             logger.debug("Admin notify failed for %s: %s", admin_id, e)
 
 async def execute_trade(keypair, action, input_mint, output_mint, amount_raw):
-    """Executes a buy/sell via Jupiter (primary) → GMGN (fallback)."""
+    """Executes a buy/sell via Jupiter (primary) → GMGN (fallback).
+
+    v3.23.19: SELL paths use escalating slippage (3% → 10% → 25%) — memecoins
+    have thin liquidity and a fixed low slippage causes silent SL failures.
+    BUY paths keep tight slippage (1.5%) to protect entry price.
+    """
     # ── Primary: Jupiter ──────────────────────────────────────────────────────
-    quote = await get_quote(input_mint, output_mint, amount_raw, slippage_bps=150)
+    is_sell = (action or "").lower().startswith("sell") or output_mint.endswith("So11111111111111111111111111111111111111112")
+    if is_sell:
+        from exchanges.jupiter import get_quote_with_escalation
+        quote, _reason = await get_quote_with_escalation(
+            input_mint, output_mint, amount_raw,
+            slippage_steps=(300, 1000, 2500),
+        )
+    else:
+        quote = await get_quote(input_mint, output_mint, amount_raw, slippage_bps=150)
     if quote:
         out_amount = int(quote.get("outAmount", 0))
         if out_amount > 0:
             sig, err = await execute_swap(keypair, quote)
             if sig:
-                logger.info("[%s] Jupiter swap OK: %s", action, sig)
+                slip_info = f" (slip={quote.get('_slippage_used', 'n/a')}bps)" if is_sell else ""
+                logger.info("[%s] Jupiter swap OK%s: %s", action, slip_info, sig)
                 return sig, out_amount, ""
             logger.warning("[%s] Jupiter failed: %s - trying GMGN fallback", action, err)
         else:
@@ -196,22 +211,120 @@ async def execute_trade(keypair, action, input_mint, output_mint, amount_raw):
 
 async def security_audit(mint: str) -> bool:
     """
-    Perform a security audit of a token before buying.
-    Checks for: LP lock, Mintable authority, concentrations.
+    Pre-buy rug-guard (v3.23.20).
+
+    BLOCKS the BUY (returns False) if any active failure:
+      1. DexScreener has no pair       → no market exists
+      2. liquidity_usd < $10,000       → thin pool / rug-prone
+      3. top-10 holders own > 70%      → concentrated dump risk
+      4. Jupiter cannot quote a SELL   → honeypot suspected
+
+    Fails-OPEN (returns True) on API errors / not-configured —
+    we don't want Jupiter or GMGN downtime to freeze all trading.
     """
+    short = (mint or "?")[:8]
     try:
-        # 1. Using RugCheck.xyz or Birdeye Check logic
-        # For now, let's pretend we have a check for 'Mintable' status
-        # and 'Risky' score. Any score > 50 is an ABORT.
-        logger.info("🛡️ RUG-GUARD: Auditing token %s...", mint[:8])
+        logger.info("🛡️ RUG-GUARD: Auditing %s...", short)
 
-        # Integration point for actual RugCheck API:
-        # status = await get_rugcheck_status(mint)
-        # if status == "DANGER": return False
+        # ── 1. DexScreener: market existence + liquidity floor ──────────────
+        if aiohttp is not None:
+            try:
+                url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        url, timeout=aiohttp.ClientTimeout(total=6)
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json(content_type=None)
+                            pairs = data.get("pairs") or []
+                            if not pairs:
+                                logger.error(
+                                    "🚨 RUG-GUARD: %s — no DexScreener pair (no market)",
+                                    short,
+                                )
+                                return False
+                            best = max(
+                                pairs,
+                                key=lambda p: float(
+                                    ((p or {}).get("liquidity") or {}).get("usd") or 0
+                                ),
+                            )
+                            liq_usd = float(
+                                (best.get("liquidity") or {}).get("usd") or 0
+                            )
+                            if liq_usd < 10_000:
+                                logger.error(
+                                    "🚨 RUG-GUARD: %s — liquidity $%.0f below $10k floor",
+                                    short, liq_usd,
+                                )
+                                return False
+                            logger.info(
+                                "🛡️ RUG-GUARD: %s liquidity $%.0f ✅", short, liq_usd
+                            )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.debug(
+                    "RUG-GUARD: dexscreener probe failed for %s: %s — fail-open",
+                    short, e,
+                )
 
-        return True # Default to Pass for valid markets
-    except (TypeError, ValueError, RuntimeError):
-        return True # Default to Pass if audit fails
+        # ── 2. GMGN top-10 holder concentration ────────────────────────────
+        try:
+            holders = await asyncio.to_thread(
+                _gmgn_market.top_holders, mint, "sol", 10
+            )
+            if holders:
+                total_pct = 0.0
+                for h in holders:
+                    raw = (
+                        h.get("amount_percentage")
+                        or h.get("amount_percent")
+                        or h.get("percentage")
+                        or h.get("percent")
+                        or 0
+                    )
+                    try:
+                        total_pct += float(raw)
+                    except (TypeError, ValueError):
+                        pass
+                # GMGN may return 0..1 fraction or 0..100 percent — normalize
+                if 0 < total_pct <= 1.5:
+                    total_pct *= 100
+                if total_pct > 70.0:
+                    logger.error(
+                        "🚨 RUG-GUARD: %s — top10 holders own %.1f%% (>70%% concentration)",
+                        short, total_pct,
+                    )
+                    return False
+                if total_pct > 0:
+                    logger.info(
+                        "🛡️ RUG-GUARD: %s top10 holders %.1f%% ✅", short, total_pct
+                    )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.debug(
+                "RUG-GUARD: gmgn holders probe failed for %s: %s — fail-open",
+                short, e,
+            )
+
+        # ── 3. Jupiter honeypot probe: can we get a SELL quote? ────────────
+        try:
+            probe = await get_quote(mint, SOL_MINT, 1000, slippage_bps=2500)
+            if probe is None:
+                logger.error(
+                    "🚨 RUG-GUARD: %s — Jupiter cannot quote SELL (honeypot suspected)",
+                    short,
+                )
+                return False
+            logger.info("🛡️ RUG-GUARD: %s sell-quote OK ✅", short)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.debug(
+                "RUG-GUARD: honeypot probe failed for %s: %s — fail-open",
+                short, e,
+            )
+
+        return True
+    except (TypeError, ValueError, RuntimeError) as e:
+        logger.debug("RUG-GUARD: outer exception for %s: %s — fail-open", short, e)
+        return True
 
 _trend_cache: dict = {"pct": 0.0, "ts": 0.0}
 
@@ -250,6 +363,10 @@ async def position_manager(keypair, symbol, mint, bot=None):
 
     logger.info("🛡️ MANAGER ACTIVE: %s (Entry: $%.6f)", symbol, pos["entry_price"])
 
+    # v3.23.19: rug detection — count consecutive no-route quotes
+    no_route_count = 0
+    NO_ROUTE_RUG_THRESHOLD = 3  # 3 cycles × 15s = 45s of no liquidity = rug
+
     while symbol in active_positions:
         try:
             await asyncio.sleep(15) # Optimal interval for RPC safety
@@ -269,10 +386,36 @@ async def position_manager(keypair, symbol, mint, bot=None):
                 _sl_pct = 0.5
                 logger.warning("🛡️ SHOCK BREAKER: Tightening %s SL due to Panic (%s)", symbol, panic)
 
-            quote = await get_quote(mint, SOL_MINT, pos["amount"])
+            # Use escalating slippage quote so memecoin price-check works at all tiers
+            from exchanges.jupiter import get_quote_with_escalation
+            quote, q_reason = await get_quote_with_escalation(
+                mint, SOL_MINT, pos["amount"],
+                slippage_steps=(300, 1000, 2500),
+            )
             if not quote:
-                logger.debug("Quote unavailable for %s, retrying next cycle", symbol)
+                if q_reason == "no_route":
+                    no_route_count += 1
+                    logger.warning("🚨 %s no Jupiter route (%d/%d) — possible rug",
+                                   symbol, no_route_count, NO_ROUTE_RUG_THRESHOLD)
+                    if no_route_count >= NO_ROUTE_RUG_THRESHOLD:
+                        # Confirmed rug — token has no liquidity for 45+ seconds
+                        _entry_sol = float(pos.get("entry_sol", AUTONOMOUS_TRADE_AMOUNT_SOL) or AUTONOMOUS_TRADE_AMOUNT_SOL)
+                        logger.error("💀 RUGGED: %s — exiting manager (no liquidity %ds)",
+                                     symbol, no_route_count * 15)
+                        await _notify_admin(
+                            bot,
+                            f"💀 *RUGGED* — {symbol}\n"
+                            f"No Jupiter route at any slippage for {no_route_count*15}s.\n"
+                            f"Position abandoned (token cannot be sold).\n"
+                            f"Entry: {_entry_sol:.4f} SOL = total loss."
+                        )
+                        record_trade_result(ADMIN_IDS[0], symbol, -100.0, -_entry_sol)
+                        break
+                else:  # api_error
+                    logger.debug("Quote API error for %s, retrying next cycle", symbol)
                 continue
+            # Quote OK → reset rug counter
+            no_route_count = 0
 
             out_amount = quote.get("outAmount")
             if not out_amount or out_amount <= 0:
@@ -486,17 +629,42 @@ async def auto_trader_loop(bot=None):
                     sig, out_tokens, entry_err = await execute_trade(keypair, "BUY", SOL_MINT, mint, int(trade_sol * 1e9))
 
                     if sig and out_tokens > 0:
+                        sl_pct_val = gov.get('sl_pct', STOP_LOSS_PCT)
+                        tp_pct_val = gov.get('tp_pct', TAKE_PROFIT_PCT)
                         active_positions[sym] = {
-                            "mint": mint,          # stored so resume works after restart
+                            "mint": mint,
                             "entry_price": s['price'],
                             "entry_sol": trade_sol,
                             "amount": out_tokens,
-                            "sl_price": s['price'] * (1 - (gov.get('sl_pct', STOP_LOSS_PCT)/100)),
-                            "tp_price": s['price'] * (1 + (gov.get('tp_pct', TAKE_PROFIT_PCT)/100)),
+                            "sl_price": s['price'] * (1 - sl_pct_val / 100),
+                            "tp_price": s['price'] * (1 + tp_pct_val / 100),
                             "created_at": int(time.time()),
                         }
                         save_active_positions(active_positions)
-                        await _notify_admin(bot, f"⚡ *ZERO-LOSS BUY* — {sym}\nAmt: *{trade_sol:.4f} SOL*\nTx: `{sig}`")
+
+                        # ── SYNC to user active_positions for manual SELL visibility ──
+                        try:
+                            from bot import users as _bot_users  # noqa: PLC0415
+                            if admin_id in _bot_users:
+                                _u = _bot_users[admin_id]
+                                if "active_positions" not in _u:
+                                    _u["active_positions"] = []
+                                # Remove any stale entry for same mint before adding
+                                _u["active_positions"] = [p for p in _u["active_positions"] if p.get("mint") != mint]
+                                _u["active_positions"].append({
+                                    "token": sym,
+                                    "mint": mint,
+                                    "entry_sol": trade_sol,
+                                    "token_amount_raw": int(out_tokens),
+                                    "sl_pct": sl_pct_val,
+                                    "tp_pct": tp_pct_val,
+                                    "peak_sol": trade_sol,
+                                    "source": "autotrade",
+                                })
+                        except Exception as _sync_err:
+                            logger.warning("Position sync to bot users failed: %s", _sync_err)
+
+                        await _notify_admin(bot, f"⚡ *ZERO-LOSS BUY* — {sym}\nAmt: *{trade_sol:.4f} SOL*\nTx: `{sig}`\nSL: -{sl_pct_val}% | TP: +{tp_pct_val}%")
                         _manager_tasks[sym] = asyncio.create_task(position_manager(keypair, sym, mint, bot=bot))
                         AUTOTRADE_STATE["last_entry_symbol"] = sym
                         AUTOTRADE_STATE["last_entry_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")

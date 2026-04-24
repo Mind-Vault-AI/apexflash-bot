@@ -7,7 +7,12 @@ import time
 import urllib.request
 from typing import List, Optional, Tuple
 
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    _GENAI_OK = True
+except Exception:
+    genai = None
+    _GENAI_OK = False
 
 logger = logging.getLogger("AIAdvisor")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()

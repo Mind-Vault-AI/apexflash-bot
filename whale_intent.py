@@ -9,13 +9,21 @@ import logging
 import os
 import aiohttp
 from typing import Optional
-import google.generativeai as genai
 
 logger = logging.getLogger("WhaleIntent")
 
+# Safe import — pyparsing/httplib2 dep; bot must start even if Gemini unavailable
+try:
+    import google.generativeai as genai
+    _GENAI_OK = True
+except Exception as _ge:
+    logger.warning(f"google.generativeai not available: {_ge} — whale intent disabled")
+    genai = None  # type: ignore
+    _GENAI_OK = False
+
 # Configure Google Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-if GEMINI_API_KEY:
+if _GENAI_OK and GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 async def analyze_whale_intent(tx_hash: str, wallet: str, token: str, amount_sol: float) -> str:
@@ -23,8 +31,8 @@ async def analyze_whale_intent(tx_hash: str, wallet: str, token: str, amount_sol
     Uses Gemini to hypothesize the motive behind a whale transaction.
     Returns a formatted string for the Telegram alert.
     """
-    if not GEMINI_API_KEY:
-        return "⚠️ AI Analysis unavailable (No API Key)."
+    if not _GENAI_OK or not GEMINI_API_KEY:
+        return "⚠️ AI Analysis unavailable (module not loaded)."
 
     prompt = f"""
     You are a professional Solana Whale Analyst.

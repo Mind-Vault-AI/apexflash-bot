@@ -22,3 +22,6 @@ venv/
 *.bak
 fix_encoding.py
 pyrightconfig.json
+
+# AI extension snapshots (auto-generated, local only)
+.snapshots/

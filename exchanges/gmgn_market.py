@@ -69,10 +69,7 @@ def _get(path: str, params: dict = None) -> dict:
     path_and_query = f"{path}?{qs}"
     sig = _sign(path_and_query)
     url = f"{_BASE_URL}{path_and_query}"
-    req = urllib.request.Request(url, headers={
-        "X-API-Signature": sig,
-        "Content-Type": "application/json",
-    })
+    req = urllib.request.Request(url, headers={"X-API-Signature": sig, "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read())
@@ -80,18 +77,33 @@ def _get(path: str, params: dict = None) -> dict:
         if e.code == 403:
             ip = _get_outbound_ip()
             logger.error(f"GMGN 403 — IP [{ip}] or signature rejected")
-            try:
-                from core.persistence import _get_redis
-                r_conn = _get_redis()
-                if r_conn:
-                    r_conn.setex("apexflash:render:outbound_ip", 3600, ip)
-            except Exception:
-                pass
+            _record_403(ip)
             raise RuntimeError(f"GMGN 403 — IP {ip} or signature issue")
         raise RuntimeError(f"GMGN HTTP {e.code}: {e.reason}")
     if data.get("code") != 0:
         raise RuntimeError(f"GMGN error {data.get('code')}: {data.get('message', data)}")
     return data["data"]
+
+
+def _record_403(ip: str) -> None:
+    """
+    Track every GMGN 403 in Redis so bot.py's /ip_status and escalate-job
+    can surface a coherent picture to the admin. Escalates after 3 in 1h.
+    """
+    try:
+        from core.persistence import _get_redis
+        r = _get_redis()
+        if not r:
+            return
+        r.setex("apexflash:render:outbound_ip", 3600, ip)
+        r.setex("apexflash:gmgn:403_last_ip", 7200, ip)
+        r.setex("apexflash:gmgn:403_last_ts", 7200, str(int(time.time())))
+        cnt = r.incr("apexflash:gmgn:403_count_total")
+        r.expire("apexflash:gmgn:403_count_total", 3600)
+        if cnt and int(cnt) >= 3:
+            r.setex("apexflash:gmgn:403_escalate", 3600, ip)
+    except Exception:
+        pass
 
 
 def _post(path: str, body: dict, params: dict = None) -> dict:
@@ -115,6 +127,7 @@ def _post(path: str, body: dict, params: dict = None) -> dict:
         if e.code == 403:
             ip = _get_outbound_ip()
             logger.error(f"GMGN 403 — IP {ip} or signature rejected")
+            _record_403(ip)
             raise RuntimeError(f"GMGN 403 — IP {ip} or signature issue")
         raise RuntimeError(f"GMGN HTTP {e.code}: {e.reason}")
     if data.get("code") != 0:
@@ -201,7 +214,8 @@ def rank(
         "limit": str(limit),
         "order_by": order_by,
     }
-    qs_parts = [urllib.parse.urlencode(sorted({**params, **_auth_params()}.items()))]
+    all_params = {**params, **_auth_params()}
+    qs_parts = [urllib.parse.urlencode(sorted(all_params.items()))]
     if filters:
         qs_parts.append("&".join(f"filters={f}" for f in filters))
     all_qs = "&".join(qs_parts)

@@ -196,16 +196,17 @@ def _grade_signal(pct_5m: float, pct_15m: float, volume_usd: float) -> str:
     Grade A requires trend alignment (5m and 15m in same direction).
     """
     has_volume = volume_usd > 0
-    has_high_vol = volume_usd > 1_500_000   # $1.5M+ for Grade A (liquidity)
+    has_high_vol = volume_usd > 2_000_000   # $2M+ for Grade A (v3.23.14 — stricter)
     has_std_vol = volume_usd > 750_000     # $0.75M+ for Grade B/C
-    
+
     abs5 = abs(pct_5m)
     abs15 = abs(pct_15m)
-    
+
     # ── Trend Alignment: 5m and 15m MUST point same way for Grade A ──────
     trend_aligned = (pct_5m * pct_15m) > 0
 
-    if abs5 >= 2.0 and trend_aligned and has_high_vol:
+    # Grade A: 3%+ 5m move + 1.5%+ 15m confirmation + $2M volume + aligned trend
+    if abs5 >= 3.0 and abs15 >= 1.5 and trend_aligned and has_high_vol:
         return "A"
     if abs5 >= 0.8 or abs15 >= 1.5:
         return "B" if has_std_vol else ""
@@ -227,8 +228,8 @@ def _grade_signal(pct_5m: float, pct_15m: float, volume_usd: float) -> str:
 def _suggest_levels(price: float, pct: float) -> tuple[str, str]:
     """Return (target_str, stoploss_str) based on direction."""
     direction = 1 if pct > 0 else -1
-    target = price * (1 + direction * 0.025)   # 2.5% target
-    stoploss = price * (1 - direction * 0.015)  # 1.5% stop loss
+    target = price * (1 + direction * 0.030)   # 3.0% target (v3.23.14)
+    stoploss = price * (1 - direction * 0.010)  # 1.0% stop loss — tighter = higher win rate
     return _fmt_price(target), _fmt_price(stoploss)
 
 

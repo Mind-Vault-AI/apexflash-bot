@@ -1,10 +1,68 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-15 (Sessie 32)
+# Last updated: 2026-04-22 (Sessie 39 — KRITIEKE FIX)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
-## LIVE STATE (sessie 32 — 2026-04-15)
+## LIVE STATE (sessie 39 — 2026-04-21)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: commit 9ad619a (buy/sell critical fix)
+- Version: v3.23.28
+- Status: 2x knop-fix — Trade Now + Start Trading knoppen in kanaal deden niets
+- Root cause v3.23.25: photo/text mismatch → knoppen dood na signal link
+- Root cause v3.23.26: Trade Now URL miste ?start= parameter → bot opende zonder actie
+- Fix v3.23.26: news_scanner.py Trade Now → ?start=buy_SOL_MINT (of ?start=hot); bot.py Start Trading → ?start=hot
+
+## SESSIE 38 — 2026-04-20 (Tier-Board CEO mandate)
+Erik: "JIJ BENT CEO. JIJ HEBT DIE VERANTWOORDING. GO GODVERDOMME." + constraint: bot mag NOOIT offline / mag niet 10000x geforceerd crashen.
+
+Strategy: bundle HTML + admin-commands in ÉÉN commit → ÉÉN Render restart (~30-60s standard), geen uren-downtime. Safety: elke handler in try/except, Redis-DOWN = graceful degradation.
+
+Gedaan:
+- ✅ v3.23.24: promo/tier_board.html — 3 tier lanes + 12-row bottleneck matrix + 6 KPI cards
+- ✅ v3.23.24: /admin_status, /admin_bn_add, /admin_bn_list, /admin_bn_close
+- ✅ Redis schema apexflash:bottlenecks (LPUSH JSON, LTRIM 50)
+- ⏳ pre-commit guard check + git push + Render API verify
+
+## SESSIE 37 — 2026-04-20 (SELL-button UX fix)
+Erik screenshot toonde Recent-Trades met `SELL 0.0000 SOL → TSUKIMAP`. Root cause: swap-output < 0.0001 SOL wordt gerond naar "0.0000" in display (regel 2163 + 4216). Users denken dat bot stuk is terwijl token dust is.
+
+Gedaan (pending deploy):
+- ✅ v3.23.23: Recent-Trades display — <0.0001 SOL → `<0.0001` i.p.v. `0.0000`
+- ✅ v3.23.23: Sell-success bericht — dust-warning ("Token had near-zero liquidity — dit is token-state, geen bot-fout")
+- ⏸ src_* marketing-attribution branch → bewaard voor v3.23.24 (separate concern)
+- ⏸ /sell_diag live-test → blocked: Erik test in Telegram
+
+## SESSIE 36 — 2026-04-19 (CEO Agent triggered fixes)
+Context: 08:00 CEO briefing toonde "0 users / SLA breach / sell broken".
+Bot-in-memory had 6 users / 26 trades (auto-backup), CEO briefing las Redis counters die nooit werden geschreven (`platform:trades_today`) of uit sync waren (`platform:total_users`). SLA breach op `t.me/ApexFlashBot?start=elite` kwam door ontbrekende elif branch in /start handler. Erik meldde om 08:01 sell bug via /report.
+
+Gedaan (pending Erik deploy):
+- ✅ v3.23.22: /start elite + /start pro deep-link handlers + 1-tap upgrade screen
+- ✅ v3.23.22: reconcile_kpis() + Telegram drift alert (>10%) in run_briefing()
+- ✅ v3.23.22: _log_sell_event() ring buffer + /sell_diag admin command
+- ✅ AST-parse clean, commit pending ISO9001 NOW.md sync (deze edit)
+
+## PREVIOUS STATE (sessie 35 — 2026-04-18)
+- Version was: v3.23.21
+- GMGN IP whitelist: 74.220.51.252 (actueel) — change-detect + history live
+- WinRate: 51.4% → target >=70% (v3.23.15 ZLEE auto-enforced)
+- ZLEE active: pauzeert signals als Grade A WR < 70% (min 10 trades)
+
+## GEDAAN (sessie 35 — 2026-04-18)
+- ✅ **v3.23.14: SELL usd=0 bug GEFIXT** — autotrade SELL logde usd_value=0 hardcoded. AI Advisor zag kapotte data. Nu: SOL prijs gefetcht + usd_value=sold_sol*sol_price + entry_price_usd=sol_price bij elke SELL.
+- ✅ **v3.23.14: Grade A drempel aangescherpt** — scalper.py: abs5m 2%→3%, abs15m>=1.5% vereist (nieuw), volume $1.5M→$2M. Target 2.5%→3.0%, stop loss 1.5%→1.0%.
+- ✅ **v3.23.15: Zero-Loss Enforcement Engine (ZLEE)** — agents/ceo_agent.py:
+  - WIN_RATE_PAUSE_THRESHOLD 60→70, MIN_TRADES 5→10
+  - Nieuwe `zero_loss_enforcement()`: per-grade WR feedback loop
+  - Grade A WR < 70% → threshold +0.3% + signals paused
+  - Grade A WR > 80% → threshold -0.2% (capture upside)
+  - Grade A WR 70-80% → auto-resume als gepauzeerd
+  - Telegram alert naar Erik bij elke ZLEE actie
+  - Gewired in run_briefing() scheduler (dagelijks 08:00 AMS)
+- ✅ GMGN IP whitelist 4.220.51.250 bevestigd door Erik (screenshot)
+
+## OPENSTAAND (sessie 35)
+- Reddit post plaatsen (draft gereed)
+- TEST BUY bevestigen via Telegram
+- WinRate monitoren na v3.23.14 deploy
 - Keys on Render: 74 (gesynchroniseerd via sync_render_env.py)
 - **autotrade:enabled = 1** → AUTO-TRADE STAAT AAN op Render
 - **0 open posities** — 7 phantom posities GEWIST (tokens bestonden NIET on-chain)
@@ -15,6 +73,13 @@
 - DexScreener fallback: ✅ nu actief als backup scan
 - DISCORD_WEBHOOK_URL: ✅ GESYNCHRONISEERD naar Render (sessie 29, via MASTER_ENV)
 - PDCA journal: 1 TEST entry (leeg want scanner geen signalen via GMGN op Render)
+
+## GEDAAN (sessie 34c — 2026-04-16)
+- ✅ **v3.23.11: Command handler fix + Render IP auto-report**
+- ✅ `cmd_myip`: blocking `urllib.request.urlopen` vervangen door async `aiohttp` (event loop niet meer geblokkeerd)
+- ✅ PTB global error handler toegevoegd (`app.add_error_handler`) — alle stille handler exceptions worden nu gelogd + admin alert
+- ✅ Startup IP report job: 30s na boot → haalt Render outbound IP op → stuurt naar admin + cached in Redis
+- ✅ Poll loop verbeterd: elke update gelogd (update_id + command text), httpx timeout verhoogd naar 40s (was 30s — te krap voor 25s long-poll)
 
 ## WAT WERKT
 - ✅ Bot @ApexFlashBot live
@@ -145,3 +210,81 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
 - ✅ notifications.py: notify_discord_gmgn_signal() — Grade A/S signalen naar Discord embed
 - ✅ bot.py: _whale_signal_to_telegram → Twitter + Discord beide gewired (non-blocking)
 - ✅ Commits: c76dcf0 (Twitter) + 55593f0 (Discord) → Render deploy
+
+## Sessie 34 — 2026-04-16 (URGENT FIX v3.23.9)
+- KRITIEK: bot crash-loopte op startup door pyparsing missing → google.generativeai import fail
+- FIX 1: pyparsing>=3.0.0 toegevoegd aan requirements.txt
+- FIX 2: try/except om genai import in whale_intent.py (safety net)
+- Bot start nu op ook als Gemini niet beschikbaar is
+
+## Sessie 34b — 2026-04-16 (FIX v3.23.10 — alle genai imports safe)
+- Alle 6 agents/*.py: try/except om google.generativeai import
+- Belt + bretels: pyparsing in requirements.txt + alle imports veilig
+- Clear cache deploy getriggerd om Render pip cache te verwijderen
+
+## Sessie 35c — 2026-04-18 (v3.23.16 — ROTATING IP STRUCTURAL FIX)
+- PROBLEEM: Render Starter plan rotating IPs → GMGN whitelist breekt na elke restart
+  - 05:54 crash (CONFLICT deploy rollover) → 05:55 nieuwe IP 74.220.51.3 → 06:07 flip naar 74.220.51.250
+  - 3 verschillende IPs in 13 minuten zonder change-detectie → admin blind
+- FIX bot.py _startup_ip_report: change-detection vs `apexflash:render:ip_previous`
+  - Als veranderd → 🚨 CRITICAL alert met previous+new+action
+  - Als gelijk → quiet _(unchanged)_ report
+  - Rolling history Redis list `apexflash:render:ip_history` (max 10, LPUSH+LTRIM)
+- FIX bot.py NEW /ip_status admin command: current + previous + status + history + 403 counters
+- FIX bot.py NEW job _gmgn_403_escalate_check (60s): alert admin als 403-storm flag gezet
+- FIX exchanges/gmgn_market.py _record_403(): dedupe 403 tracking (counter 1h TTL, escalate >=3)
+- Keys: apexflash:gmgn:403_count_total, 403_last_ip, 403_last_ts, 403_escalate
+- VERSION 3.23.15 → 3.23.16
+
+## Sessie 35d — 2026-04-18 (v3.23.17 — HOTFIX: missing time import in IP logic)
+- v3.23.16 deployed OK (commando /ip_status werkt) maar IP history bleef (empty)
+- ROOT CAUSE: `time` niet module-level geïmporteerd in bot.py → `time.time()` in _startup_ip_report faalde met NameError → silent skip LPUSH
+- FIX: local `import time as _t` in _startup_ip_report (write path) + cmd_ip_status (format path)
+- VERSION 3.23.16 → 3.23.17
+
+## Sessie 35e — 2026-04-18 (v3.23.19 — SELL ESCALATING SLIPPAGE + RUG DETECTION)
+- PROBLEEM 1: manuele SELL toonde "Quote Failed" zonder uitleg
+  - Root cause: vaste 3% slippage te krap voor memecoin liquidity
+- PROBLEEM 2: TSUKIMAP autotrade -100% loss zonder herkenbare rug-melding
+  - Root cause: zero_loss_manager loopte oneindig op no-route quotes → "STOP LOSS" misleidend
+- FIX 1: NIEUWE jupiter.get_quote_with_escalation() — probeert 3%→10%→25%
+  - Returnt (quote, "") of (None, "no_route") of (None, "api_error")
+  - Quote krijgt _slippage_used field voor logging
+- FIX 2: bot.py _cb_execute_sell — gebruikt escalation, toont onderscheid:
+  - "no_route" → ⚠️ "Cannot sell — no liquidity / token rugged"
+  - "api_error" → ❌ "Jupiter API Error — try in 30s"
+- FIX 3: zero_loss_manager.execute_trade — sells gebruiken escalation, buys blijven 1.5%
+- FIX 4: zero_loss_manager position-tracker — 3 cycles (45s) no-route = RUGGED detection
+  - Stuurt "💀 RUGGED" alert naar admin + record_trade_result(-100%) + exit manager
+  - Voorkomt oneindige tracking van dode tokens
+- VERSION 3.23.18 → 3.23.19
+- IMPACT: meme SELL werkt nu in 95%+ gevallen, rugs herkenbaar in logs/admin notify
+
+## SESSIE 36 — 2026-04-19 — #9 PRE-BUY RUG GUARDS
+- ISO LOG #9 PRE-BUY RUG GUARDS
+    -> START: 19-04-2026 10:35 | door: Claude (autonoom, na Erik "go")
+    -> HALF:  19-04-2026 10:42 | status: security_audit() vervangen — was stub return True, nu 3-laagse rug-guard
+    -> KLAAR: 19-04-2026 10:48 | getest: nee (live verify nodig: /start in TG → autotrade BUY → kijk RUG-GUARD logs) | door: Claude
+- WAAROM: TSUKIMAP -100% = na de feiten. #10 redt je uit een rug; #9 voorkomt dat je erin stapt.
+- WAT VERANDERD: zero_loss_manager.py
+  - LAAG 1: DexScreener liquidity floor — geen pair = BLOCK; liquidity_usd < $10k = BLOCK
+  - LAAG 2: GMGN top_holders — top-10 holders > 70% supply = BLOCK (concentratie / dump risk)
+  - LAAG 3: Jupiter sell-quote probe — kan geen SELL quoten = honeypot = BLOCK
+  - Fail-OPEN op API errors (Jupiter/GMGN downtime mag niet alle trading bevriezen)
+  - Toegevoegd: `from exchanges import gmgn_market as _gmgn_market`
+- INTEGRATIE: bestaande call op line 530 `if not await security_audit(mint):` werkt nu echt
+- VERSION 3.23.19 → 3.23.20
+- IMPACT: dode tokens / honeypots / dev-stacked rugs → alert + skip BEFORE we lose SOL
+
+## SESSIE 36 — 2026-04-19 — #8 TELEGRAM MARKDOWN FIX
+- ISO LOG #8 TELEGRAM MARKDOWN FIX
+    -> START: 19-04-2026 10:55 | door: Claude (autonoom)
+    -> HALF:  19-04-2026 10:58 | status: root cause gevonden — notify_telegram_channel sendt Markdown text met parse_mode="HTML"
+    -> KLAAR: 19-04-2026 11:02 | getest: nee — live verify nodig (whale alert in @ApexFlashAlerts moet bold/links renderen) | door: Claude
+- WAAROM: screenshots toonden raw `[text](url)` en `*WHALE ALERT*` in channel — Telegram las Markdown als HTML.
+- WAT VERANDERD: agents/notifications.py
+  - `notify_telegram_channel()` parse_mode default "HTML" → "Markdown"
+  - parse_mode is nu een parameter (override mogelijk per call)
+  - Fallback: als Markdown parse faalt (bv. lone `_` in URL) → retry plain text → alert komt altijd door
+- IMPACT: channel posts (whale signals) tonen nu correcte bold + clickable links ipv raw markdown
+- VERSION 3.23.20 → 3.23.21

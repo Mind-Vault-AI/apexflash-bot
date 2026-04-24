@@ -25,7 +25,12 @@ import os
 from datetime import datetime, timezone, timedelta
 
 import aiohttp
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    _GENAI_OK = True
+except Exception:
+    genai = None
+    _GENAI_OK = False
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -357,8 +362,14 @@ async def notify_signal(signal: dict, bot=None) -> None:
             bot_un = bot_info.username if bot_info else (BOT_USERNAME or "apexflash_bot")
             
             from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+            # Deep-link to SOL if signal mentions SOL, else trending tokens.
+            # Without ?start= param the button opens the bot with no action (bug fix).
+            SOL_MINT = "So11111111111111111111111111111111111111112"
+            assets = signal.get("assets", [])
+            has_sol = any("SOL" in str(a).upper() for a in assets)
+            start_param = f"buy_{SOL_MINT}" if has_sol else "hot"
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("⚡ Trade Now", url=f"https://t.me/{bot_un}"),
+                InlineKeyboardButton("⚡ Trade Now", url=f"https://t.me/{bot_un}?start={start_param}"),
                 InlineKeyboardButton("📊 More Signals", url="https://apexflash.pro"),
             ]])
             await bot.send_message(
