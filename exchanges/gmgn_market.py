@@ -2,10 +2,11 @@
 ApexFlash — GMGN.AI Market Data Client
 =======================================
 Read-only market endpoints: trending, kline, top traders/holders, user wallets.
-Auth: standard (API Key + timestamp + client_id only — no signature needed).
+Auth: Ed25519 signature required (GMGN requires signing for ALL endpoints).
 
-SSOT: GMGN_API_KEY in MASTER_ENV_APEXFLASH.txt (Box Drive)
+SSOT: GMGN_API_KEY + GMGN_PRIVATE_KEY in MASTER_ENV_APEXFLASH.txt (Box Drive)
 """
+import base64
 import json
 import logging
 import os
@@ -17,14 +18,34 @@ from typing import Optional
 
 logger = logging.getLogger("GMGNMarket")
 
-_API_KEY  = os.getenv("GMGN_API_KEY", "").strip()
-_BASE_URL = "https://gmgn.ai"
+_API_KEY     = os.getenv("GMGN_API_KEY", "").strip()
+_PRIVATE_KEY = os.getenv("GMGN_PRIVATE_KEY", "").strip()
+_BASE_URL    = "https://gmgn.ai"
+_privkey_obj = None
+
+
+def _load_privkey():
+    global _privkey_obj
+    if _privkey_obj is not None:
+        return _privkey_obj
+    if not _PRIVATE_KEY:
+        raise RuntimeError("GMGN_PRIVATE_KEY not set")
+    from cryptography.hazmat.primitives.serialization import load_der_private_key
+    der = base64.b64decode(_PRIVATE_KEY)
+    _privkey_obj = load_der_private_key(der, password=None)
+    return _privkey_obj
+
+
+def _sign(path_and_query: str) -> str:
+    key = _load_privkey()
+    sig_bytes = key.sign(path_and_query.encode("utf-8"))
+    return base64.urlsafe_b64encode(sig_bytes).decode("utf-8").rstrip("=")
 
 
 def _auth_params() -> dict:
     return {
         "api_key":   _API_KEY,
-        "timestamp": str(int(time.time())),
+        "timestamp": str(int(time.time() * 1000)),
         "client_id": str(uuid.uuid4()),
     }
 
@@ -44,20 +65,21 @@ def _get(path: str, params: dict = None) -> dict:
     if not _API_KEY:
         raise RuntimeError("GMGN_API_KEY not set")
     all_params = {**(params or {}), **_auth_params()}
-    qs = urllib.parse.urlencode(all_params)
-    url = f"{_BASE_URL}{path}?{qs}"
-    req = urllib.request.Request(url, headers={"Content-Type": "application/json"})
+    qs = urllib.parse.urlencode(sorted(all_params.items()))
+    path_and_query = f"{path}?{qs}"
+    sig = _sign(path_and_query)
+    url = f"{_BASE_URL}{path_and_query}"
+    req = urllib.request.Request(url, headers={
+        "X-API-Signature": sig,
+        "Content-Type": "application/json",
+    })
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read())
     except urllib.error.HTTPError as e:
         if e.code == 403:
             ip = _get_outbound_ip()
-            logger.error(
-                f"GMGN 403 FORBIDDEN — outbound IP [{ip}] not whitelisted. "
-                f"Add it at gmgn.ai → API settings → Trusted IPs."
-            )
-            # Store in Redis for /myip Telegram command
+            logger.error(f"GMGN 403 — IP [{ip}] or signature rejected")
             try:
                 from core.persistence import _get_redis
                 r_conn = _get_redis()
@@ -65,7 +87,7 @@ def _get(path: str, params: dict = None) -> dict:
                     r_conn.setex("apexflash:render:outbound_ip", 3600, ip)
             except Exception:
                 pass
-            raise RuntimeError(f"GMGN 403 — IP {ip} not whitelisted")
+            raise RuntimeError(f"GMGN 403 — IP {ip} or signature issue")
         raise RuntimeError(f"GMGN HTTP {e.code}: {e.reason}")
     if data.get("code") != 0:
         raise RuntimeError(f"GMGN error {data.get('code')}: {data.get('message', data)}")
@@ -76,12 +98,14 @@ def _post(path: str, body: dict, params: dict = None) -> dict:
     if not _API_KEY:
         raise RuntimeError("GMGN_API_KEY not set")
     all_params = {**(params or {}), **_auth_params()}
-    qs = urllib.parse.urlencode(all_params)
-    url = f"{_BASE_URL}{path}?{qs}"
+    qs = urllib.parse.urlencode(sorted(all_params.items()))
+    path_and_query = f"{path}?{qs}"
+    sig = _sign(path_and_query)
+    url = f"{_BASE_URL}{path_and_query}"
     payload = json.dumps(body).encode()
     req = urllib.request.Request(
         url, data=payload,
-        headers={"Content-Type": "application/json"},
+        headers={"X-API-Signature": sig, "Content-Type": "application/json"},
         method="POST"
     )
     try:
@@ -90,8 +114,8 @@ def _post(path: str, body: dict, params: dict = None) -> dict:
     except urllib.error.HTTPError as e:
         if e.code == 403:
             ip = _get_outbound_ip()
-            logger.error(f"GMGN 403 — IP {ip} not whitelisted")
-            raise RuntimeError(f"GMGN 403 — IP {ip} not whitelisted")
+            logger.error(f"GMGN 403 — IP {ip} or signature rejected")
+            raise RuntimeError(f"GMGN 403 — IP {ip} or signature issue")
         raise RuntimeError(f"GMGN HTTP {e.code}: {e.reason}")
     if data.get("code") != 0:
         raise RuntimeError(f"GMGN error {data.get('code')}: {data.get('message', data)}")
@@ -177,14 +201,14 @@ def rank(
         "limit": str(limit),
         "order_by": order_by,
     }
-    qs_parts = [urllib.parse.urlencode(params)]
+    qs_parts = [urllib.parse.urlencode(sorted({**params, **_auth_params()}.items()))]
     if filters:
         qs_parts.append("&".join(f"filters={f}" for f in filters))
-    # Build manually for multi-value params
-    auth = _auth_params()
-    all_qs = "&".join(qs_parts + [urllib.parse.urlencode(auth)])
-    url = f"{_BASE_URL}/v1/market/rank?{all_qs}"
-    req = urllib.request.Request(url, headers={"Content-Type": "application/json"})
+    all_qs = "&".join(qs_parts)
+    path_and_query = f"/v1/market/rank?{all_qs}"
+    sig = _sign(path_and_query)
+    url = f"{_BASE_URL}{path_and_query}"
+    req = urllib.request.Request(url, headers={"X-API-Signature": sig, "Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as r:
         data = json.loads(r.read())
     if data.get("code") != 0:
@@ -265,7 +289,7 @@ def wallet_activity(
 
 
 def is_configured() -> bool:
-    return bool(_API_KEY)
+    return bool(_API_KEY and _PRIVATE_KEY)
 
 
 def format_rank_signal(token: dict) -> str:
