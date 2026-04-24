@@ -41,6 +41,13 @@ GRADE_A_PRICE_CHANGE = float(os.getenv("WHALE_GRADE_A_PCT", "5.0"))
 GRADE_S_VOLUME_USD   = float(os.getenv("WHALE_GRADE_S_VOL", "100000"))
 GRADE_A_VOLUME_USD   = float(os.getenv("WHALE_GRADE_A_VOL", "20000"))
 
+# ─── Minimum grade to fire a signal (default A — B excluded to protect win rate) ─
+_GRADE_RANK = {"S": 0, "A": 1, "B": 2}
+WHALE_MIN_GRADE = os.getenv("WHALE_MIN_GRADE", "A")
+
+def _grade_passes(grade: Optional[str]) -> bool:
+    return _GRADE_RANK.get(grade, 99) <= _GRADE_RANK.get(WHALE_MIN_GRADE, 1)
+
 # ─── Auto-trade (Grade S only, disabled by default) ────────────────────────────
 
 AUTO_TRADE_ENABLED = os.getenv("WHALE_AUTO_TRADE", "false").lower() == "true"
@@ -285,6 +292,8 @@ async def _dexscreener_scan(r) -> list:
                     else:
                         continue
 
+                    if not _grade_passes(grade):
+                        continue
                     if r and _already_signalled(r, addr, grade):
                         continue
 
@@ -342,7 +351,7 @@ async def whale_scan_loop():
                     for token in tokens:
                         grade = _grade_rank_token(token)
                         mint  = token.get("address", "")
-                        if not grade or not mint:
+                        if not grade or not mint or not _grade_passes(grade):
                             continue
                         if r and _already_signalled(r, mint, grade):
                             continue
@@ -359,7 +368,7 @@ async def whale_scan_loop():
                         for token in trench.get(cat, []):
                             grade = _grade_trenches_token(token, cat)
                             mint  = token.get("address", "")
-                            if not grade or not mint:
+                            if not grade or not mint or not _grade_passes(grade):
                                 continue
                             if r and _already_signalled(r, mint, grade):
                                 continue
