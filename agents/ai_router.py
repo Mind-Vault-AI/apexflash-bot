@@ -68,7 +68,7 @@ MODELS = {
 # Job → ordered list of model keys
 # Groq first: free, 14400 req/day, ultra-fast. Gemini when key is valid.
 JOB_CHAINS: Dict[str, List[str]] = {
-    "ADVISOR":    ["groq-llama",  "cerebras-llama",  "gemini-flash",    "openrouter-qwen",   "openrouter-llama", "nebius-llama",  "deepseek"],
+    "ADVISOR":    ["groq-llama",  "groq-fast",  "cerebras-llama",  "gemini-flash",  "gemini-flash-15",  "openrouter-ds",  "openrouter-qwen",   "openrouter-llama", "nebius-llama",  "deepseek"],
     "CEO":        ["groq-llama",  "cerebras-llama",  "openrouter-ds",   "gemini-flash",      "openrouter-qwen",  "nebius-llama",  "deepseek"],
     "NEWS":       ["groq-fast",   "cerebras-llama",  "groq-llama",      "gemini-flash",      "openrouter-llama", "nebius-mistral","deepseek"],
     "MARKETING":  ["groq-llama",  "cerebras-llama",  "gemini-flash-15", "openrouter-qwen",   "openrouter-llama", "nebius-llama",  "deepseek"],
@@ -241,11 +241,19 @@ async def complete(
 
             low = msg.lower()
             if "api_key_invalid" in low or "invalid api key" in low or "api key not found" in low:
-                _BLOCKED_UNTIL[model_key] = now + COOLDOWN_KEYINV
-            elif "429" in low or "resourceexhausted" in low or "rate" in low:
-                _BLOCKED_UNTIL[model_key] = now + COOLDOWN_RATE
+                _BLOCKED_UNTIL[model_key] = now + COOLDOWN_KEYINV          # 24h
+            elif "402" in msg or "payment required" in low:
+                _BLOCKED_UNTIL[model_key] = now + COOLDOWN_KEYINV          # 24h — no credits
+            elif "403" in msg or "forbidden" in low:
+                _BLOCKED_UNTIL[model_key] = now + 3600                     # 1h — key revoked/suspended
+            elif "exceeded your current quota" in low or ("quota" in low and "429" in msg):
+                _BLOCKED_UNTIL[model_key] = now + 86400                    # 24h — daily quota
+            elif "429" in msg or "resourceexhausted" in low or "rate_limit" in low:
+                _BLOCKED_UNTIL[model_key] = now + COOLDOWN_RATE            # 5 min — RPM
+            elif "400" in msg or "bad request" in low:
+                _BLOCKED_UNTIL[model_key] = now + COOLDOWN_NOTFOUND        # 1h — wrong model/params
             elif "notfound" in low or "not found" in low or "not supported" in low:
-                _BLOCKED_UNTIL[model_key] = now + COOLDOWN_NOTFOUND
+                _BLOCKED_UNTIL[model_key] = now + COOLDOWN_NOTFOUND        # 1h
 
     reason = " | ".join(errors)
     logger.error("AIRouter [%s] ALL models failed: %s", job, reason)
