@@ -4,7 +4,7 @@
 
 ## LIVE STATE (sessie 40 — 2026-04-26)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.30
+- Version: v3.23.31
 - Fix 1: Sell blocked for admin — accepted_terms was False in Redis → terms gate blocked all admin sells
 - Fix 2: AI tier auto-switch — premium_expires not checked → expired users kept Elite features forever
 - Fix 3: _cb_accept_terms now calls _persist() → terms acceptance survives restarts
@@ -295,3 +295,16 @@ Sync bot→Render:  python C:\Users\erik_\source\repos\apexflash-bot\sync_render
   - Fallback: als Markdown parse faalt (bv. lone `_` in URL) → retry plain text → alert komt altijd door
 - IMPACT: channel posts (whale signals) tonen nu correcte bold + clickable links ipv raw markdown
 - VERSION 3.23.20 → 3.23.21
+
+## SESSIE 38 — 2026-04-26 — MVAI-SENSEI EMPTY RESPONSE + ENV NAME MISMATCH
+- ISO LOG #MVAI-SENSEI FIX
+    -> START: 26-04-2026 | door: Claude
+    -> KLAAR: 26-04-2026 | getest: nee — live verify nodig: /ai_status in TG → check MVAI-SENSEI: ✅
+- ROOT CAUSE 1: MVAI-SENSEI retourneert {"response":"..."} maar code checkte alleen choices/content → altijd leeg
+- ROOT CAUSE 2: Box Drive master + ApexFlashAPI.env gebruikt GROQ-API (koppelteken) maar code leest GROQ_API_KEY → alle providers "no key" → MVAI-SENSEI enige fallback → faalde ook → SLA 0%
+- FIX: agents/ai_router.py — _call_mvai_sensei leest nu data.get("response") eerst
+- FIX: agents/ai_router.py — tolerante key lookup: GROQ_API_KEY OR GROQ-API OR GROQ
+- FIX: sync_render_env.py — extra_keys nu met hyphen→underscore fallbacks voor alle AI providers
+- FIX: .env — correct-genaamde keys toegevoegd (GROQ_API_KEY, CEREBRAS_API_KEY, OPENROUTER_API_KEY, GMGN_API_KEY)
+- VERSION 3.23.30 → 3.23.31
+- ACTIE VOOR ERIK: run python sync_render_env.py (of voeg keys handmatig toe in Render dashboard)

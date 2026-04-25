@@ -39,12 +39,13 @@ except Exception:
 logger = logging.getLogger("AIRouter")
 
 # ─── Keys ────────────────────────────────────────────────────────────────────
-_GEMINI_KEY      = os.getenv("GEMINI_API_KEY", "").strip()
-_DEEPSEEK_KEY    = os.getenv("DEEPSEEK_API_KEY", "").strip()
-_NEBIUS_KEY      = os.getenv("NEBIUS_API_KEY", "").strip()
-_GROQ_KEY        = os.getenv("GROQ_API_KEY", "").strip()
-_OPENROUTER_KEY  = os.getenv("OPENROUTER_API_KEY", "").strip()
-_CEREBRAS_KEY    = os.getenv("CEREBRAS_API_KEY", "").strip()
+# Tolerant lookup: code uses _API_KEY suffix; Box Drive master uses hyphen names (GROQ-API etc.)
+_GEMINI_KEY      = (os.getenv("GEMINI_API_KEY")    or os.getenv("GEMINI-API")     or os.getenv("GEMINI",     "")).strip()
+_DEEPSEEK_KEY    = (os.getenv("DEEPSEEK_API_KEY")  or os.getenv("DEEPSEEK-API")   or os.getenv("DEEPSEEK",   "")).strip()
+_NEBIUS_KEY      = (os.getenv("NEBIUS_API_KEY")    or os.getenv("NEBIUS-API")     or os.getenv("NEBIUS",     "")).strip()
+_GROQ_KEY        = (os.getenv("GROQ_API_KEY")      or os.getenv("GROQ-API")       or os.getenv("GROQ",       "")).strip()
+_OPENROUTER_KEY  = (os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENROUTER-API") or os.getenv("OPENROUTER", "")).strip()
+_CEREBRAS_KEY    = (os.getenv("CEREBRAS_API_KEY")  or os.getenv("CEREBRAS-API")   or os.getenv("CEREBRAS",   "")).strip()
 # MVAI-SENSEI: internal AI router — no API key needed, always available
 _MVAI_SENSEI_URL = os.getenv("MVAI_SENSEI_URL", "https://mvai-sensei.onrender.com").strip().rstrip("/")
 
@@ -185,14 +186,15 @@ async def _call_mvai_sensei(prompt: str) -> str:
         with urllib.request.urlopen(req, timeout=45) as r:
             return json.loads(r.read())
     data = await loop.run_in_executor(None, _do)
-    # MVAI-SENSEI returns {"choices":[{"message":{"content":"..."}}]} or {"content":"..."}
+    # MVAI-SENSEI returns {"response": "..."} (ChatResponse model) — also support OpenAI compat fallback
     text = (
-        data.get("choices", [{}])[0].get("message", {}).get("content")
+        data.get("response")
         or data.get("content")
+        or (data.get("choices") or [{}])[0].get("message", {}).get("content")
         or ""
     ).strip()
     if not text:
-        raise ValueError("mvai-sensei: empty response")
+        raise ValueError(f"mvai-sensei: empty response (keys: {list(data.keys())})")
     return text
 
 

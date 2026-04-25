@@ -74,9 +74,17 @@ def sync():
         "REDDIT_USERNAME": os.getenv("REDDIT_USERNAME", ""),
         "REDDIT_PASSWORD": os.getenv("REDDIT_PASSWORD", ""),
         # GMGN.AI — critical for whale scanner (bot silently disabled without these)
-        # Source: C:/Users/erik_/.config/gmgm/.env (GMGM_API + GMGM_PRIVATE_KEY → renamed)
-        "GMGN_API_KEY": os.getenv("GMGN_API_KEY", ""),
-        "GMGN_PRIVATE_KEY": os.getenv("GMGN_PRIVATE_KEY", ""),
+        # Local file uses GMGM_ prefix (M typo) — fall back to it so sync works without manual rename
+        "GMGN_API_KEY":      os.getenv("GMGN_API_KEY")      or os.getenv("GMGM_API", ""),
+        "GMGN_PRIVATE_KEY":  os.getenv("GMGN_PRIVATE_KEY")  or os.getenv("GMGM_PRIVATE_KEY", ""),
+        # AI router keys — Box Drive master uses hyphen names (GROQ-API etc.) not underscore
+        # These extra_keys ensure Render always has the correct underscore names
+        "GROQ_API_KEY":        os.getenv("GROQ_API_KEY")        or os.getenv("GROQ-API",        ""),
+        "CEREBRAS_API_KEY":    os.getenv("CEREBRAS_API_KEY")    or os.getenv("CEREBRAS-API",    ""),
+        "OPENROUTER_API_KEY":  os.getenv("OPENROUTER_API_KEY")  or os.getenv("OPENROUTER-API",  ""),
+        "DEEPSEEK_API_KEY":    os.getenv("DEEPSEEK_API_KEY")    or os.getenv("DEEPSEEK-API",    ""),
+        "NEBIUS_API_KEY":      os.getenv("NEBIUS_API_KEY")      or os.getenv("NEBIUS-API",      ""),
+        "GEMINI_API_KEY":      os.getenv("GEMINI_API_KEY")      or os.getenv("GEMINI-API",      ""),
         "GMGN_WALLET_ADDRESS": os.getenv("GMGN_WALLET_ADDRESS", "CsgcvMXFfLTZm8u8a6Eds1GnUXTcpPHV7Cho5ueUApvi"),
         # Discord webhook for Grade A/S signals
         "DISCORD_WEBHOOK_URL": os.getenv("DISCORD_WEBHOOK_URL", ""),

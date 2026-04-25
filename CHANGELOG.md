@@ -3,6 +3,21 @@
 <!-- Format: ## [version] YYYY-MM-DD — one-line summary -->
 <!-- Rule: bump VERSION file + bot.py VERSION constant on every release -->
 
+## [3.23.31] 2026-04-26 — fix: MVAI-SENSEI empty response + env var name mismatch
+### fix: MVAI-SENSEI always returned empty response (Advisor SLA stuck at 0%)
+- Root cause: MVAI-SENSEI `/v1/chat` returns `{"response":"..."}` (FastAPI ChatResponse model)
+- `ai_router.py::_call_mvai_sensei`: was checking `choices[0].message.content` + `content` — never `response` → always empty
+- Fix: check `data.get("response")` FIRST, then fall back to OpenAI-compat fields
+### fix: AI provider keys never loaded — env var name mismatch (ALL providers "no key" in logs)
+- Root cause: Box Drive master + ApexFlashAPI.env uses `GROQ-API`, `CEREBRAS-API`, `OPENROUTER-API` (hyphen)
+- Code used `os.getenv("GROQ_API_KEY")` (underscore + _KEY suffix) → always empty → all providers skipped
+- `ai_router.py`: tolerant fallback lookups — checks `GROQ_API_KEY` OR `GROQ-API` OR `GROQ`
+- `.env`: added correct-named keys (GROQ_API_KEY, CEREBRAS_API_KEY, OPENROUTER_API_KEY)
+- `sync_render_env.py`: extra_keys now includes all AI provider keys with hyphen→underscore fallbacks
+- `sync_render_env.py`: GMGN fix — `GMGM_API` (M typo) → `GMGN_API_KEY` fallback
+### chore
+- VERSION 3.23.30 → 3.23.31
+
 ## [3.23.30] 2026-04-26 — fix: AI advisor 0% SLA + CONFLICT IP flip-flop
 ### fix: AI Advisor SLA 0/68 — ALL providers banned/expired
 - `ai_router.py`: MVAI-SENSEI added as ultimate fallback to all JOB_CHAINS (no key needed, always available)
