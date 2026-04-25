@@ -235,13 +235,13 @@ def get_advisor_intro(use_fallback: bool = False) -> str:
         return (
             "🤖 *ApexFlash AI Advisor (Elite)*\n"
             "━━━━━━━━━━━━━━━━━━━━━\n"
-            "Gemini temporarily unavailable. Fallback coaching active.\n\n"
+            "AI Advisor temporarily unavailable. Fallback coaching active.\n\n"
         )
 
     return (
         "🤖 *ApexFlash AI Advisor (Elite)*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "I have analyzed your last 15 trades using Gemini Intelligence.\n\n"
+        "I have analyzed your last 15 trades using AI Intelligence.\n\n"
         "_My mission is to turn your trades into institutional alpha._\n\n"
     )
 
