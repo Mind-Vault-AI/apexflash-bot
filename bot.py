@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.32"
+VERSION = "3.23.33"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -692,10 +692,31 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         user["referred_by"] = referrer_id
                         referrer = get_user(referrer_id)
                         referrer["referral_count"] = referrer.get("referral_count", 0) + 1
-                        # KAIZEN: Viral Reward Loop (v3.15.2) - 24h Pro for every referral
+                        _cur = referrer.get("premium_expires") or ""
+                        try:
+                            _base = datetime.fromisoformat(_cur) if _cur else datetime.now(timezone.utc)
+                            if _base < datetime.now(timezone.utc):
+                                _base = datetime.now(timezone.utc)
+                        except (ValueError, TypeError):
+                            _base = datetime.now(timezone.utc)
                         referrer["tier"] = "pro"
-                        referrer["tier_expires"] = (datetime.now(timezone.utc).timestamp() + 86400)
-                        logger.info(f"Referral+Reward: user {uid} referred by {referrer_id}. Referrer awarded 24h Pro.")
+                        referrer["premium_expires"] = (_base + timedelta(days=7)).isoformat()
+                        _persist()
+                        logger.info(f"Referral+Reward: user {uid} → referrer {referrer_id} +7d Pro.")
+                        try:
+                            await context.bot.send_message(
+                                chat_id=referrer_id,
+                                text=(
+                                    "🎉 *Iemand gebruikte jouw referral link!*\n"
+                                    "━━━━━━━━━━━━━━━━━━━━━\n"
+                                    f"Je hebt *7 dagen Pro* ontvangen.\n"
+                                    f"Totaal uitgenodigd: *{referrer['referral_count']}*\n\n"
+                                    "Meer vrienden = meer Pro tijd! 🚀"
+                                ),
+                                parse_mode="Markdown",
+                            )
+                        except Exception:
+                            pass
                 except (ValueError, IndexError):
                     pass
             else:
@@ -715,7 +736,31 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     user["referred_by"] = referrer_id
                     referrer = get_user(referrer_id)
                     referrer["referral_count"] = referrer.get("referral_count", 0) + 1
-                    logger.info(f"Referral: user {uid} referred by {referrer_id}")
+                    _cur2 = referrer.get("premium_expires") or ""
+                    try:
+                        _base2 = datetime.fromisoformat(_cur2) if _cur2 else datetime.now(timezone.utc)
+                        if _base2 < datetime.now(timezone.utc):
+                            _base2 = datetime.now(timezone.utc)
+                    except (ValueError, TypeError):
+                        _base2 = datetime.now(timezone.utc)
+                    referrer["tier"] = "pro"
+                    referrer["premium_expires"] = (_base2 + timedelta(days=7)).isoformat()
+                    _persist()
+                    logger.info(f"Referral+Reward: user {uid} → referrer {referrer_id} +7d Pro.")
+                    try:
+                        await context.bot.send_message(
+                            chat_id=referrer_id,
+                            text=(
+                                "🎉 *Iemand gebruikte jouw referral link!*\n"
+                                "━━━━━━━━━━━━━━━━━━━━━\n"
+                                f"Je hebt *7 dagen Pro* ontvangen.\n"
+                                f"Totaal uitgenodigd: *{referrer['referral_count']}*\n\n"
+                                "Meer vrienden = meer Pro tijd! 🚀"
+                            ),
+                            parse_mode="Markdown",
+                        )
+                    except Exception:
+                        pass
             except (ValueError, IndexError):
                 pass
 
@@ -4511,7 +4556,26 @@ async def _cb_execute_sell(query, user, context, data):
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         )
+        # Viral + affiliate hook — user just won, best moment to share/convert
+        _bot_un_s = context.bot.username or "ApexFlashBot"
+        _ref_link_s = f"https://t.me/{_bot_un_s}?start=ref_{query.from_user.id}"
+        _share_url_s = f"https://t.me/share/url?url={_ref_link_s}&text=Net%20SOL%20gemaakt%20met%20ApexFlash!%20%F0%9F%9A%80%20Gratis%20mee%20traden"
+        _aff = AFFILIATE_LINKS.get("bitunix", {})
+        _aff_url = _aff.get("url", "")
+        text += (
+            "\n━━━━━━━━━━"
+            "━━━━━━━━━━━\n"
+            "\U0001f4a1 *Verdien meer:*\n"
+            f"\U0001f91d [Vriend uitnodigen]({_share_url_s}) → *7 dagen Pro gratis*\n"
+        )
+        if _aff_url:
+            text += f"\U0001f4b0 [Bitunix openen]({_aff_url}) → *50% fee terugverdienen*\n"
         kb = [
+            [InlineKeyboardButton("🤝 Deel & Verdien Pro", url=_share_url_s)],
+        ]
+        if _aff_url:
+            kb.append([InlineKeyboardButton("💰 Bitunix — 50% Fee Rebate", url=_aff_url)])
+        kb += [
             [InlineKeyboardButton("\U0001f4bc View Wallet", callback_data="trade_wallet")],
             [_back_main()[0]],
         ]

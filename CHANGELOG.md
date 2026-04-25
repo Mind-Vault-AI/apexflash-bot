@@ -3,6 +3,19 @@
 <!-- Format: ## [version] YYYY-MM-DD — one-line summary -->
 <!-- Rule: bump VERSION file + bot.py VERSION constant on every release -->
 
+## [3.23.33] 2026-04-26 — feat: viral referral loop + affiliate hook na sell success
+### feat: Pijler 2 — Virale referral loop (€1M groeimotor)
+- `bot.py::cmd_start ref_`: referrer krijgt nu +7 dagen Pro (was: 0 beloning) + directe Telegram notificatie
+- `bot.py::cmd_start buy_MINT_ref_`: fix `tier_expires` → `premium_expires` (reward werkte nooit)
+- Reward stapelt: referrer al Pro → verlengd; nieuw → upgrade. Elke referral = aantoonbare waarde.
+### feat: Pijler 3 — Affiliate + referral hook na sell success (beste conversiemoment)
+- `bot.py::_cb_execute_sell`: na "✅ Sell Successful" twee knoppen toegevoegd:
+  - "🤝 Deel & Verdien Pro" → Telegram share-link met referral tag
+  - "💰 Bitunix — 50% Fee Rebate" → affiliate deep-link
+- Gebruiker is op hoogtepunt (net gewonnen) → hoogste klikbereidheid
+### chore
+- VERSION 3.23.32 → 3.23.33
+
 ## [3.23.32] 2026-04-26 — fix: SL/TP wrong values killing win rate (1%/2% → 15%/50%)
 ### fix: CAT A — trading params too tight for Solana meme volatility
 - `sync_render_env.py`: STOP_LOSS_PCT 1.0 → 15.0 (1% stopped out by normal meme noise)
