@@ -3,6 +3,16 @@
 <!-- Format: ## [version] YYYY-MM-DD — one-line summary -->
 <!-- Rule: bump VERSION file + bot.py VERSION constant on every release -->
 
+## [3.23.30] 2026-04-26 — fix: AI advisor 0% SLA + CONFLICT IP flip-flop
+### fix: AI Advisor SLA 0/68 — ALL providers banned/expired
+- `ai_router.py`: MVAI-SENSEI added as ultimate fallback to all JOB_CHAINS (no key needed, always available)
+- `ai_router.py`: OpenRouter model slugs updated (deepseek-r1:free → deepseek-chat-v3-0324:free, qwen3-80b → qwen2.5-72b-instruct:free, gemini-1.5-flash → gemini-2.0-flash-lite)
+- Root cause: Groq/Cerebras 403 (keys banned), Gemini project denied, OpenRouter 404/400, DeepSeek 402 — none fixable by code; MVAI-SENSEI provides always-on fallback
+### fix: CONFLICT crash triggers Render restart → IP flip-flop every deploy
+- `bot.py _direct_poll_loop`: CONFLICT now does sleep(20) + sys.exit(0) instead of raise RuntimeError
+- RuntimeError caused Render to restart the old instance with a new IP; clean exit does not trigger restart
+- Stops the 74.220.51.250 ↔ 74.220.51.3 flip-flop on every deploy
+
 ## [3.23.29] 2026-04-26 — fix: sell blocked for admin + auto tier expiry
 ### fix: sell blocked for admin users (accepted_terms = false in Redis)
 - `get_user()`: admins now get `accepted_terms = True` automatically

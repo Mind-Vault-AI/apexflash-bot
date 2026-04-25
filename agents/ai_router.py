@@ -11,6 +11,7 @@ Providers (all free-tier / keys already on Render):
   - OpenRouter : openrouter.ai/api/v1    (free models: deepseek-r1, llama-3.3)
   - Nebius     : api.studio.nebius.com/v1 (OpenAI-compat, free, open models)
   - DeepSeek   : api.deepseek.com  (OpenAI-compat, free tier 6M tok/day)
+  - MVAI-SENSEI: mvai-sensei.onrender.com (MVAI internal router — ultimate fallback, no key needed)
 
 Job types → priority chains:
   ADVISOR    : trade coaching / psychological analysis  → fast + smart
@@ -44,6 +45,8 @@ _NEBIUS_KEY      = os.getenv("NEBIUS_API_KEY", "").strip()
 _GROQ_KEY        = os.getenv("GROQ_API_KEY", "").strip()
 _OPENROUTER_KEY  = os.getenv("OPENROUTER_API_KEY", "").strip()
 _CEREBRAS_KEY    = os.getenv("CEREBRAS_API_KEY", "").strip()
+# MVAI-SENSEI: internal AI router — no API key needed, always available
+_MVAI_SENSEI_URL = os.getenv("MVAI_SENSEI_URL", "https://mvai-sensei.onrender.com").strip().rstrip("/")
 
 if _GEMINI_KEY:
     genai.configure(api_key=_GEMINI_KEY)
@@ -56,24 +59,25 @@ MODELS = {
     "groq-fast":        ("llama-3.1-8b-instant",                             "groq",       800),
     "cerebras-llama":   ("llama-3.3-70b",                                    "cerebras",   800),
     "gemini-flash":     ("gemini-2.5-flash",                                 "gemini",     800),
-    "gemini-flash-15":  ("gemini-1.5-flash",                                 "gemini",     800),
-    "openrouter-ds":    ("deepseek/deepseek-r1:free",                        "openrouter", 800),
+    "gemini-flash-15":  ("gemini-2.0-flash-lite",                            "gemini",     800),  # 1.5 is EOL
+    "openrouter-ds":    ("deepseek/deepseek-chat-v3-0324:free",              "openrouter", 800),  # r1:free → 404
     "openrouter-llama": ("meta-llama/llama-3.3-70b-instruct:free",           "openrouter", 800),
-    "openrouter-qwen":  ("qwen/qwen3-80b:free",                              "openrouter", 800),
+    "openrouter-qwen":  ("qwen/qwen2.5-72b-instruct:free",                   "openrouter", 800),  # qwen3-80b → 400
     "nebius-llama":     ("meta-llama/Meta-Llama-3.1-70B-Instruct",           "nebius",     800),
     "nebius-mistral":   ("mistralai/Mistral-Nemo-Instruct-2407",             "nebius",     800),
     "deepseek":         ("deepseek-chat",                                     "deepseek",   800),
+    "mvai-sensei":      ("auto",                                              "mvai",       800),  # MVAI internal router — no key needed
 }
 
 # Job → ordered list of model keys
 # Groq first: free, 14400 req/day, ultra-fast. Gemini when key is valid.
 JOB_CHAINS: Dict[str, List[str]] = {
-    "ADVISOR":    ["groq-llama",  "groq-fast",  "cerebras-llama",  "gemini-flash",  "gemini-flash-15",  "openrouter-ds",  "openrouter-qwen",   "openrouter-llama", "nebius-llama",  "deepseek"],
-    "CEO":        ["groq-llama",  "cerebras-llama",  "openrouter-ds",   "gemini-flash",      "openrouter-qwen",  "nebius-llama",  "deepseek"],
-    "NEWS":       ["groq-fast",   "cerebras-llama",  "groq-llama",      "gemini-flash",      "openrouter-llama", "nebius-mistral","deepseek"],
-    "MARKETING":  ["groq-llama",  "cerebras-llama",  "gemini-flash-15", "openrouter-qwen",   "openrouter-llama", "nebius-llama",  "deepseek"],
-    "CONVERSION": ["groq-fast",   "cerebras-llama",  "gemini-flash-15", "openrouter-llama",  "openrouter-qwen",  "nebius-mistral","deepseek"],
-    "GENERIC":    ["groq-llama",  "cerebras-llama",  "gemini-flash",    "openrouter-ds",     "openrouter-qwen",  "nebius-llama",  "deepseek"],
+    "ADVISOR":    ["groq-llama",  "groq-fast",  "cerebras-llama",  "gemini-flash",  "gemini-flash-15",  "openrouter-ds",  "openrouter-qwen",   "openrouter-llama", "nebius-llama",  "deepseek", "mvai-sensei"],
+    "CEO":        ["groq-llama",  "cerebras-llama",  "openrouter-ds",   "gemini-flash",      "openrouter-qwen",  "nebius-llama",  "deepseek", "mvai-sensei"],
+    "NEWS":       ["groq-fast",   "cerebras-llama",  "groq-llama",      "gemini-flash",      "openrouter-llama", "nebius-mistral","deepseek", "mvai-sensei"],
+    "MARKETING":  ["groq-llama",  "cerebras-llama",  "gemini-flash-15", "openrouter-qwen",   "openrouter-llama", "nebius-llama",  "deepseek", "mvai-sensei"],
+    "CONVERSION": ["groq-fast",   "cerebras-llama",  "gemini-flash-15", "openrouter-llama",  "openrouter-qwen",  "nebius-mistral","deepseek", "mvai-sensei"],
+    "GENERIC":    ["groq-llama",  "cerebras-llama",  "gemini-flash",    "openrouter-ds",     "openrouter-qwen",  "nebius-llama",  "deepseek", "mvai-sensei"],
 }
 
 # Per-model cooldown tracking (blocked until timestamp)
@@ -117,6 +121,7 @@ def get_health_snapshot() -> Dict[str, dict]:
 def _key_present(provider: str) -> bool:
     return {
         "gemini":     bool(_GEMINI_KEY),
+        "mvai":       True,  # MVAI-SENSEI needs no key
         "deepseek":   bool(_DEEPSEEK_KEY),
         "nebius":     bool(_NEBIUS_KEY),
         "groq":       bool(_GROQ_KEY),
@@ -164,10 +169,39 @@ async def _call_openai_compat(
     return text
 
 
+async def _call_mvai_sensei(prompt: str) -> str:
+    """Call MVAI-SENSEI internal AI router — no API key required, always available."""
+    payload = json.dumps({
+        "messages": [{"role": "user", "content": prompt}]
+    }).encode()
+    req = urllib.request.Request(
+        f"{_MVAI_SENSEI_URL}/v1/chat",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    loop = asyncio.get_event_loop()
+    def _do():
+        with urllib.request.urlopen(req, timeout=45) as r:
+            return json.loads(r.read())
+    data = await loop.run_in_executor(None, _do)
+    # MVAI-SENSEI returns {"choices":[{"message":{"content":"..."}}]} or {"content":"..."}
+    text = (
+        data.get("choices", [{}])[0].get("message", {}).get("content")
+        or data.get("content")
+        or ""
+    ).strip()
+    if not text:
+        raise ValueError("mvai-sensei: empty response")
+    return text
+
+
 async def _call_model(model_key: str, prompt: str) -> str:
     model_id, provider, max_tokens = MODELS[model_key]
     if provider == "gemini":
         return await _call_gemini(model_id, prompt, max_tokens)
+    elif provider == "mvai":
+        return await _call_mvai_sensei(prompt)
     elif provider == "deepseek":
         return await _call_openai_compat(
             "https://api.deepseek.com", _DEEPSEEK_KEY, model_id, prompt, max_tokens

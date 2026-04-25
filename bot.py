@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.29"
+VERSION = "3.23.30"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -10735,8 +10735,13 @@ def main() -> None:
                     if not data.get("ok"):
                         desc = data.get("description", "")
                         if "Conflict" in desc or "409" in str(resp.status_code):
-                            logger.error(f"[POLL] CONFLICT detected: {desc} — crashing for clean restart")
-                            raise RuntimeError(f"CONFLICT: {desc}")
+                            # Another instance is already polling (Render zero-downtime deploy).
+                            # Sleep and retry once — if still conflict, exit cleanly so Render
+                            # does NOT restart this old instance and assign a new IP.
+                            logger.warning(f"[POLL] CONFLICT detected: {desc} — waiting 20s before clean exit")
+                            await _asyncio.sleep(20)
+                            import sys as _sys
+                            _sys.exit(0)
                         logger.warning(f"[POLL] Non-ok response: {data}")
                         await _asyncio.sleep(5)
                         continue

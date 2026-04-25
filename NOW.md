@@ -4,10 +4,14 @@
 
 ## LIVE STATE (sessie 40 — 2026-04-26)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.29
+- Version: v3.23.30
 - Fix 1: Sell blocked for admin — accepted_terms was False in Redis → terms gate blocked all admin sells
 - Fix 2: AI tier auto-switch — premium_expires not checked → expired users kept Elite features forever
 - Fix 3: _cb_accept_terms now calls _persist() → terms acceptance survives restarts
+- Fix 4: AI Advisor 0% SLA — ALL providers banned/expired → MVAI-SENSEI added as ultimate fallback
+- Fix 5: CONFLICT crash → sys.exit(0) instead of RuntimeError → stops Render IP flip-flop
+- OPEN: Groq/Cerebras/Gemini API keys gebanned — Erik moet nieuwe keys aanmaken (geen code fix)
+- OPEN: GMGN IP 74.220.51.250 — update whitelist op gmgn.ai na elke Render restart
 - Status: 2x knop-fix — Trade Now + Start Trading knoppen in kanaal deden niets
 - Root cause v3.23.25: photo/text mismatch → knoppen dood na signal link
 - Root cause v3.23.26: Trade Now URL miste ?start= parameter → bot opende zonder actie
