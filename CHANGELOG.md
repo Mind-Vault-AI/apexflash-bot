@@ -3,6 +3,14 @@
 <!-- Format: ## [version] YYYY-MM-DD — one-line summary -->
 <!-- Rule: bump VERSION file + bot.py VERSION constant on every release -->
 
+## [3.23.29] 2026-04-26 — fix: sell blocked for admin + auto tier expiry
+### fix: sell blocked for admin users (accepted_terms = false in Redis)
+- `get_user()`: admins now get `accepted_terms = True` automatically
+- `_cb_accept_terms`: added `_persist()` immediately — terms were lost on restart
+### feat: auto tier expiry — free vs premium auto-switch on every user load
+- `get_user()`: if premium_expires has passed → tier = "free" + _persist()
+- Prevents expired premium users keeping elite features without renewing
+
 ## [3.23.24] 2026-04-20 — Tier-Board dashboard + /admin_* mobile companion
 ### feat: Static HTML Tier Board (promo/tier_board.html)
 - 3-lane escalation (T1 Erik CEO / T2 AI CEO / T3 Werkvloer) + 6 KPI cards + 12-row bottleneck matrix

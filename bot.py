@@ -22,7 +22,7 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.24"
+VERSION = "3.23.29"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -469,6 +469,7 @@ def get_user(user_id: int) -> dict:
     # Owner/admin must always keep full internal access
     if user_id in ADMIN_IDS:
         u["tier"] = "admin"
+        u["accepted_terms"] = True  # admins never blocked by terms gate
     if "wallet_pubkey" not in u:
         u["wallet_pubkey"] = ""
         u["wallet_secret_enc"] = ""
@@ -493,6 +494,17 @@ def get_user(user_id: int) -> dict:
         u["last_trade_date"] = ""
     if "active_chain" not in u:
         u["active_chain"] = "SOL"
+    # Auto-expire premium tiers: downgrade to free when premium_expires has passed
+    if u.get("tier") not in ("free", "admin"):
+        exp = u.get("premium_expires") or ""
+        if exp:
+            try:
+                if datetime.fromisoformat(exp) < datetime.now(timezone.utc):
+                    logger.info(f"Tier expired for user {user_id}: {u['tier']} → free")
+                    u["tier"] = "free"
+                    _persist()
+            except (ValueError, TypeError):
+                pass
     return u
 
 
@@ -3162,6 +3174,7 @@ async def _cb_trade_sell(query, user, context):
 async def _cb_accept_terms(query, user, context):
     """User accepts risk disclaimer."""
     user["accepted_terms"] = True
+    _persist()  # save immediately so acceptance survives restarts
     logger.info(f"Terms accepted: user {query.from_user.id}")
     await query.edit_message_text(
         "\u2705 *Terms Accepted*\n\n"

@@ -1,10 +1,13 @@
 # ApexFlash Bot — CURRENT STATUS
-# Last updated: 2026-04-22 (Sessie 39 — KRITIEKE FIX)
+# Last updated: 2026-04-26 (Sessie 40 — SELL + TIER EXPIRY FIX)
 # MAIN GOAL: EUR 1.000.000 netto vóór 29-03-2028
 
-## LIVE STATE (sessie 39 — 2026-04-21)
+## LIVE STATE (sessie 40 — 2026-04-26)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.28
+- Version: v3.23.29
+- Fix 1: Sell blocked for admin — accepted_terms was False in Redis → terms gate blocked all admin sells
+- Fix 2: AI tier auto-switch — premium_expires not checked → expired users kept Elite features forever
+- Fix 3: _cb_accept_terms now calls _persist() → terms acceptance survives restarts
 - Status: 2x knop-fix — Trade Now + Start Trading knoppen in kanaal deden niets
 - Root cause v3.23.25: photo/text mismatch → knoppen dood na signal link
 - Root cause v3.23.26: Trade Now URL miste ?start= parameter → bot opende zonder actie
