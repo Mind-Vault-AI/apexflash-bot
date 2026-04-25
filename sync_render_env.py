@@ -88,12 +88,12 @@ def sync():
         "GMGN_WALLET_ADDRESS": os.getenv("GMGN_WALLET_ADDRESS", "CsgcvMXFfLTZm8u8a6Eds1GnUXTcpPHV7Cho5ueUApvi"),
         # Discord webhook for Grade A/S signals
         "DISCORD_WEBHOOK_URL": os.getenv("DISCORD_WEBHOOK_URL", ""),
-        # GODMODE trading params
+        # GODMODE trading params — tuned for Solana meme volatility
         "TEST_TRADE_SOL": "0",
         "AUTONOMOUS_TRADE_AMOUNT_SOL": "0.05",
-        "BREAKEVEN_TRIGGER_PCT": "0.5",
-        "TAKE_PROFIT_PCT": "2.0",
-        "STOP_LOSS_PCT": "1.0",
+        "BREAKEVEN_TRIGGER_PCT": "10.0",  # trail SL at +10% (was 0.5 — too tight)
+        "TAKE_PROFIT_PCT": "50.0",        # TP at +50% (was 2.0 — memes need room)
+        "STOP_LOSS_PCT": "15.0",          # SL at -15% (was 1.0 — stopped out by noise)
         "MIN_SOL_RESERVE": "0.1",
         "AUTONOMOUS_COOLDOWN": "300",
         # Bot config

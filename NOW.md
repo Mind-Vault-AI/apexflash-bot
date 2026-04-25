@@ -4,7 +4,7 @@
 
 ## LIVE STATE (sessie 40 — 2026-04-26)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.31
+- Version: v3.23.32
 - Fix 1: Sell blocked for admin — accepted_terms was False in Redis → terms gate blocked all admin sells
 - Fix 2: AI tier auto-switch — premium_expires not checked → expired users kept Elite features forever
 - Fix 3: _cb_accept_terms now calls _persist() → terms acceptance survives restarts

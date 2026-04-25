@@ -3,6 +3,14 @@
 <!-- Format: ## [version] YYYY-MM-DD — one-line summary -->
 <!-- Rule: bump VERSION file + bot.py VERSION constant on every release -->
 
+## [3.23.32] 2026-04-26 — fix: SL/TP wrong values killing win rate (1%/2% → 15%/50%)
+### fix: CAT A — trading params too tight for Solana meme volatility
+- `sync_render_env.py`: STOP_LOSS_PCT 1.0 → 15.0 (1% stopped out by normal meme noise)
+- `sync_render_env.py`: TAKE_PROFIT_PCT 2.0 → 50.0 (2% too low — memes need room to run)
+- `sync_render_env.py`: BREAKEVEN_TRIGGER_PCT 0.5 → 10.0 (trail SL kicks in at +10%)
+- Root cause of 44.2% win rate vs 65% target — params matched code defaults that were already correct
+- Action required: run python sync_render_env.py to push new params to Render
+
 ## [3.23.31] 2026-04-26 — fix: MVAI-SENSEI empty response + env var name mismatch
 ### fix: MVAI-SENSEI always returned empty response (Advisor SLA stuck at 0%)
 - Root cause: MVAI-SENSEI `/v1/chat` returns `{"response":"..."}` (FastAPI ChatResponse model)
