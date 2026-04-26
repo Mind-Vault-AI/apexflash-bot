@@ -10357,6 +10357,16 @@ def main() -> None:
         except Exception as e:
             logger.warning(f"advisor_live_probe on startup failed: {e}")
 
+        # Startup KPI reconcile: restores platform:total_users + winrate counters
+        # from apexflash:users after every restart/redeploy so CEO briefing is accurate.
+        try:
+            from core.persistence import reconcile_kpis
+            _recon = reconcile_kpis()
+            logger.info("Startup reconcile: %d users, status=%s" % (
+                _recon.get("users_in_dict", 0), _recon.get("status")))
+        except Exception as _recon_err:
+            logger.warning("Startup reconcile failed (non-fatal): %s" % _recon_err)
+
         # CRITICAL: Alert admin if data was lost on restart
         if not users:
             for admin_id in ADMIN_IDS:
