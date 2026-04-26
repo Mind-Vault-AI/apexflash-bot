@@ -1465,14 +1465,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # Handle /hot refresh
     if data == "cmd_hot_refresh":
         await query.edit_message_text("🔥 *Refreshing...*", parse_mode="Markdown")
-        update.message = query.message
         await cmd_hot(update, context)
         return
 
     # Handle /market refresh
     if data == "cmd_market_refresh":
         await query.edit_message_text("📊 *Refreshing market...*", parse_mode="Markdown")
-        update.message = query.message
         await cmd_market(update, context)
         return
 
@@ -7144,7 +7142,7 @@ async def cmd_backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """🔥 Show trending Solana tokens by volume — DexScreener + DexPaprika."""
-    await update.message.reply_text("🔥 *Loading trending tokens...*", parse_mode="Markdown")
+    await update.effective_message.reply_text("🔥 *Loading trending tokens...*", parse_mode="Markdown")
 
     try:
         import aiohttp as _aiohttp
@@ -7183,14 +7181,14 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 timeout=_aiohttp.ClientTimeout(total=10),
             ) as resp:
                 if resp.status != 200:
-                    await update.message.reply_text("⚠️ Could not fetch trending data. Try again later.")
+                    await update.effective_message.reply_text("⚠️ Could not fetch trending data. Try again later.")
                     return
                 data = await resp.json()
 
         # Parse: extract unique tokens (skip SOL/USDC/USDT base pairs)
         pools = data.get("pools", data) if isinstance(data, dict) else data
         if not isinstance(pools, list) or not pools:
-            await update.message.reply_text("⚠️ No trending data available.")
+            await update.effective_message.reply_text("⚠️ No trending data available.")
             return
 
         # Skip stablecoins and base pairs
@@ -7244,7 +7242,7 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 break
 
         if not trending:
-            await update.message.reply_text("⚠️ No trending tokens found.")
+            await update.effective_message.reply_text("⚠️ No trending tokens found.")
             return
 
         # Build message
@@ -7284,7 +7282,7 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         kb_rows.append([InlineKeyboardButton("🔄 Refresh", callback_data="cmd_hot_refresh")])
         kb_rows.append([_back_main()[0]])
 
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             msg,
             reply_markup=InlineKeyboardMarkup(kb_rows),
             parse_mode="Markdown",
@@ -7292,7 +7290,7 @@ async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     except Exception as e:
         logger.error(f"cmd_hot error: {e}")
-        await update.message.reply_text("⚠️ Error loading trending tokens. Try again.")
+        await update.effective_message.reply_text("⚠️ Error loading trending tokens. Try again.")
 
 
 async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7302,9 +7300,9 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     # Fake a query-like object to reuse _cb_portfolio
     class FakeQuery:
         from_user = update.effective_user
-        message = update.message
+        message = update.effective_message
         async def edit_message_text(self, *a, **kw):
-            await update.message.reply_text(*a, **kw)
+            await update.effective_message.reply_text(*a, **kw)
     await _cb_portfolio(FakeQuery(), user, context)
 
 
@@ -7332,7 +7330,7 @@ async def cmd_policy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         "ApexFlash provides tools, not financial advice.\n\n"
         "\U0001f4e7 support@apexflash.pro"
     )
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("\U0001f310 Website", url="https://www.apexflash.pro")],
@@ -7346,7 +7344,7 @@ async def cmd_policy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """📊 Live market overview — gainers, losers, new tokens."""
-    await update.message.reply_text("📊 *Loading market data...*", parse_mode="Markdown")
+    await update.effective_message.reply_text("📊 *Loading market data...*", parse_mode="Markdown")
     update_last_active(update.effective_user.id)
 
     try:
@@ -7358,7 +7356,7 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                 timeout=_aiohttp.ClientTimeout(total=12),
             ) as resp:
                 if resp.status != 200:
-                    await update.message.reply_text("⚠️ Market data unavailable.")
+                    await update.effective_message.reply_text("⚠️ Market data unavailable.")
                     return
                 data = await resp.json()
 
@@ -7372,7 +7370,7 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
         pools = data.get("pools", data) if isinstance(data, dict) else data
         if not isinstance(pools, list):
-            await update.message.reply_text("⚠️ No market data.")
+            await update.effective_message.reply_text("⚠️ No market data.")
             return
 
         seen = set()
@@ -7432,14 +7430,14 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         kb.append([InlineKeyboardButton("🔄 Refresh", callback_data="cmd_market_refresh")])
         kb.append([_back_main()[0]])
 
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             msg, reply_markup=InlineKeyboardMarkup(kb),
             parse_mode="Markdown",
         )
 
     except Exception as e:
         logger.error(f"cmd_market error: {e}")
-        await update.message.reply_text("⚠️ Error loading market data.")
+        await update.effective_message.reply_text("⚠️ Error loading market data.")
 
 
 async def cmd_admin_marketing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -11,6 +11,17 @@ and PUTs ALL keys to Render. No keys can be lost.
 import json
 import os
 import urllib.request
+from pathlib import Path
+
+# Load .env from repo root so GMGN_API_KEY, GROQ_API_KEY etc. are available
+_env_file = Path(__file__).parent / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            if _k.strip() and _k.strip() not in os.environ:
+                os.environ[_k.strip()] = _v.strip()
 
 RENDER_API_KEY = os.getenv("RENDER_API_KEY")
 if not RENDER_API_KEY:
