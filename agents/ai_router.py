@@ -85,8 +85,8 @@ JOB_CHAINS: Dict[str, List[str]] = {
 _BLOCKED_UNTIL: Dict[str, float] = {}
 _LAST_SUCCESS: Dict[str, str] = {}  # job → model_key
 
-COOLDOWN_RATE    = int(os.getenv("AI_RATE_COOLDOWN_SEC",     "300"))
-COOLDOWN_NOTFOUND= int(os.getenv("AI_NOTFOUND_COOLDOWN_SEC", "3600"))
+COOLDOWN_RATE    = int(os.getenv("AI_RATE_COOLDOWN_SEC",     "60"))
+COOLDOWN_NOTFOUND= int(os.getenv("AI_NOTFOUND_COOLDOWN_SEC", "120"))
 COOLDOWN_KEYINV  = int(os.getenv("AI_KEYINVALID_COOLDOWN_SEC","86400"))  # 24h
 
 
