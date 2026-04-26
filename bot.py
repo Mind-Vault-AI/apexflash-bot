@@ -8678,12 +8678,12 @@ async def arbitrage_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 async def _cb_switch_network_v320_legacy(query, user, context):
     """Toggle between Solana and Base networks."""
     current = user.get("active_chain", "SOL")
-    new_chain = "BASE" if current == "SOL" else "SOL"
-    user["active_chain"] = new_chain
+    if current == "SOL":
+        await query.answer("\U0001f6a7 BASE coming soon — stay on SOL", show_alert=True)
+        return
+    user["active_chain"] = "SOL"
     _persist()
-    
-    await query.answer(f"🌐 Switched to {new_chain} network")
-    # Refresh menu
+    await query.answer("\U0001f310 Switched back to SOL")
     await query.edit_message_reply_markup(reply_markup=main_menu_kb(query.from_user.id))
 
 async def _cb_language_menu(query, user, context):
@@ -9293,12 +9293,19 @@ async def cmd_switch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     """Switch between SOL and BASE networks."""
     user = get_user(update.effective_user.id)
     current = user.get("active_chain", "SOL")
-    new_chain = "BASE" if current == "SOL" else "SOL"
-    user["active_chain"] = new_chain
+    if current == "SOL":
+        await update.message.reply_text(
+            "\U0001f6a7 *BASE Network — Coming Soon*\n\n"
+            "BASE trading is under development.\n"
+            "All features currently run on Solana.\n\n"
+            "_Stay on SOL to use Buy, Sell, and Whale Signals._",
+            parse_mode="Markdown",
+        )
+        return
+    user["active_chain"] = "SOL"
     save_users(users)
     await update.message.reply_text(
-        f"Network switched to {new_chain}.\n\n"
-        f"All trades now route via {new_chain}.",
+        "Network switched back to SOL.\n\nAll trades now route via Solana.",
         parse_mode="Markdown",
     )
 
