@@ -346,11 +346,10 @@ async def whale_scan_loop():
         )
 
     while True:
+        r = _get_redis()
+        fired = []
+        gmgn_ok = False
         try:
-            r = _get_redis()
-            fired = []
-            gmgn_ok = False
-
             # ── GMGN Rank scan ────────────────────────────────────────────────
             if gmgn_available:
                 try:
@@ -409,14 +408,14 @@ async def whale_scan_loop():
             if fired:
                 logger.info(f"WHALE: {len(fired)} signals this scan (source: {'GMGN' if gmgn_ok else 'DEXSCREENER'})")
 
-            # ── Heartbeat ─────────────────────────────────────────────────────
+        except Exception as e:
+            logger.error(f"whale_scan_loop error: {e}")
+        finally:
+            # ── Heartbeat — always write, even if scan errored ─────────────────
             if r:
                 r.setex("apexflash:whale:heartbeat", 600,
                         json.dumps({"ts": int(time.time()), "gmgn_ok": gmgn_ok,
                                     "signals_this_scan": len(fired)}))
-
-        except Exception as e:
-            logger.error(f"whale_scan_loop error: {e}")
 
         await asyncio.sleep(SCAN_INTERVAL_SECONDS)
 
