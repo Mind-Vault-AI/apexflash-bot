@@ -3157,11 +3157,24 @@ async def _cb_trade_sell(query, user, context):
     
     logger.info(f"Scanning tokens for user {query.from_user.id} ({user['wallet_pubkey']})")
 
-    tokens = await get_token_balances(user["wallet_pubkey"])
+    tokens, rpc_ok = await _get_token_balances_with_diag(user["wallet_pubkey"])
 
     if not tokens:
         pubkey = user["wallet_pubkey"]
-        short = pubkey[:20]
+        _log_sell_event(query.from_user.id, "fail", "no_tokens_in_wallet" if rpc_ok else "rpc_failed", "",
+                        f"rpc_ok={rpc_ok} pubkey={pubkey[:8]}...")
+        if not rpc_ok:
+            await query.edit_message_text(
+                "\u26a0\ufe0f *RPC Error*\n\n"
+                "_Could not reach Solana RPC to fetch your token balances._\n"
+                "_Please try again in 30 seconds._",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("\U0001f504 Retry", callback_data="trade_sell")],
+                    [_back_main()[0]],
+                ]),
+                parse_mode="Markdown",
+            )
+            return
         await query.edit_message_text(
             "\U0001f4b8 *Sell Tokens*\n"
             "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
@@ -4026,6 +4039,18 @@ async def _cb_execute_buy(query, user, context, data):
     await _safe_edit_message(
         query, text, reply_markup=InlineKeyboardMarkup(kb),
     )
+
+
+async def _get_token_balances_with_diag(pubkey: str):
+    """Wrapper around get_token_balances that also returns rpc_ok flag."""
+    try:
+        from core.wallet import _rpc
+        test = await _rpc("getHealth", [])
+        rpc_ok = "result" in test
+    except Exception:
+        rpc_ok = False
+    tokens = await get_token_balances(pubkey)
+    return tokens, rpc_ok
 
 
 def _log_sell_event(user_id: int, status: str, reason: str, mint: str = "", extra: str = "") -> None:
