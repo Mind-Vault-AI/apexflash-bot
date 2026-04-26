@@ -5439,16 +5439,14 @@ async def _cb_exchanges(query, user, context):
         [_back_main()[0]],
     ]
 
-    # Show featured exchanges preview
+    # Show active featured exchanges preview
     text += "\n\U0001f525 *Top Exchange Deals:*\n"
-    for key, aff in AFFILIATE_LINKS.items():
-        if aff.get("featured"):
-            text += f"\u2022 *{aff['name']}* \u2014 {aff['commission']} rebate\n"
+    for key, aff in AFFILIATE_LINKS_ACTIVE.items():
+        text += f"\u2022 *{aff['name']}* \u2014 {aff['commission']} rebate\n"
 
     text += "\n\U0001f6e0 *Top Tools:*\n"
-    for key, aff in TOOL_AFFILIATE_LINKS.items():
-        if aff.get("featured"):
-            text += f"\u2022 *{aff['name']}* \u2014 {aff['commission']}\n"
+    for key, aff in TOOL_AFFILIATE_LINKS_ACTIVE.items():
+        text += f"\u2022 *{aff['name']}* \u2014 {aff['commission']}\n"
 
     text += "\n\U0001f4a1 _Tap a category for all partner links!_"
 
@@ -5459,7 +5457,7 @@ async def _cb_exchanges(query, user, context):
 
 
 async def _cb_aff_exchanges(query, user, context):
-    """Show all exchange affiliate links."""
+    """Show all exchange affiliate links (only links with valid ref codes)."""
     text = (
         "\U0001f3e6 *Partner Exchanges*\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
@@ -5467,40 +5465,25 @@ async def _cb_aff_exchanges(query, user, context):
         "\n"
     )
 
-    # Featured
-    for key, aff in AFFILIATE_LINKS.items():
-        if aff.get("featured"):
-            text += (
-                f"\U0001f525 *{aff['name']}* \u2014 {aff['commission']} rebate\n"
-                f"   _{aff.get('description', '')}_\n\n"
-            )
+    for key, aff in AFFILIATE_LINKS_ACTIVE.items():
+        promo = aff.get("promo", "")
+        text += (
+            f"\U0001f525 *{aff['name']}* \u2014 {aff['commission']} rebate\n"
+            f"   _{aff.get('description', '')}_\n"
+        )
+        if promo:
+            text += f"   \U0001f381 _{promo}_\n"
+        text += "\n"
 
-    text += "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+    text += "\U0001f4a1 _Sign up via our links for fee rebates!_"
 
-    # Others
-    for key, aff in AFFILIATE_LINKS.items():
-        if not aff.get("featured"):
-            text += f"\u2022 *{aff['name']}* \u2014 {aff['commission']} rebate\n"
-
-    text += "\n\U0001f4a1 _Sign up via our links for fee rebates!_"
-
-    # Buttons
     featured_btns = [
         InlineKeyboardButton(f"\U0001f525 {v['name']}", url=v["url"])
-        for k, v in AFFILIATE_LINKS.items() if v.get("featured") and v.get("url", "").find("YOUR_REF") == -1
+        for v in AFFILIATE_LINKS_ACTIVE.values()
     ]
-    other_btns = [
-        InlineKeyboardButton(v["name"], url=v["url"])
-        for k, v in AFFILIATE_LINKS.items()
-        if not v.get("featured") and v.get("url", "").find("YOUR_REF") == -1 and v.get("url", "").strip()
-    ]
-
     kb = []
     for i in range(0, len(featured_btns), 2):
         kb.append(featured_btns[i:i + 2])
-    if other_btns:
-        for i in range(0, len(other_btns), 3):
-            kb.append(other_btns[i:i + 3])
     kb.append([InlineKeyboardButton("\u25c0 Partners", callback_data="exchanges")])
     kb.append([_back_main()[0]])
 
