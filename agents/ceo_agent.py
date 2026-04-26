@@ -379,6 +379,16 @@ def collect_kpis() -> dict:
             results = [None] * 24
 
         total_users = _safe_int(results[0])
+        # Fallback: if Redis counter is 0 after deploy, count directly from users store
+        if total_users == 0 and r:
+            try:
+                from core.persistence import load_users as _load_users
+                _u = _load_users()
+                if _u:
+                    total_users = len(_u)
+                    r.set("platform:total_users", total_users)
+            except Exception:
+                pass
         total_trades = _safe_int(results[1])
         wins = _safe_int(results[2])
         pnl_sol = _safe_float(results[3])

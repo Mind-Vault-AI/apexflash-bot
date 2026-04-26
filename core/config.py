@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # <KAIZEN_VERSION_START>
-VERSION = "3.22.0"
+VERSION = "3.23.32"
 # <KAIZEN_VERSION_END>
 
 # === Telegram ===

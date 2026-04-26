@@ -78,11 +78,14 @@ def _grade_rank_token(token: dict) -> Optional[str]:
     chg_5m = float(token.get("price_change_percent5m", 0) or 0)
     vol    = float(token.get("volume", 0) or 0)
 
+    # Cap 1h change: tokens already up >40% in 1h are likely late entries
+    already_pumped = chg_1h > 40.0
+
     if smart >= GRADE_S_SMART_DEGENS and chg_1h >= GRADE_S_PRICE_CHANGE and vol >= GRADE_S_VOLUME_USD:
         return "S"
-    if smart >= GRADE_A_SMART_DEGENS and chg_1h >= GRADE_A_PRICE_CHANGE and vol >= GRADE_A_VOLUME_USD:
+    if not already_pumped and smart >= GRADE_A_SMART_DEGENS and chg_1h >= GRADE_A_PRICE_CHANGE and vol >= GRADE_A_VOLUME_USD:
         return "A"
-    if renown >= 2 and chg_1h >= GRADE_A_PRICE_CHANGE and vol >= GRADE_A_VOLUME_USD:
+    if not already_pumped and renown >= 2 and chg_1h >= GRADE_A_PRICE_CHANGE and vol >= GRADE_A_VOLUME_USD:
         return "A"
     if smart >= 1 and chg_5m > 0 and chg_1h > 0 and vol >= GRADE_A_VOLUME_USD:
         return "B"
@@ -93,10 +96,14 @@ def _grade_trenches_token(token: dict, category: str) -> Optional[str]:
     smart     = int(token.get("smart_degen_count", 0) or 0)
     hot_level = int(token.get("hot_level", 0) or 0)
 
+    # "pump" = coin already moving — entry is late, downgrade to B
     if category == "pump" and smart >= GRADE_A_SMART_DEGENS:
+        return "B"
+    # Tightened: hot_level >= 5 + smart >= 2 (was: >= 3 and >= 1 — too loose)
+    if hot_level >= 5 and smart >= 2:
         return "A"
     if hot_level >= 3 and smart >= 1:
-        return "A"
+        return "B"
     if category == "completed" and smart >= 1:
         return "B"
     return None
