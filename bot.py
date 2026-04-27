@@ -3888,9 +3888,7 @@ async def _cb_execute_buy(query, user, context, data):
     if tx_sig:
         # Verify tx confirmed on-chain before recording position
         await query.edit_message_text(
-            "⏳ *Confirming on Solana...* (max 45s)
-
-"
+            "⏳ *Confirming on Solana...* (max 45s)\n\n"
             f"[View on Solscan](https://solscan.io/tx/{tx_sig})",
             parse_mode="Markdown", disable_web_page_preview=False,
         )
@@ -3898,14 +3896,11 @@ async def _cb_execute_buy(query, user, context, data):
         if not await confirm_transaction(tx_sig, timeout_sec=45):
             logger.error(f"BUY TX unconfirmed: user={query.from_user.id} tx={tx_sig}")
             await query.edit_message_text(
-                "❌ *Transaction failed or expired*
-
-"
-                "_Swap submitted but did not confirm. Your SOL was NOT spent._
-"
+                "❌ *Transaction failed or expired*\n\n"
+                "_Swap submitted but did not confirm. Your SOL was NOT spent._\n"
                 f"[Check on Solscan](https://solscan.io/tx/{tx_sig})",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Try Again", callback_data="trade_buy")],
+                    [InlineKeyboardButton("\U0001f504 Try Again", callback_data="trade_buy")],
                     [_back_main()[0]],
                 ]),
                 parse_mode="Markdown", disable_web_page_preview=False,
