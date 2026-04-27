@@ -2,7 +2,10 @@
 ApexFlash — GMGN.AI Market Data Client
 =======================================
 Read-only market endpoints: trending, kline, top traders/holders, user wallets.
-Auth: Ed25519 signature required (GMGN requires signing for ALL endpoints).
+
+Auth modes (per official gmgn-cli source):
+  Normal (market/token/portfolio): X-APIKEY header + timestamp (seconds) + client_id in query
+  Critical (swap/order):           normal auth + X-Signature (Ed25519 signed message)
 
 SSOT: GMGN_API_KEY + GMGN_PRIVATE_KEY in MASTER_ENV_APEXFLASH.txt (Box Drive)
 """
@@ -20,7 +23,7 @@ logger = logging.getLogger("GMGNMarket")
 
 _API_KEY     = os.getenv("GMGN_API_KEY", "").strip()
 _PRIVATE_KEY = os.getenv("GMGN_PRIVATE_KEY", "").strip()
-_BASE_URL    = "https://gmgn.ai"
+_BASE_URL    = "https://openapi.gmgn.ai"
 _privkey_obj = None
 
 
@@ -36,18 +39,37 @@ def _load_privkey():
     return _privkey_obj
 
 
-def _sign(path_and_query: str) -> str:
-    key = _load_privkey()
-    sig_bytes = key.sign(path_and_query.encode("utf-8"))
-    return base64.urlsafe_b64encode(sig_bytes).decode("utf-8").rstrip("=")
-
-
-def _auth_params() -> dict:
+def _auth_query() -> dict:
+    """Auth query params for normal requests: timestamp (seconds) + client_id only.
+    API key goes in the X-APIKEY header, NOT in query params.
+    """
     return {
-        "api_key":   _API_KEY,
-        "timestamp": str(int(time.time() * 1000)),
+        "timestamp": str(int(time.time())),   # SECONDS — not milliseconds
         "client_id": str(uuid.uuid4()),
     }
+
+
+def _normal_headers() -> dict:
+    """Headers for normal (non-signing) requests."""
+    return {
+        "X-APIKEY":       _API_KEY,
+        "Content-Type":   "application/json",
+        "User-Agent":     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept":         "application/json, text/plain, */*",
+    }
+
+
+def _build_critical_signature(sub_path: str, query: dict, body_str: str, timestamp: int) -> str:
+    """Ed25519 signature for critical (swap/order) endpoints.
+    Message format: {sub_path}:{sorted_query_string}:{body}:{timestamp}
+    """
+    key = _load_privkey()
+    sorted_qs = "&".join(
+        f"{k}={v}" for k, v in sorted(query.items())
+    )
+    message = f"{sub_path}:{sorted_qs}:{body_str}:{timestamp}"
+    sig_bytes = key.sign(message.encode("utf-8"))
+    return base64.b64encode(sig_bytes).decode("utf-8")  # standard base64, not URL-safe
 
 
 def _get_outbound_ip() -> str:
@@ -62,27 +84,28 @@ def _get_outbound_ip() -> str:
 
 
 def _get(path: str, params: dict = None) -> dict:
+    """Normal GET request — X-APIKEY header, no signature."""
     if not _API_KEY:
         raise RuntimeError("GMGN_API_KEY not set")
-    all_params = {**(params or {}), **_auth_params()}
+    all_params = {**(params or {}), **_auth_query()}
     qs = urllib.parse.urlencode(sorted(all_params.items()))
-    path_and_query = f"{path}?{qs}"
-    sig = _sign(path_and_query)
-    url = f"{_BASE_URL}{path_and_query}"
-    req = urllib.request.Request(url, headers={"X-API-Signature": sig, "Content-Type": "application/json"})
+    url = f"{_BASE_URL}{path}?{qs}"
+    req = urllib.request.Request(url, headers=_normal_headers())
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read())
     except urllib.error.HTTPError as e:
         if e.code == 403:
             ip = _get_outbound_ip()
-            logger.error(f"GMGN 403 — IP [{ip}] or signature rejected")
+            logger.error(f"GMGN 403 — IP [{ip}] rejected (check GMGN whitelist)")
             _record_403(ip)
-            raise RuntimeError(f"GMGN 403 — IP {ip} or signature issue")
+            raise RuntimeError(f"GMGN 403 — IP {ip}")
         raise RuntimeError(f"GMGN HTTP {e.code}: {e.reason}")
     if data.get("code") != 0:
         raise RuntimeError(f"GMGN error {data.get('code')}: {data.get('message', data)}")
-    return data["data"]
+    # openapi.gmgn.ai double-wraps: outer.data = inner; inner.data = actual payload
+    inner = data.get("data", {})
+    return inner.get("data", inner)
 
 
 def _record_403(ip: str) -> None:
@@ -107,17 +130,16 @@ def _record_403(ip: str) -> None:
 
 
 def _post(path: str, body: dict, params: dict = None) -> dict:
+    """Normal POST request — X-APIKEY header, no signature."""
     if not _API_KEY:
         raise RuntimeError("GMGN_API_KEY not set")
-    all_params = {**(params or {}), **_auth_params()}
+    all_params = {**(params or {}), **_auth_query()}
     qs = urllib.parse.urlencode(sorted(all_params.items()))
-    path_and_query = f"{path}?{qs}"
-    sig = _sign(path_and_query)
-    url = f"{_BASE_URL}{path_and_query}"
+    url = f"{_BASE_URL}{path}?{qs}"
     payload = json.dumps(body).encode()
     req = urllib.request.Request(
         url, data=payload,
-        headers={"X-API-Signature": sig, "Content-Type": "application/json"},
+        headers=_normal_headers(),
         method="POST"
     )
     try:
@@ -126,13 +148,14 @@ def _post(path: str, body: dict, params: dict = None) -> dict:
     except urllib.error.HTTPError as e:
         if e.code == 403:
             ip = _get_outbound_ip()
-            logger.error(f"GMGN 403 — IP {ip} or signature rejected")
+            logger.error(f"GMGN 403 — IP {ip} rejected")
             _record_403(ip)
-            raise RuntimeError(f"GMGN 403 — IP {ip} or signature issue")
+            raise RuntimeError(f"GMGN 403 — IP {ip}")
         raise RuntimeError(f"GMGN HTTP {e.code}: {e.reason}")
     if data.get("code") != 0:
         raise RuntimeError(f"GMGN error {data.get('code')}: {data.get('message', data)}")
-    return data["data"]
+    inner = data.get("data", {})
+    return inner.get("data", inner)
 
 
 # ─── Market endpoints ─────────────────────────────────────────────────────────
@@ -208,26 +231,32 @@ def rank(
     Returns list of RankItem with price, volume, smart_degen_count, etc.
     filters: e.g. ['renounced', 'frozen'] for SOL
     """
-    params = {
+    all_params = {
         "chain": chain,
         "interval": interval,
         "limit": str(limit),
         "order_by": order_by,
+        **_auth_query(),
     }
-    all_params = {**params, **_auth_params()}
     qs_parts = [urllib.parse.urlencode(sorted(all_params.items()))]
     if filters:
         qs_parts.append("&".join(f"filters={f}" for f in filters))
-    all_qs = "&".join(qs_parts)
-    path_and_query = f"/v1/market/rank?{all_qs}"
-    sig = _sign(path_and_query)
-    url = f"{_BASE_URL}{path_and_query}"
-    req = urllib.request.Request(url, headers={"X-API-Signature": sig, "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=15) as r:
-        data = json.loads(r.read())
+    url = f"{_BASE_URL}/v1/market/rank?{'&'.join(qs_parts)}"
+    req = urllib.request.Request(url, headers=_normal_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            ip = _get_outbound_ip()
+            _record_403(ip)
+            raise RuntimeError(f"GMGN rank 403 — IP {ip}")
+        raise RuntimeError(f"GMGN rank HTTP {e.code}: {e.reason}")
     if data.get("code") != 0:
         raise RuntimeError(f"GMGN error: {data}")
-    return data["data"].get("rank", [])
+    inner = data.get("data", {})
+    actual = inner.get("data", inner)
+    return actual.get("rank", [])
 
 
 def trenches(chain: str = "sol", limit: int = 10) -> dict:
