@@ -22,7 +22,11 @@ Revenue model:
 # PDCA Cycle 14 Implementation
 # ═══════════════════════════════════════════════
 """
-VERSION = "3.23.34"
+try:
+    import pathlib as _vp
+    VERSION = (_vp.Path(__file__).parent / "VERSION").read_text(encoding="utf-8").strip()
+except Exception:
+    VERSION = "0.0.0-unknown"
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -10556,8 +10560,23 @@ def main() -> None:
                         logger.warning(f"Whale Discord post error (non-critical): {e}")
 
             register_signal_callback(_whale_signal_to_telegram)
-            asyncio.ensure_future(whale_scan_loop())
-            logger.info("🐋 Whale Intelligence v2.0: GMGN scanner STARTED")
+
+            async def _whale_scanner_guardian():
+                """Auto-restart whale_scan_loop if it crashes unexpectedly."""
+                while True:
+                    try:
+                        await whale_scan_loop()
+                        # Should never return normally — loop is infinite
+                        logger.warning("WHALE: scan loop exited — restarting in 30s")
+                    except asyncio.CancelledError:
+                        logger.info("WHALE: scanner guardian cancelled (bot shutdown)")
+                        raise
+                    except Exception as _ge:
+                        logger.error(f"WHALE: scanner crashed: {_ge}. Restarting in 30s...")
+                    await asyncio.sleep(30)
+
+            asyncio.ensure_future(_whale_scanner_guardian())
+            logger.info("🐋 Whale Intelligence v2.0: GMGN scanner STARTED (guardian active)")
 
         except Exception as e:
             logger.error(f"Whale Intelligence activation failed: {e}")
@@ -10945,17 +10964,17 @@ if __name__ == "__main__":
                 json={"drop_pending_updates": False},
                 timeout=10,
             )
-            logging.info("Cleared webhook before startup")
+            logging.info("Cleared webhook before startup - bot.py:10963")
             _time.sleep(3)  # Brief pause for Telegram to release old polling lock
     except Exception as e:
-        logging.warning(f"Pre-startup cleanup failed: {e}")
+        logging.warning(f"Prestartup cleanup failed: {e} - bot.py:10966")
 
     try:
         main()
     except Exception as e:
         err_str = str(e)
         if "Conflict" in err_str or "terminated by other getUpdates" in err_str:
-            logging.warning("Auto-fix: telegram.error.Conflict detected. Exiting gracefully.")
+            logging.warning("Autofix: telegram.error.Conflict detected. Exiting gracefully. - bot.py:10973")
         else:
             err_msg = f"\U0001f534 BOT CRASH:\n\n{e}\n\n{traceback.format_exc()}"
             logging.error(err_msg)
