@@ -10353,45 +10353,6 @@ def main() -> None:
         except Exception as e:
             logger.warning(f"set_my_commands failed: {e}")
 
-        # Advisor runtime health probe (Gemini availability) for fast PDCA visibility.
-        try:
-            from agents.advisor_agent import advisor_live_probe
-
-            probe = await advisor_live_probe()
-            probe_ok = bool(probe.get("ok"))
-
-            # Seed runtime health snapshot immediately after startup.
-            RUNTIME_HEALTH["advisor_ok"] = probe_ok
-            RUNTIME_HEALTH["advisor_reason"] = str(probe.get("reason") or "")
-            RUNTIME_HEALTH["advisor_model"] = str(probe.get("model") or "")
-            RUNTIME_HEALTH["advisor_checks_total"] = int(RUNTIME_HEALTH.get("advisor_checks_total", 0)) + 1
-            if probe_ok:
-                RUNTIME_HEALTH["advisor_checks_ok"] = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0)) + 1
-            RUNTIME_HEALTH["last_watchdog_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-            _record_sla_history("startup_probe")
-            _save_runtime_health()
-
-            if probe.get("ok"):
-                text = (
-                    "🤖 *Advisor Probe: ONLINE*\n"
-                    "━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"Model: `{probe.get('model')}`\n"
-                    f"Preview: `{str(probe.get('preview', ''))[:90]}`"
-                )
-            else:
-                text = (
-                    "⚠️ *Advisor Probe: FALLBACK MODE*\n"
-                    "━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"Reason: `{probe.get('reason', 'unknown')}`"
-                )
-
-            for admin_id in ADMIN_IDS:
-                try:
-                    await application.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.warning(f"advisor_live_probe on startup failed: {e}")
 
         # Startup KPI reconcile: restores platform:total_users + winrate counters
         # from apexflash:users after every restart/redeploy so CEO briefing is accurate.
@@ -10590,6 +10551,50 @@ def main() -> None:
 
         except Exception as e:
             logger.error(f"Whale Intelligence activation failed: {e}")
+
+
+        # Advisor probe runs as background task — does NOT block agent startup
+        async def _startup_advisor_probe_bg():
+            # Advisor runtime health probe (Gemini availability) for fast PDCA visibility.
+            try:
+                from agents.advisor_agent import advisor_live_probe
+
+                probe = await advisor_live_probe()
+                probe_ok = bool(probe.get("ok"))
+
+                # Seed runtime health snapshot immediately after startup.
+                RUNTIME_HEALTH["advisor_ok"] = probe_ok
+                RUNTIME_HEALTH["advisor_reason"] = str(probe.get("reason") or "")
+                RUNTIME_HEALTH["advisor_model"] = str(probe.get("model") or "")
+                RUNTIME_HEALTH["advisor_checks_total"] = int(RUNTIME_HEALTH.get("advisor_checks_total", 0)) + 1
+                if probe_ok:
+                    RUNTIME_HEALTH["advisor_checks_ok"] = int(RUNTIME_HEALTH.get("advisor_checks_ok", 0)) + 1
+                RUNTIME_HEALTH["last_watchdog_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                _record_sla_history("startup_probe")
+                _save_runtime_health()
+
+                if probe.get("ok"):
+                    text = (
+                        "🤖 *Advisor Probe: ONLINE*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"Model: `{probe.get('model')}`\n"
+                        f"Preview: `{str(probe.get('preview', ''))[:90]}`"
+                    )
+                else:
+                    text = (
+                        "⚠️ *Advisor Probe: FALLBACK MODE*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"Reason: `{probe.get('reason', 'unknown')}`"
+                    )
+
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await application.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.warning(f"advisor_live_probe on startup failed: {e}")
+        asyncio.ensure_future(_startup_advisor_probe_bg())
 
     app.post_init = post_init
     # ── Gumroad Revenue Sync: Poll for new sales (every 15 min) ───────────────
