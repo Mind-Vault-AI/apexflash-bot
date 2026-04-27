@@ -10836,6 +10836,8 @@ def main() -> None:
         """
         await app.initialize()
         await app.start()
+        # post_init is NOT called by app.initialize() — must call manually in custom loop
+        await post_init(app)
         logger.info("[POLL] Direct polling loop started (Python 3.14 compat mode)")
         offset = None
         consecutive_errors = 0
