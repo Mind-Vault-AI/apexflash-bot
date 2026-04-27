@@ -344,6 +344,14 @@ async def whale_scan_loop():
             f"S≥{GRADE_S_SMART_DEGENS} degens / {GRADE_S_PRICE_CHANGE}%+ / ${GRADE_S_VOLUME_USD:,.0f}+ | "
             f"Auto-trade: {'ON ' + str(AUTO_TRADE_SOL) + ' SOL' if AUTO_TRADE_ENABLED else 'OFF'}"
         )
+    # Write startup marker so we can confirm scanner is alive even before first scan
+    try:
+        _r0 = _get_redis()
+        if _r0:
+            _r0.set("apexflash:whale:scanner_started", int(time.time()))
+            logger.info("WHALE: startup marker written to Redis")
+    except Exception as _e:
+        logger.warning(f"WHALE: startup marker failed: {_e}")
 
     while True:
         r = _get_redis()
@@ -412,10 +420,15 @@ async def whale_scan_loop():
             logger.error(f"whale_scan_loop error: {e}")
         finally:
             # ── Heartbeat — always write, even if scan errored ─────────────────
-            if r:
-                r.setex("apexflash:whale:heartbeat", 600,
-                        json.dumps({"ts": int(time.time()), "gmgn_ok": gmgn_ok,
-                                    "signals_this_scan": len(fired)}))
+            try:
+                if r:
+                    r.setex("apexflash:whale:heartbeat", 600,
+                            json.dumps({"ts": int(time.time()), "gmgn_ok": gmgn_ok,
+                                        "signals_this_scan": len(fired)}))
+                else:
+                    logger.warning("WHALE heartbeat skipped: no Redis connection")
+            except Exception as _hb_err:
+                logger.error(f"WHALE heartbeat write failed: {_hb_err}")
 
         await asyncio.sleep(SCAN_INTERVAL_SECONDS)
 
