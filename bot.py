@@ -10342,6 +10342,16 @@ def main() -> None:
 
     # Startup notification to channel
     async def post_init(application: Application) -> None:
+        # Diagnostic: confirm post_init IS being called
+        try:
+            from core.persistence import _get_redis as _pi_redis
+            _pi_r = _pi_redis()
+            if _pi_r:
+                import time as _time
+                _pi_r.set("apexflash:diag:post_init_called", int(_time.time()))
+        except Exception:
+            pass
+
         # Set persistent "/" menu commands (visible to all users)
         try:
             await application.bot.set_my_commands([
