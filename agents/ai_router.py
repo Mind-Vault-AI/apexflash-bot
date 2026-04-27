@@ -61,11 +61,11 @@ MODELS = {
     "cerebras-llama":   ("llama-3.3-70b",                                    "cerebras",   800),
     "gemini-flash":     ("gemini-2.5-flash",                                 "gemini",     800),
     "gemini-flash-15":  ("gemini-2.0-flash-lite",                            "gemini",     800),  # 1.5 is EOL
-    "openrouter-ds":    ("deepseek/deepseek-chat-v3-0324:free",              "openrouter", 800),  # r1:free → 404
+    "openrouter-ds":    ("qwen/qwen3-next-80b-a3b-instruct:free",             "openrouter", 800),  # was deepseek-chat-v3-0324:free → 404
     "openrouter-llama": ("meta-llama/llama-3.3-70b-instruct:free",           "openrouter", 800),
-    "openrouter-qwen":  ("qwen/qwen2.5-72b-instruct:free",                   "openrouter", 800),  # qwen3-80b → 400
-    "nebius-llama":     ("meta-llama/Meta-Llama-3.1-70B-Instruct",           "nebius",     800),
-    "nebius-mistral":   ("mistralai/Mistral-Nemo-Instruct-2407",             "nebius",     800),
+    "openrouter-qwen":  ("nvidia/nemotron-3-super-120b-a12b:free",           "openrouter", 800),  # was qwen2.5-72b → 400
+    "nebius-llama":     ("meta-llama/Llama-3.3-70B-Instruct",                "nebius",     800),  # was Meta-Llama-3.1-70B → 404
+    "nebius-mistral":   ("Qwen/Qwen3-32B",                                   "nebius",     800),  # was Mistral-Nemo → removed
     "deepseek":         ("deepseek-chat",                                     "deepseek",   800),
     "mvai-sensei":      ("auto",                                              "mvai",       800),  # MVAI internal router — no key needed
 }
