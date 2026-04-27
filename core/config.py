@@ -8,7 +8,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # <KAIZEN_VERSION_START>
-VERSION = "3.23.32"
+try:
+    _vf = os.path.join(os.path.dirname(os.path.dirname(__file__)), "VERSION")
+    with open(_vf) as _f:
+        VERSION = _f.read().strip()
+except Exception:
+    VERSION = "3.23.42"
 # <KAIZEN_VERSION_END>
 
 # === Telegram ===

@@ -86,13 +86,15 @@ def advisor_runtime_snapshot() -> dict:
 
 def _build_prompt(history_summary: List[dict]) -> str:
     return (
-        "You are the ApexFlash Pro Advisor. Analyze the following 15 crypto trades. "
+        "You are the ApexFlash Pro Advisor. Analyze the following crypto trades. "
         "Identify psychological biases (FOMO, revenge trading, etc.) or execution errors. "
-        "Output formatting: Markdown. Include:\n"
-        "1. Trader Grade (S, A, B, C, D)\n"
-        "2. Psychological Analysis (1-2 sentences)\n"
-        "3. 3 Actionable Tips to increase win rate.\n\n"
-        f"USER TRADE HISTORY (JSON):\n{json.dumps(history_summary, indent=2)}"
+        "IMPORTANT: Use ONLY Telegram-compatible formatting — bold with *text*, no ### headers, no ---. "
+        "Respond in English only. Structure your response EXACTLY like this:\n\n"
+        "*Trader Grade: [S/A/B/C/D]*\n\n"
+        "*Psychological Analysis:*\n[2-3 sentences]\n\n"
+        "*3 Tips to Increase Win Rate:*\n"
+        "1. [tip]\n2. [tip]\n3. [tip]\n\n"
+        f"TRADE HISTORY:\n{json.dumps(history_summary, indent=2)}"
     )
 
 
@@ -225,7 +227,8 @@ async def analyze_trader_performance(user_id: int, history: List[dict]) -> str:
     text, model_name, reason = await _try_ai(prompt)
 
     if text:
-        return f"Model: {model_name}\n\n{text}"
+        logger.info("AI Advisor used model: %s", model_name)
+        return text
 
     return _local_fallback_analysis(history, reason=reason)
 
