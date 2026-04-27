@@ -10467,6 +10467,15 @@ def main() -> None:
 
         # 🐋 Whale Intelligence v2.0 — GMGN Smart Money Scanner
         try:
+            # Diagnostic: confirm we reach this point in post_init
+            try:
+                from core.persistence import _get_redis as _diag_redis
+                _dr = _diag_redis()
+                if _dr:
+                    _dr.set("apexflash:diag:whale_try_reached", 1)
+            except Exception:
+                pass
+
             from agents.whale_watcher import (
                 whale_scan_loop, register_signal_callback, format_whale_signal,
                 get_top_whale_wallets, store_signal_for_callback, COPY_TRADE_SOL,
