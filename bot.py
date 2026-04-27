@@ -10581,6 +10581,36 @@ def main() -> None:
         except Exception as e:
             logger.error(f"Whale Intelligence activation failed: {e}")
 
+        # 💵 Gumroad Revenue Sync — pull recent Pro/Elite sales every 15 min
+        # Writes kpi:total_revenue_usd + kpi:paid_conversions to Redis so /api/ceo
+        # can show actual revenue. Without this, sales never reach the dashboard.
+        try:
+            from gumroad import sync_gumroad_revenue as _gumroad_sync_fn
+
+            async def _gumroad_sync_loop():
+                """Poll Gumroad sales every 15 min, write new sales to Redis KPIs."""
+                while True:
+                    try:
+                        result = await _gumroad_sync_fn()
+                        added = result.get("revenue_added", 0) or 0
+                        if added > 0:
+                            logger.info(
+                                f"💵 Gumroad sync: +${added:.2f} ({result.get('conversions_added',0)} new sale(s))"
+                            )
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as _gs_err:
+                        logger.error(f"Gumroad sync error: {_gs_err}")
+                    try:
+                        await asyncio.sleep(900)  # 15 min
+                    except asyncio.CancelledError:
+                        raise
+
+            asyncio.ensure_future(_gumroad_sync_loop())
+            logger.info("💵 Gumroad revenue sync STARTED (15 min interval)")
+        except Exception as e:
+            logger.error(f"Gumroad sync activation failed: {e}")
+
 
         # Advisor probe runs as background task — does NOT block agent startup
         async def _startup_advisor_probe_bg():

@@ -1,10 +1,10 @@
 # ApexFlash Bot â€” CURRENT STATUS
-# Last updated: 2026-04-27 (Sessie 40 â€” SELL + TIER EXPIRY FIX)
+# Last updated: 2026-04-28 (Sessie 40 â€” SELL + TIER EXPIRY FIX)
 # MAIN GOAL: EUR 1.000.000 netto vÃ³Ã³r 29-03-2028
 
 ## LIVE STATE (sessie 40 â€” 2026-04-26)
 - Render service: srv-d6kcjbpaae7s73aadsu0
-- Version: v3.23.57
+- Version: v3.23.58
 - Fix 1: Sell blocked for admin â€” accepted_terms was False in Redis â†’ terms gate blocked all admin sells
 - Fix 2: AI tier auto-switch â€” premium_expires not checked â†’ expired users kept Elite features forever
 - Fix 3: _cb_accept_terms now calls _persist() â†’ terms acceptance survives restarts
