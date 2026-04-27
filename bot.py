@@ -3886,6 +3886,32 @@ async def _cb_execute_buy(query, user, context, data):
     tx_sig, swap_err = await execute_swap(keypair, quote)
 
     if tx_sig:
+        # Verify tx confirmed on-chain before recording position
+        await query.edit_message_text(
+            "⏳ *Confirming on Solana...* (max 45s)
+
+"
+            f"[View on Solscan](https://solscan.io/tx/{tx_sig})",
+            parse_mode="Markdown", disable_web_page_preview=False,
+        )
+        from core.wallet import confirm_transaction
+        if not await confirm_transaction(tx_sig, timeout_sec=45):
+            logger.error(f"BUY TX unconfirmed: user={query.from_user.id} tx={tx_sig}")
+            await query.edit_message_text(
+                "❌ *Transaction failed or expired*
+
+"
+                "_Swap submitted but did not confirm. Your SOL was NOT spent._
+"
+                f"[Check on Solscan](https://solscan.io/tx/{tx_sig})",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 Try Again", callback_data="trade_buy")],
+                    [_back_main()[0]],
+                ]),
+                parse_mode="Markdown", disable_web_page_preview=False,
+            )
+            return
+
         user["total_trades"] = user.get("total_trades", 0) + 1
         _increment_daily_trades(user)
         prices = await get_crypto_prices()

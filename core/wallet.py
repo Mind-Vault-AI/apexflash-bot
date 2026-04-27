@@ -174,6 +174,30 @@ async def send_raw_transaction(signed_tx_b64: str) -> str | None:
         return None
 
 
+async def confirm_transaction(tx_sig: str, timeout_sec: int = 45) -> bool:
+    """Poll until tx is confirmed or timeout. Returns True if confirmed."""
+    import asyncio
+    deadline = asyncio.get_event_loop().time() + timeout_sec
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            data = await _rpc("getSignatureStatuses", [[tx_sig]])
+            statuses = data.get("result", {}).get("value", [None])
+            st = statuses[0] if statuses else None
+            if st is not None:
+                if st.get("err"):
+                    logger.error(f"TX {tx_sig[:16]} FAILED on-chain: {st['err']}")
+                    return False
+                conf = st.get("confirmationStatus", "")
+                if conf in ("confirmed", "finalized"):
+                    logger.info(f"TX {tx_sig[:16]} confirmed ({conf})")
+                    return True
+        except Exception as e:
+            logger.warning(f"confirm_transaction poll error: {e}")
+        await asyncio.sleep(3)
+    logger.error(f"TX {tx_sig[:16]} confirmation timeout after {timeout_sec}s")
+    return False
+
+
 # ══════════════════════════════════════════════
 # FEE COLLECTION (SOL transfer)
 # ══════════════════════════════════════════════
