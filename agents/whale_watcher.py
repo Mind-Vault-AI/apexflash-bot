@@ -442,13 +442,15 @@ async def whale_scan_loop():
             if fired:
                 logger.info(f"WHALE: {len(fired)} signals this scan (source: {'GMGN' if gmgn_ok else 'DEXSCREENER'})")
 
+        except asyncio.CancelledError:
+            raise  # Propagate — guardian wrapper handles restart logic
         except Exception as e:
             logger.error(f"whale_scan_loop error: {e}")
         finally:
             # ── Heartbeat — always write, even if scan errored ─────────────────
             try:
                 if r:
-                    r.setex("apexflash:whale:heartbeat", 600,
+                    r.setex("apexflash:whale:heartbeat", 1200,  # 2 × scan interval
                             json.dumps({"ts": int(time.time()), "gmgn_ok": gmgn_ok,
                                         "signals_this_scan": len(fired),
                                         "gmgn_err": gmgn_err if not gmgn_ok else ""}))
@@ -457,7 +459,10 @@ async def whale_scan_loop():
             except Exception as _hb_err:
                 logger.error(f"WHALE heartbeat write failed: {_hb_err}")
 
-        await asyncio.sleep(SCAN_INTERVAL_SECONDS)
+        try:
+            await asyncio.sleep(SCAN_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            raise  # Let guardian handle it
 
 
 # ─── Status ─────────────────────────────────────────────────────────────────────
