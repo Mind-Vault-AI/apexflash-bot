@@ -357,6 +357,7 @@ async def whale_scan_loop():
         r = _get_redis()
         fired = []
         gmgn_ok = False
+        gmgn_err = ""
         try:
             # ── GMGN Rank scan ────────────────────────────────────────────────
             if gmgn_available:
@@ -372,6 +373,7 @@ async def whale_scan_loop():
                         fired.append(_build_signal(token, grade, "GMGN_RANK"))
                     gmgn_ok = True
                 except Exception as e:
+                    gmgn_err = str(e)[:120]
                     logger.warning(f"GMGN rank scan failed: {e}")
 
             # ── GMGN Trenches scan ────────────────────────────────────────────
@@ -424,7 +426,8 @@ async def whale_scan_loop():
                 if r:
                     r.setex("apexflash:whale:heartbeat", 600,
                             json.dumps({"ts": int(time.time()), "gmgn_ok": gmgn_ok,
-                                        "signals_this_scan": len(fired)}))
+                                        "signals_this_scan": len(fired),
+                                        "gmgn_err": gmgn_err if not gmgn_ok else ""}))
                 else:
                     logger.warning("WHALE heartbeat skipped: no Redis connection")
             except Exception as _hb_err:
