@@ -353,6 +353,30 @@ async def whale_scan_loop():
     except Exception as _e:
         logger.warning(f"WHALE: startup marker failed: {_e}")
 
+    # ── IP whitelist guard — detect Render IP rotation ────────────────────────
+    # Render can rotate outbound IPs on redeploy. When it does, GMGN returns 403.
+    # We detect this at startup and fire an alert before the first scan fails.
+    try:
+        from exchanges.gmgn_market import _get_outbound_ip as _fetch_ip
+        _trusted_ip = os.getenv("GMGN_TRUSTED_IP", "").strip()
+        _actual_ip  = _fetch_ip()
+        _r0 = _get_redis()
+        if _r0:
+            _r0.setex("apexflash:render:outbound_ip", 3600, _actual_ip)
+        if _trusted_ip and _actual_ip != "unknown" and _actual_ip != _trusted_ip:
+            msg = (f"⚠️ GMGN IP ROTATED: was {_trusted_ip} → nu {_actual_ip}\n"
+                   f"Update GMGN whitelist op gmgn.ai → API Keys → IP whitelist → {_actual_ip}\n"
+                   f"Dan Render env GMGN_TRUSTED_IP={_actual_ip} bijwerken.")
+            logger.critical(msg)
+            if _r0:
+                _r0.setex("apexflash:gmgn:ip_mismatch", 86400, json.dumps({
+                    "trusted": _trusted_ip, "actual": _actual_ip, "ts": int(time.time())
+                }))
+        else:
+            logger.info(f"WHALE: IP check OK — outbound={_actual_ip}")
+    except Exception as _e:
+        logger.warning(f"WHALE: IP guard check failed: {_e}")
+
     while True:
         r = _get_redis()
         fired = []
