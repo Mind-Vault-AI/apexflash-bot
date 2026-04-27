@@ -10448,18 +10448,25 @@ def main() -> None:
             except Exception as e:
                 logger.warning(f"Startup notification failed: {e}")
 
-        # 🚀 START GODMODE AGENTS
+        # 🚀 START GODMODE AGENTS — each agent isolated so one failure never blocks others
+
+        # CEO Agent Scheduler (Daily 08:00 Amsterdam)
         try:
-            # CEO Agent Scheduler (Daily 08:00 Amsterdam)
             start_ceo_scheduler(application.job_queue.scheduler)
             logger.info("🤖 CEO Agent: scheduler hooked to JobQueue")
+        except Exception as e:
+            logger.error(f"CEO Agent activation failed: {e}")
 
-            # Marketing Agency: async Redis queue consumer for discord/twitter tasks
+        # Marketing Agency: async Redis queue consumer for discord/twitter tasks
+        try:
             from agents.marketing_agency import agency_loop
             asyncio.ensure_future(agency_loop())
             logger.info("📣 Marketing Agency: background worker STARTED")
+        except Exception as e:
+            logger.error(f"Marketing Agency activation failed: {e}")
 
-            # 🐋 Whale Intelligence v2.0 — GMGN Smart Money Scanner
+        # 🐋 Whale Intelligence v2.0 — GMGN Smart Money Scanner
+        try:
             from agents.whale_watcher import (
                 whale_scan_loop, register_signal_callback, format_whale_signal,
                 get_top_whale_wallets, store_signal_for_callback, COPY_TRADE_SOL,
@@ -10578,7 +10585,7 @@ def main() -> None:
             logger.info("🐋 Whale Intelligence v2.0: GMGN scanner STARTED")
 
         except Exception as e:
-            logger.error(f"Godmode Agent activation failed: {e}")
+            logger.error(f"Whale Intelligence activation failed: {e}")
 
     app.post_init = post_init
     # ── Gumroad Revenue Sync: Poll for new sales (every 15 min) ───────────────
