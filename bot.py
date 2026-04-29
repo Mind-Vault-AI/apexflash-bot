@@ -35,6 +35,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+import os
 import re
 import random
 from datetime import datetime, timezone, time as dt_time, timedelta
